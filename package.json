@@ -1,0 +1,51 @@
+{
+  "name": "raft-monorepo",
+  "preview": true,
+  "type": "module",
+  "packageManager": "pnpm@10.11.0",
+  "description": "A monorepo of Raft implementation for NodeJS and NestJS for building distributed systems.",
+  "author": {
+    "name": "Ali Torki",
+    "email": "ali_4286@live.com",
+    "url": "https://github.com/ali-master"
+  },
+  "license": "MIT",
+  "scripts": {
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "test:unit": "pnpm -r test:unit",
+    "test:types": "pnpm -r test:types",
+    "test:knip": "knip",
+    "postinstall": "simple-git-hooks install"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "4.13.2",
+    "@types/node": "22.15.23",
+    "@vitest/coverage-v8": "^3.1.4",
+    "@vitest/ui": "^3.1.4",
+    "bumpp": "10.1.1",
+    "changelogithub": "13.14.0",
+    "cross-env": "^7.0.3",
+    "eslint": "9.27.0",
+    "eslint-plugin-format": "^1.0.1",
+    "installed-check": "9.3.0",
+    "knip": "5.58.1",
+    "lint-staged": "16.1.0",
+    "prettier": "^3.5.3",
+    "simple-git-hooks": "2.13.0",
+    "typescript": "5.8.3",
+    "unbuild": "^3.5.0",
+    "vitest": "3.1.4"
+  },
+  "resolutions": {
+    "@usex/raft": "workspace:*"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm lint-staged"
+  },
+  "lint-staged": {
+    "*.{js,ts,mjs,cjs,json,.*rc}": [
+      "pnpm eslint --fix"
+    ]
+  }
+}
