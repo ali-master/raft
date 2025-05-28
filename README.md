@@ -1,4 +1,4 @@
-# RAFT Library Documentation
+# RAFT Library Documentation (Under development, not yet released)
 
 Welcome to the comprehensive documentation for the RAFT distributed consensus library for Node.js and NestJS.
 
