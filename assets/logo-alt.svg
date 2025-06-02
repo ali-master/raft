@@ -1,0 +1,22 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <linearGradient id="b" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#06b6d4;stop-opacity:1"/>
+            <stop offset="50%" style="stop-color:#3b82f6;stop-opacity:1"/>
+            <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1"/>
+        </linearGradient>
+        <filter id="a" x="-50%" y="-40%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity=".15"/>
+        </filter>
+    </defs>
+    <g transform="translate(100 60)">
+        <g filter="url(#a)">
+            <path d="m0-30 26 15v30L0 30l-26-15v-30Z" fill="url(#b)"/>
+            <path d="m-45-40 13 7.5v15L-45-10l-13-7.5v-15Zm90 0 13 7.5v15L45-10l-13-7.5v-15ZM0 35l13 7.5v15L0 65l-13-7.5v-15Z" fill="#94a3b8" opacity=".8"/>
+        </g>
+        <path d="m0-15-32-10M0-15l32-10M0 15v20" stroke="#cbd5e1" stroke-width="2" fill="none" opacity=".4"/>
+        <circle r="6" fill="#fff" opacity=".9"/>
+    </g>
+    <text x="100" y="160" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="32" font-weight="700" fill="#1e293b">RAFT</text>
+    <text x="100" y="178" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="400" fill="#64748b" letter-spacing="2">CONSENSUS</text>
+</svg>

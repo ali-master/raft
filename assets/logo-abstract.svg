@@ -1,0 +1,87 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <!--Dynamic gradient that shifts-->
+        <linearGradient id="dynamicGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#14b8a6;stop-opacity:1">
+                <animate attributeName="stop-color" values="#14b8a6;#3b82f6;#8b5cf6;#14b8a6" dur="8s" repeatCount="indefinite"/>
+            </stop>
+            <stop offset="50%" style="stop-color:#3b82f6;stop-opacity:1">
+                <animate attributeName="stop-color" values="#3b82f6;#8b5cf6;#f59e0b;#3b82f6" dur="8s" repeatCount="indefinite"/>
+            </stop>
+            <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1">
+                <animate attributeName="stop-color" values="#8b5cf6;#f59e0b;#14b8a6;#8b5cf6" dur="8s" repeatCount="indefinite"/>
+            </stop>
+        </linearGradient>
+        <!--Morphing blur-->
+        <filter id="morphBlur">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="0.5"/>
+        </filter>
+        <!--Elegant shadow-->
+        <filter id="elegantShadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="8" stdDeviation="10" flood-opacity="0.1"/>
+        </filter>
+    </defs>
+    <!--Abstract representation of consensus through interlocking shapes-->
+    <g transform="translate(100, 85)" filter="url(#elegantShadow)">
+        <!--Central motif - abstract "R" shape suggesting movement and connection-->
+        <g>
+            <!--Main vertical stroke-->
+            <path d="M -20,0 L -20,-40 Q -20,-50 -10,-50 L 10,-50 Q 20,-50 20,-40 Q 20,-30 10,-25 L 0,-20" fill="none" stroke="url(#dynamicGradient)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+                <animate attributeName="stroke-width" values="6;8;6" dur="3s" repeatCount="indefinite"/>
+            </path>
+            <!--Diagonal stroke extending outward-->
+            <path d="M 0,-20 L 20,10" fill="none" stroke="url(#dynamicGradient)" stroke-width="6" stroke-linecap="round">
+                <animate attributeName="stroke-width" values="6;8;6" dur="3s" repeatCount="indefinite" begin="0.5s"/>
+            </path>
+            <!--Consensus rings - representing distributed nodes-->
+            <g opacity="0.6">
+                <!--Leader ring-->
+                <circle cx="-20" cy="-40" r="12" fill="none" stroke="url(#dynamicGradient)" stroke-width="2">
+                    <animate attributeName="r" values="12;14;12" dur="2s" repeatCount="indefinite"/>
+                </circle>
+                <!--Follower rings-->
+                <circle cx="20" cy="-40" r="8" fill="none" stroke="#64748b" stroke-width="1.5">
+                    <animate attributeName="r" values="8;9;8" dur="2.2s" repeatCount="indefinite"/>
+                </circle>
+                <circle cx="0" cy="-20" r="8" fill="none" stroke="#64748b" stroke-width="1.5">
+                    <animate attributeName="r" values="8;9;8" dur="2.4s" repeatCount="indefinite"/>
+                </circle>
+                <circle cx="20" cy="10" r="8" fill="none" stroke="#64748b" stroke-width="1.5">
+                    <animate attributeName="r" values="8;9;8" dur="2.6s" repeatCount="indefinite"/>
+                </circle>
+            </g>
+            <!--Energy dots flowing through the system-->
+            <g>
+                <circle r="2" fill="url(#dynamicGradient)">
+                    <animateMotion path="M -20,0 L -20,-40 Q -20,-50 -10,-50 L 10,-50 Q 20,-50 20,-40 Q 20,-30 10,-25 L 0,-20 L 20,10" dur="4s" repeatCount="indefinite"/>
+                </circle>
+                <circle r="2" fill="#3b82f6">
+                    <animateMotion path="M -20,0 L -20,-40 Q -20,-50 -10,-50 L 10,-50 Q 20,-50 20,-40 Q 20,-30 10,-25 L 0,-20 L 20,10" dur="4s" begin="1s" repeatCount="indefinite"/>
+                </circle>
+                <circle r="2" fill="#8b5cf6">
+                    <animateMotion path="M -20,0 L -20,-40 Q -20,-50 -10,-50 L 10,-50 Q 20,-50 20,-40 Q 20,-30 10,-25 L 0,-20 L 20,10" dur="4s" begin="2s" repeatCount="indefinite"/>
+                </circle>
+            </g>
+        </g>
+        <!--Abstract accent elements suggesting network-->
+        <g opacity="0.2">
+            <path d="M -50,-20 Q -30,-10 -20,0" fill="none" stroke="url(#dynamicGradient)" stroke-width="1"/>
+            <path d="M 20,10 Q 35,20 50,20" fill="none" stroke="url(#dynamicGradient)" stroke-width="1"/>
+            <path d="M -20,-60 Q 0,-70 20,-60" fill="none" stroke="url(#dynamicGradient)" stroke-width="1"/>
+        </g>
+    </g>
+    <!--Modern typography-->
+    <g>
+        <text x="100" y="155" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="38" font-weight="300" fill="#1e293b">RAFT</text>
+        <!--Minimalist decoration-->
+        <line x1="60" y1="165" x2="75" y2="165" stroke="url(#dynamicGradient)" stroke-width="2"/>
+        <line x1="125" y1="165" x2="140" y2="165" stroke="url(#dynamicGradient)" stroke-width="2"/>
+    </g>
+    <!--Subtle background pattern-->
+    <g opacity="0.03">
+        <pattern id="dots" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+            <circle cx="10" cy="10" r="1" fill="#000"/>
+        </pattern>
+        <rect width="200" height="200" fill="url(#dots)"/>
+    </g>
+</svg>

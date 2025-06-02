@@ -1,0 +1,66 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <!--Gradient for the main nodes-->
+        <linearGradient id="nodeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1"/>
+            <stop offset="100%" style="stop-color:#1d4ed8;stop-opacity:1"/>
+        </linearGradient>
+        <!--Gradient for the center circle-->
+        <linearGradient id="centerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#8b5cf6;stop-opacity:1"/>
+            <stop offset="100%" style="stop-color:#7c3aed;stop-opacity:1"/>
+        </linearGradient>
+        <!--Glow effect-->
+        <filter id="glow">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+        <!--Shadow effect-->
+        <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.2"/>
+        </filter>
+    </defs>
+    <!--Background circle-->
+    <circle cx="100" cy="100" r="90" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
+    <!--Connection lines-->
+    <g stroke="#cbd5e1" stroke-width="2" fill="none" opacity="0.6">
+        <!--Top to right-->
+        <path d="M 100 40 Q 120 70 140 100" stroke-dasharray="5,5"/>
+        <!--Top to left-->
+        <path d="M 100 40 Q 80 70 60 100" stroke-dasharray="5,5"/>
+        <!--Right to bottom-->
+        <path d="M 140 100 Q 120 130 100 160" stroke-dasharray="5,5"/>
+        <!--Left to bottom-->
+        <path d="M 60 100 Q 80 130 100 160" stroke-dasharray="5,5"/>
+        <!--Left to right-->
+        <path d="M 60 100 L 140 100" stroke-dasharray="5,5"/>
+        <!--Top to bottom-->
+        <path d="M 100 40 L 100 160" stroke-dasharray="5,5"/>
+    </g>
+    <!--Outer nodes (followers)-->
+    <g filter="url(#shadow)">
+        <!--Top node-->
+        <circle cx="100" cy="40" r="20" fill="url(#nodeGradient)"/>
+        <circle cx="100" cy="40" r="8" fill="white"/>
+        <!--Right node-->
+        <circle cx="140" cy="100" r="20" fill="url(#nodeGradient)"/>
+        <circle cx="140" cy="100" r="8" fill="white"/>
+        <!--Bottom node-->
+        <circle cx="100" cy="160" r="20" fill="url(#nodeGradient)"/>
+        <circle cx="100" cy="160" r="8" fill="white"/>
+        <!--Left node-->
+        <circle cx="60" cy="100" r="20" fill="url(#nodeGradient)"/>
+        <circle cx="60" cy="100" r="8" fill="white"/>
+    </g>
+    <!--Center node (leader) with glow-->
+    <g filter="url(#glow)">
+        <circle cx="100" cy="100" r="30" fill="url(#centerGradient)" filter="url(#shadow)"/>
+        <!--Leader indicator-->
+        <circle cx="100" cy="100" r="15" fill="white" opacity="0.9"/>
+        <!--Star symbol for leader-->
+        <path d="M100,90 L103,97 L110,97 L105,102 L107,109 L100,105 L93,109 L95,102 L90,97 L97,97 Z" fill="url(#centerGradient)"/>
+    </g>
+</svg>
