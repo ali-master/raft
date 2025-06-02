@@ -19,7 +19,12 @@ export default antfu({
   name: "raft",
   gitignore: true,
 }).append({
-  ignores: ["README.md", "packages/*/README.md"],
+  ignores: [
+    "README.md",
+    "packages/*/README.md",
+    "packages/*/examples/**",
+    "packages/nest/index.*",
+  ],
   files: ["./packages/**/*.ts"],
   rules: {
     "no-console": "off",

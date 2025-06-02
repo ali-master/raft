@@ -62,7 +62,8 @@
     "lint": "eslint \"src/**/*.ts\" --fix",
     "prepublishOnly": "pnpm lint && pnpm test",
     "release": "pnpm test && bumpp && pnpm publish",
-    "preinstall": "npx is-ci || npx only-allow pnpm"
+    "preinstall": "npx is-ci || npx only-allow pnpm",
+    "prepack": "unbuild"
   },
   "peerDependencies": {
     "ioredis": "^5",

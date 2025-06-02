@@ -1,0 +1,89 @@
+{
+  "name": "@usex/raft-nestjs",
+  "version": "0.0.0",
+  "description": "",
+  "license": "MIT",
+  "author": {
+    "name": "Ali Torki",
+    "email": "ali_4286@live.com",
+    "url": "https://github.com/ali-master"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ali-master/raft.git",
+    "directory": "packages/nest"
+  },
+  "keywords": [],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18.12.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "cross-env CI=true TESTCONTAINERS_RYUK_DISABLED=true vitest --typecheck",
+    "test:watch": "pnpm run test --watch",
+    "test:ui": "pnpm run test:watch --ui --coverage.enabled=true",
+    "test:bench": "pnpm run test bench",
+    "test:coverage": "pnpm run test run --coverage",
+    "test:debug": "vitest --inspect-brk --pool forks --poolOptions.forks.singleFork",
+    "test:debug:watch": "pnpm run test:debug --watch --poolOptions.threads.isolate false",
+    "inspect": "node-modules-inspector",
+    "test:types": "tsc --noEmit",
+    "test:knip": "knip",
+    "test:knip:fix": "knip --fix",
+    "format": "prettier --write \"**/*.ts\"",
+    "lint": "eslint \"src/**/*.ts\" --fix",
+    "prepublish:next": "pnpm run build",
+    "publish:next": "pnpm publish --access public --tag next",
+    "prepublish:npm": "pnpm run build",
+    "publish:npm": "pnpm publish --access public",
+    "prerelease": "pnpm run build",
+    "release": "release-it"
+  },
+  "dependencies": {
+    "@usex/raft": "workspace:^",
+    "eventemitter3": "^5.0.1"
+  },
+  "devDependencies": {
+    "@nestjs/common": "11.1.2",
+    "@nestjs/core": "11.1.2",
+    "@nestjs/testing": "11.1.2",
+    "@swc/core": "^1.11.29",
+    "@types/express": "^5.0.2",
+    "@types/jest": "^29.5.14",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "unplugin-swc": "^1.5.4"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0",
+    "reflect-metadata": "^0.1.13 || ^0.2.0",
+    "rxjs": "^7.2.0"
+  },
+  "changelog": {
+    "labels": {
+      "feature": "Features",
+      "bug": "Bug fixes",
+      "enhancement": "Enhancements",
+      "docs": "Docs",
+      "dependencies": "Dependencies",
+      "type: code style": "Code style tweaks",
+      "status: blocked": "Breaking changes",
+      "breaking change": "Breaking changes"
+    }
+  },
+  "packageManager": "pnpm@10.11.0"
+}
