@@ -7,7 +7,10 @@ export class RaftLogger {
 
   constructor(config: LoggingConfig) {
     this.config = config;
-    this.redactPattern = new RegExp((config.redactedFields || []).join("|"), "gi");
+    this.redactPattern = new RegExp(
+      (config.redactedFields || []).join("|"),
+      "gi",
+    );
   }
 
   private redact(data: any): any {
@@ -17,7 +20,7 @@ export class RaftLogger {
 
     if (typeof data === "object" && data !== null) {
       const redacted = { ...data };
-      for (const field of (this.config.redactedFields || [])) {
+      for (const field of this.config.redactedFields || []) {
         if (field in redacted) {
           redacted[field] = "[REDACTED]";
         }
