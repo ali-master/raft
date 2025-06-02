@@ -1,0 +1,137 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    depends_on:
+      - node1
+      - node2
+      - node3
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/dashboards
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+
+  node1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ID=node-1
+      - CLUSTER_ID=playground-cluster
+      - HTTP_PORT=3000
+      - PEERS=node-2,node-3
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ELECTION_MIN_TIMEOUT=150
+      - ELECTION_MAX_TIMEOUT=300
+      - HEARTBEAT_INTERVAL=50
+      - LOG_LEVEL=debug
+      - INTERACTIVE_MODE=false
+    ports:
+      - "3000:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - node1-data:/app/data
+    networks:
+      - raft-network
+
+  node2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ID=node-2
+      - CLUSTER_ID=playground-cluster
+      - HTTP_PORT=3000
+      - PEERS=node-1,node-3
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ELECTION_MIN_TIMEOUT=150
+      - ELECTION_MAX_TIMEOUT=300
+      - HEARTBEAT_INTERVAL=50
+      - LOG_LEVEL=debug
+      - INTERACTIVE_MODE=false
+    ports:
+      - "3002:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - node2-data:/app/data
+    networks:
+      - raft-network
+
+  node3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ID=node-3
+      - CLUSTER_ID=playground-cluster
+      - HTTP_PORT=3000
+      - PEERS=node-1,node-2
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ELECTION_MIN_TIMEOUT=150
+      - ELECTION_MAX_TIMEOUT=300
+      - HEARTBEAT_INTERVAL=50
+      - LOG_LEVEL=debug
+      - INTERACTIVE_MODE=false
+    ports:
+      - "3003:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - node3-data:/app/data
+    networks:
+      - raft-network
+
+networks:
+  raft-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+  node1-data:
+  node2-data:
+  node3-data:
+EOF < /dev/null

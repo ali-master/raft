@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'raft-nodes'
+    static_configs:
+      - targets: ['node1:3000', 'node2:3000', 'node3:3000']
+        labels:
+          cluster: 'playground'
+    metrics_path: '/monitoring/metrics'
+    
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+        
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
