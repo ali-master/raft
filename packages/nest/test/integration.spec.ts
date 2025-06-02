@@ -1,17 +1,20 @@
+import { it, expect, describe } from "vitest";
 import { Test } from "@nestjs/testing";
-import { Injectable, Module } from "@nestjs/common";
+import { Module, Injectable } from "@nestjs/common";
 import {
-  RaftModule,
   RaftService,
   RaftNode,
-  OnLeaderElected,
+  RaftModule,
   OnStateChange,
+  OnLeaderElected,
   OnErrorOccurred,
-  InjectRaftEngine,
   InjectRaftNode,
   InjectRaftEventBus,
+  InjectRaftEngine,
 } from "../src";
-import { RaftEngine, RaftNode as RaftNodeType, RaftEventBus } from "@usex/raft";
+import { RaftEngine } from "@usex/raft";
+import type { RaftNode as RaftNodeType } from "@usex/raft";
+import type { EventEmitter } from "eventemitter3";
 
 describe("Integration Tests", () => {
   describe("Complete Module Setup", () => {
@@ -44,7 +47,7 @@ describe("Integration Tests", () => {
         private readonly raftService: RaftService,
         @InjectRaftEngine() private readonly engine: RaftEngine,
         @InjectRaftNode() private readonly node: RaftNodeType,
-        @InjectRaftEventBus() private readonly eventBus: RaftEventBus,
+        @InjectRaftEventBus() private readonly eventBus: EventEmitter,
       ) {}
 
       getAllInjections() {

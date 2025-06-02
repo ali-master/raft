@@ -1,8 +1,10 @@
-import { Test, TestingModule } from "@nestjs/testing";
+import type { TestingModule } from "@nestjs/testing";
+import { Test } from "@nestjs/testing";
+import { vi, it, expect, describe, afterEach } from "vitest";
 import { RaftModule } from "../src/modules/raft.module";
 import { RaftService } from "../src/services/raft.service";
-import { RAFT_ENGINE, RAFT_NODE, RAFT_MODULE_OPTIONS } from "../src/constants";
-import { RaftEngine, RaftNode } from "@usex/raft";
+import { RAFT_NODE, RAFT_MODULE_OPTIONS, RAFT_ENGINE } from "../src/constants";
+import { RaftEngine } from "@usex/raft";
 
 describe("RaftModule", () => {
   let module: TestingModule;
@@ -138,7 +140,7 @@ describe("RaftModule", () => {
 
   describe("lifecycle hooks", () => {
     it("should start node on application bootstrap", async () => {
-      const mockStart = jest.fn().mockResolvedValue(undefined);
+      const mockStart = vi.fn().mockResolvedValue(undefined);
       const mockNode = { start: mockStart } as any;
 
       module = await Test.createTestingModule({
@@ -162,7 +164,7 @@ describe("RaftModule", () => {
     });
 
     it("should stop node on application shutdown", async () => {
-      const mockStop = jest.fn().mockResolvedValue(undefined);
+      const mockStop = vi.fn().mockResolvedValue(undefined);
       const mockNode = { stop: mockStop } as any;
 
       module = await Test.createTestingModule({

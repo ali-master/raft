@@ -1,20 +1,23 @@
-import { Test, TestingModule } from "@nestjs/testing";
+import type { TestingModule } from "@nestjs/testing";
+import { Test } from "@nestjs/testing";
 import { DiscoveryService } from "@nestjs/core";
+import { vi, it, expect, describe, afterEach } from "vitest";
 import {
-  raftEngineProvider,
   raftNodeProvider,
-  raftEventBusProvider,
   raftEventHandlerProvider,
+  raftEventBusProvider,
+  raftEngineProvider,
   createRaftNodeProvider,
 } from "../src/providers";
 import {
-  RAFT_ENGINE,
   RAFT_NODE,
-  RAFT_EVENT_BUS,
   RAFT_MODULE_OPTIONS,
   RAFT_EVENT_METADATA,
+  RAFT_EVENT_BUS,
+  RAFT_ENGINE,
 } from "../src/constants";
-import { RaftEngine, RaftNode, RaftEventBus } from "@usex/raft";
+import { RaftEngine } from "@usex/raft";
+import type { RaftNode } from "@usex/raft";
 
 describe("Providers", () => {
   let module: TestingModule;
@@ -39,7 +42,7 @@ describe("Providers", () => {
 
   describe("raftNodeProvider", () => {
     it("should create RaftNode with options", async () => {
-      const mockCreateNode = jest.fn().mockResolvedValue({} as RaftNode);
+      const mockCreateNode = vi.fn().mockResolvedValue({} as RaftNode);
       const mockEngine = {
         createNode: mockCreateNode,
       } as any;
@@ -63,7 +66,7 @@ describe("Providers", () => {
         ],
       }).compile();
 
-      const node = await module.get(RAFT_NODE);
+      await module.get(RAFT_NODE);
 
       expect(mockCreateNode).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -74,7 +77,7 @@ describe("Providers", () => {
     });
 
     it("should merge default configuration with user options", async () => {
-      const mockCreateNode = jest.fn().mockResolvedValue({} as RaftNode);
+      const mockCreateNode = vi.fn().mockResolvedValue({} as RaftNode);
       const mockEngine = {
         createNode: mockCreateNode,
       } as any;
@@ -101,7 +104,7 @@ describe("Providers", () => {
 
       await module.get(RAFT_NODE);
 
-      const calledConfig = mockCreateNode.mock.calls[0][0];
+      const calledConfig = mockCreateNode.mock.calls[0]?.[0];
       expect(calledConfig.httpPort).toBe(4000);
       expect(calledConfig.electionTimeout).toEqual([150, 300]); // Default value
     });
@@ -111,7 +114,7 @@ describe("Providers", () => {
     it("should create provider for specific node", async () => {
       const mockNode = {} as RaftNode;
       const mockEngine = {
-        getNode: jest.fn().mockReturnValue(mockNode),
+        getNode: vi.fn().mockReturnValue(mockNode),
       } as any;
 
       const provider = createRaftNodeProvider("node-2");
@@ -126,7 +129,7 @@ describe("Providers", () => {
         ],
       }).compile();
 
-      const node = await module.get(`${RAFT_NODE}_node-2`);
+      const node = await module.get(Symbol.for("RAFT_NODE_node-2"));
 
       expect(node).toBe(mockNode);
       expect(mockEngine.getNode).toHaveBeenCalledWith("node-2");
@@ -134,10 +137,10 @@ describe("Providers", () => {
   });
 
   describe("raftEventBusProvider", () => {
-    it("should get event bus from node", async () => {
-      const mockEventBus = {} as RaftEventBus;
+    it("should return node as event bus", async () => {
       const mockNode = {
-        getEventBus: jest.fn().mockReturnValue(mockEventBus),
+        on: vi.fn(),
+        emit: vi.fn(),
       } as any;
 
       module = await Test.createTestingModule({
@@ -152,17 +155,16 @@ describe("Providers", () => {
 
       const eventBus = module.get(RAFT_EVENT_BUS);
 
-      expect(eventBus).toBe(mockEventBus);
-      expect(mockNode.getEventBus).toHaveBeenCalled();
+      expect(eventBus).toBe(mockNode);
     });
   });
 
   describe("raftEventHandlerProvider", () => {
     it("should register event handlers from providers", async () => {
-      const mockOn = jest.fn();
+      const mockOn = vi.fn();
       const mockEventBus = { on: mockOn } as any;
 
-      const mockHandler = jest.fn();
+      const mockHandler = vi.fn();
       class TestHandler {
         handleEvent = mockHandler;
       }
@@ -185,8 +187,8 @@ describe("Providers", () => {
       };
 
       const mockDiscovery = {
-        getProviders: jest.fn().mockReturnValue([mockWrapper]),
-        getControllers: jest.fn().mockReturnValue([]),
+        getProviders: vi.fn().mockReturnValue([mockWrapper]),
+        getControllers: vi.fn().mockReturnValue([]),
       } as any;
 
       module = await Test.createTestingModule({
@@ -209,7 +211,7 @@ describe("Providers", () => {
     });
 
     it("should bind event handler methods correctly", async () => {
-      const mockOn = jest.fn();
+      const mockOn = vi.fn();
       const mockEventBus = { on: mockOn } as any;
 
       class TestHandler {
@@ -238,8 +240,8 @@ describe("Providers", () => {
       };
 
       const mockDiscovery = {
-        getProviders: jest.fn().mockReturnValue([mockWrapper]),
-        getControllers: jest.fn().mockReturnValue([]),
+        getProviders: vi.fn().mockReturnValue([mockWrapper]),
+        getControllers: vi.fn().mockReturnValue([]),
       } as any;
 
       module = await Test.createTestingModule({
@@ -259,22 +261,22 @@ describe("Providers", () => {
       await module.init();
 
       // Get the bound handler
-      const boundHandler = mockOn.mock.calls[0][1];
+      const boundHandler = mockOn.mock.calls[0]?.[1];
 
       // Call it and check if 'this' is bound correctly
       expect(boundHandler()).toBe("test");
     });
 
     it("should handle providers without event handlers", async () => {
-      const mockEventBus = { on: jest.fn() } as any;
+      const mockEventBus = { on: vi.fn() } as any;
 
       const mockWrapper = {
         instance: {},
       };
 
       const mockDiscovery = {
-        getProviders: jest.fn().mockReturnValue([mockWrapper]),
-        getControllers: jest.fn().mockReturnValue([]),
+        getProviders: vi.fn().mockReturnValue([mockWrapper]),
+        getControllers: vi.fn().mockReturnValue([]),
       } as any;
 
       module = await Test.createTestingModule({

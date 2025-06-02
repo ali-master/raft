@@ -87,18 +87,30 @@ importers:
       '@swc/core':
         specifier: ^1.11.29
         version: 1.11.29
+      '@testcontainers/redis':
+        specifier: ^11.0.0
+        version: 11.0.0
       '@types/express':
         specifier: ^5.0.2
         version: 5.0.2
       '@types/jest':
         specifier: ^29.5.14
         version: 29.5.14
+      '@types/node':
+        specifier: 22.15.23
+        version: 22.15.23
+      ioredis:
+        specifier: ^5.6.1
+        version: 5.6.1
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
       rxjs:
         specifier: 7.8.2
         version: 7.8.2
+      testcontainers:
+        specifier: ^11.0.0
+        version: 11.0.0
       unplugin-swc:
         specifier: ^1.5.4
         version: 1.5.4(@swc/core@1.11.29)(rollup@4.41.0)

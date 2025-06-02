@@ -18,16 +18,22 @@ export default antfu({
   typescript: true,
   name: "raft",
   gitignore: true,
-}).append({
+  jsonc: false,
+  unicorn: false,
   ignores: [
     "README.md",
     "packages/*/README.md",
-    "packages/*/examples/**",
+    "packages/*/examples/**/*",
     "packages/nest/index.*",
+    "packages/nest/playground/**/*",
   ],
+}).append({
   files: ["./packages/**/*.ts"],
   rules: {
     "no-console": "off",
+    "ts/ban-ts-comment": "off",
+    "no-new": "off",
+    "unicorn/prefer-node-protocol": "off",
     "antfu/if-newline": "off",
     "test/prefer-lowercase-title": "off",
     "unicorn/no-new-array": "off",

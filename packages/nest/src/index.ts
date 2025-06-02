@@ -22,8 +22,10 @@ export {
   MessageType,
   RaftEngine,
   RaftEventType,
-  RaftNode,
   RaftState,
 } from "@usex/raft";
+
+// Re-export as a different name to avoid conflict with decorator
+export { RaftNode as RaftNodeClass } from "@usex/raft";
 
 export type { RaftConfiguration } from "@usex/raft";
