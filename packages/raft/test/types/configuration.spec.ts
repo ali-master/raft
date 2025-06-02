@@ -5,6 +5,14 @@ import { LogLevel } from "../../src/constants";
 describe("configurationValidation", () => {
   describe("default configuration", () => {
     it("should create complete default configuration", () => {
+      // Save current env vars
+      const originalRedisHost = process.env.REDIS_HOST;
+      const originalRedisPort = process.env.REDIS_PORT;
+
+      // Clear test Redis env vars temporarily
+      delete process.env.REDIS_HOST;
+      delete process.env.REDIS_PORT;
+
       const config = RaftEngine.createDefaultConfiguration(
         "test-node",
         "test-cluster",
@@ -30,9 +38,9 @@ describe("configurationValidation", () => {
 
       // Peer discovery
       expect(config.peerDiscovery).toBeDefined();
-      expect(config.peerDiscovery.registrationInterval).toBe(5000);
-      expect(config.peerDiscovery.healthCheckInterval).toBe(10000);
-      expect(config.peerDiscovery.peerTimeout).toBe(30000);
+      expect(config.peerDiscovery?.registrationInterval).toBe(5000);
+      expect(config.peerDiscovery?.healthCheckInterval).toBe(10000);
+      expect(config.peerDiscovery?.peerTimeout).toBe(30000);
 
       // Voting configuration
       expect(config.voting).toBeDefined();
@@ -42,15 +50,15 @@ describe("configurationValidation", () => {
 
       // Retry configuration
       expect(config.retry).toBeDefined();
-      expect(config.retry.maxAttempts).toBe(3);
-      expect(config.retry.backoffFactor).toBe(2);
-      expect(config.retry.initialDelay).toBe(100);
+      expect(config.retry?.maxAttempts).toBe(3);
+      expect(config.retry?.backoffFactor).toBe(2);
+      expect(config.retry?.initialDelay).toBe(100);
 
       // Circuit breaker
       expect(config.circuitBreaker).toBeDefined();
-      expect(config.circuitBreaker.timeout).toBe(3000);
-      expect(config.circuitBreaker.errorThresholdPercentage).toBe(50);
-      expect(config.circuitBreaker.resetTimeout).toBe(30000);
+      expect(config.circuitBreaker?.timeout).toBe(3000);
+      expect(config.circuitBreaker?.errorThresholdPercentage).toBe(50);
+      expect(config.circuitBreaker?.resetTimeout).toBe(30000);
 
       // Metrics
       expect(config.metrics).toBeDefined();
@@ -77,6 +85,10 @@ describe("configurationValidation", () => {
       expect(config.persistence.dataDir).toBe("/var/lib/raft");
       expect(config.persistence.walEnabled).toBe(true);
       expect(config.persistence.walSizeLimit).toBe(104857600);
+
+      // Restore env vars
+      if (originalRedisHost) process.env.REDIS_HOST = originalRedisHost;
+      if (originalRedisPort) process.env.REDIS_PORT = originalRedisPort;
     });
 
     it("should respect environment variables", () => {

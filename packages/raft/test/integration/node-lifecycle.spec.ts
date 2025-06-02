@@ -1,12 +1,14 @@
 import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
+import { createTestConfig } from "../shared/test-utils";
+import { clearRedisData } from "../shared/test-setup";
 import { RaftEngine } from "../../src/raft-engine";
 import { RaftState } from "../../src/constants";
-import { createTestConfig } from "../shared/test-utils";
 
 describe("nodeLifecycle", () => {
   let engine: RaftEngine;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await clearRedisData();
     vi.useFakeTimers();
     engine = new RaftEngine();
   });

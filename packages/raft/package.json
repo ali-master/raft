@@ -47,7 +47,7 @@
   },
   "scripts": {
     "build": "unbuild",
-    "test": "cross-env CI=true vitest --typecheck",
+    "test": "cross-env CI=true TESTCONTAINERS_RYUK_DISABLED=true vitest --typecheck",
     "test:watch": "pnpm run test --watch",
     "test:ui": "pnpm run test:watch --ui --coverage.enabled=true",
     "test:bench": "pnpm run test bench",
@@ -75,7 +75,9 @@
     "prom-client": "^15.1.3"
   },
   "devDependencies": {
-    "@types/opossum": "^8.1.8"
+    "@testcontainers/redis": "^11.0.0",
+    "@types/opossum": "^8.1.8",
+    "testcontainers": "^11.0.0"
   },
   "publishConfig": {
     "access": "public"

@@ -1,14 +1,16 @@
 import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
+import { createTestConfig } from "../shared/test-utils";
+import { clearRedisData } from "../shared/test-setup";
 import { RaftNode } from "../../src/core/raft-node";
 import { RaftState } from "../../src/constants";
 import { RaftValidationException } from "../../src/exceptions";
-import { createTestConfig } from "../shared/test-utils";
 
 describe("raftNode", () => {
   let node: RaftNode;
   let config: any;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await clearRedisData();
     vi.useFakeTimers();
     config = createTestConfig();
     node = new RaftNode(config);

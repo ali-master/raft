@@ -22,8 +22,11 @@ export default antfu({
   ignores: ["README.md", "packages/*/README.md"],
   files: ["./packages/**/*.ts"],
   rules: {
+    "no-console": "off",
     "antfu/if-newline": "off",
+    "test/prefer-lowercase-title": "off",
     "unicorn/no-new-array": "off",
+    "test/prefer-hooks-in-order": "off",
     "ts/no-unsafe-function-type": "off",
     "perfectionist/sort-imports": "off",
     "ts/explicit-function-return-type": "off",

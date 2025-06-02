@@ -9,7 +9,8 @@ export default defineConfig({
     server: {
       sourcemap: "inline",
     },
-    fileParallelism: true,
+    setupFiles: ["./test/setup.ts"],
+    fileParallelism: false, // Disable parallel execution to share Redis container
     name: "Raft",
     typecheck: {
       enabled: true,

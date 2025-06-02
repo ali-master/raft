@@ -41,8 +41,8 @@ export function createTestConfig(
       walSizeLimit: 1048576,
     },
     redis: {
-      host: "localhost",
-      port: 6379,
+      host: process.env.REDIS_HOST || "localhost",
+      port: Number.parseInt(process.env.REDIS_PORT || "6379"),
       password: undefined,
       db: 0,
       keyPrefix: "raft",
@@ -84,6 +84,16 @@ export function createMockRedis() {
     quit: vi.fn().mockResolvedValue("OK"),
     status: "ready",
   };
+}
+
+/**
+ * Get a Redis instance from the shared test container
+ * This should be used in tests instead of mocking
+ */
+export async function getTestRedis() {
+  const { getGlobalRedisContext } = await import("./test-setup");
+  const context = getGlobalRedisContext();
+  return context.redis.duplicate();
 }
 
 export function createMockLogger() {

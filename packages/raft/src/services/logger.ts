@@ -66,14 +66,12 @@ export class RaftLogger {
 
   public debug(message: string, context?: any): void {
     if (this.shouldLog(LogLevel.DEBUG)) {
-      // eslint-disable-next-line no-console
       console.log(this.formatMessage(LogLevel.DEBUG, message, context));
     }
   }
 
   public info(message: string, context?: any): void {
     if (this.shouldLog(LogLevel.INFO)) {
-      // eslint-disable-next-line no-console
       console.log(this.formatMessage(LogLevel.INFO, message, context));
     }
   }

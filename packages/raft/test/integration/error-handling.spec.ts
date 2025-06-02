@@ -1,15 +1,17 @@
 import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
+import { createTestConfig } from "../shared/test-utils";
+import { clearRedisData } from "../shared/test-setup";
 import {
   RaftValidationException,
   RaftEngine,
   RaftConfigurationException,
 } from "../../src";
-import { createTestConfig } from "../shared/test-utils";
 
 describe("errorHandling", () => {
   let engine: RaftEngine;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await clearRedisData();
     vi.useFakeTimers();
     engine = new RaftEngine();
   });

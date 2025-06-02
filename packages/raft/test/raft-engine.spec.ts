@@ -1,11 +1,13 @@
 import { it, expect, describe, beforeEach, afterEach } from "vitest";
-import { RaftState, RaftEngine, RaftConfigurationException } from "../src";
 import { createTestConfig } from "./shared/test-utils";
+import { clearRedisData } from "./shared/test-setup";
+import { RaftState, RaftEngine, RaftConfigurationException } from "../src";
 
 describe("raftEngine", () => {
   let engine: RaftEngine;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await clearRedisData();
     engine = new RaftEngine();
   });
 

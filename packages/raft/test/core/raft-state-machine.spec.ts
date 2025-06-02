@@ -1,12 +1,14 @@
 import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
-import { RaftState, RaftNode } from "../../src";
 import { createTestConfig } from "../shared/test-utils";
+import { clearRedisData } from "../shared/test-setup";
+import { RaftState, RaftNode } from "../../src";
 
 describe("raftStateMachine", () => {
   let nodes: RaftNode[];
   let configs: any[];
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await clearRedisData();
     vi.clearAllMocks();
     vi.useFakeTimers();
     // Use unique node IDs for each test to avoid state persistence issues

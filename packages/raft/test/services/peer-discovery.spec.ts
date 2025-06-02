@@ -1,40 +1,71 @@
-import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
+import {
+  vi,
+  it,
+  expect,
+  describe,
+  beforeEach,
+  beforeAll,
+  afterEach,
+  afterAll,
+} from "vitest";
 import { PeerDiscoveryService } from "../../src/services/peer-discovery";
 import { RaftState } from "../../src/constants";
 import type { PeerInfo } from "../../src/types";
+import type Redis from "ioredis";
+import { createTestConfig, createMockLogger } from "../shared/test-utils";
 import {
-  createTestConfig,
-  createMockRedis,
-  createMockLogger,
-} from "../shared/test-utils";
+  teardownRedisContainer,
+  setupRedisContainer,
+} from "../shared/testcontainers";
+import type { RedisTestContext } from "../shared/testcontainers";
 
-describe("peerDiscoveryService", () => {
+describe("peerDiscoveryService", { timeout: 60000 }, () => {
   let peerDiscovery: PeerDiscoveryService;
-  let mockRedis: any;
+  let redisContext: RedisTestContext;
+  let redis: Redis;
   let mockLogger: any;
   let config: any;
 
-  beforeEach(() => {
+  // Setup single Redis container for all tests
+  beforeAll(async () => {
+    redisContext = await setupRedisContainer();
+    redis = redisContext.redis;
+  }, 30000);
+
+  afterAll(async () => {
+    if (redisContext) {
+      await teardownRedisContainer(redisContext);
+    }
+  }, 30000);
+
+  beforeEach(async () => {
     vi.useFakeTimers();
-    mockRedis = createMockRedis();
+    // Clear Redis before each test
+    await redis.flushall();
     mockLogger = createMockLogger();
     config = createTestConfig();
-    peerDiscovery = new PeerDiscoveryService(mockRedis, config, mockLogger);
+    peerDiscovery = new PeerDiscoveryService(redis, config, mockLogger);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.useRealTimers();
+    // Stop peer discovery to clean up timers
+    try {
+      await peerDiscovery.stop();
+    } catch {
+      // Ignore errors
+    }
   });
 
   describe("start/stop", () => {
     it("should start and register self", async () => {
       await peerDiscovery.start();
 
-      expect(mockRedis.setex).toHaveBeenCalledWith(
-        "raft:cluster:test-cluster:node:test-node-1",
-        10, // peerTimeout (10000) / 1000
-        expect.stringContaining('"nodeId":"test-node-1"'),
-      );
+      // Check that the node is registered in Redis
+      const key = "raft:cluster:test-cluster:node:test-node-1";
+      const value = await redis.get(key);
+      expect(value).toBeTruthy();
+      expect(value).toContain('"nodeId":"test-node-1"');
       expect(mockLogger.info).toHaveBeenCalledWith(
         "Peer discovery service started",
         { nodeId: "test-node-1" },
@@ -45,9 +76,10 @@ describe("peerDiscoveryService", () => {
       await peerDiscovery.start();
       await peerDiscovery.stop();
 
-      expect(mockRedis.del).toHaveBeenCalledWith(
-        "raft:cluster:test-cluster:node:test-node-1",
-      );
+      // Check that the node is deregistered from Redis
+      const key = "raft:cluster:test-cluster:node:test-node-1";
+      const value = await redis.get(key);
+      expect(value).toBeNull();
       expect(mockLogger.info).toHaveBeenCalledWith(
         "Peer discovery service stopped",
         { nodeId: "test-node-1" },
@@ -76,14 +108,18 @@ describe("peerDiscoveryService", () => {
         },
       };
 
-      mockRedis.keys.mockResolvedValue([
-        "raft:cluster:test-cluster:node:test-node-1",
-        "raft:cluster:test-cluster:node:peer1",
-      ]);
-      mockRedis.get.mockResolvedValue(JSON.stringify(peerData));
-
+      // First start the discovery service so it registers itself
       await peerDiscovery.start();
-      await vi.runOnlyPendingTimersAsync();
+
+      // Manually add peer data to Redis
+      await redis.setex(
+        "raft:cluster:test-cluster:node:peer1",
+        10,
+        JSON.stringify(peerData),
+      );
+
+      // Manually trigger discovery instead of waiting for timer
+      await (peerDiscovery as any).discoverPeers();
 
       const peers = peerDiscovery.getPeers();
       expect(peers).toContain("peer1");
@@ -113,57 +149,29 @@ describe("peerDiscoveryService", () => {
         },
       };
 
-      const selfData: PeerInfo = {
-        nodeId: "test-node-1",
-        clusterId: "test-cluster",
-        httpHost: "localhost",
-        httpPort: 3001,
-        state: RaftState.FOLLOWER,
-        term: 0,
-        lastSeen: new Date(),
-        weight: 1,
-        metrics: {
-          cpuUsage: 50,
-          memoryUsage: 50,
-          diskUsage: 50,
-          networkLatency: 10,
-          loadAverage: [1, 1, 1],
-          uptime: 1000,
-        },
-      };
-
-      // Setup mock for initial registration
-      mockRedis.setex.mockResolvedValue("OK");
-
+      // Start the discovery service
       await peerDiscovery.start();
 
-      // First discovery includes peer1
-      mockRedis.keys.mockResolvedValueOnce([
-        "raft:cluster:test-cluster:node:test-node-1",
+      // Add peer1 to Redis
+      await redis.setex(
         "raft:cluster:test-cluster:node:peer1",
-      ]);
+        10,
+        JSON.stringify(peerData),
+      );
 
-      // Set up individual mocks for each get call in sequence
-      mockRedis.get
-        .mockResolvedValueOnce(JSON.stringify(selfData)) // First key: test-node-1
-        .mockResolvedValueOnce(JSON.stringify(peerData)); // Second key: peer1
-
-      // Manually trigger discovery since intervals haven't fired yet
+      // Manually trigger discovery to discover peer1
       await (peerDiscovery as any).discoverPeers();
 
+      // Verify peer1 was discovered
       expect(peerDiscovery.getPeers()).toContain("peer1");
 
-      // Second discovery doesn't include peer1 - only returns self
-      mockRedis.keys.mockResolvedValueOnce([
-        "raft:cluster:test-cluster:node:test-node-1",
-      ]);
-
-      // Mock get for only self in second discovery
-      mockRedis.get.mockResolvedValueOnce(JSON.stringify(selfData));
+      // Delete peer1 from Redis to simulate it going offline
+      await redis.del("raft:cluster:test-cluster:node:peer1");
 
       // Manually trigger discovery again
       await (peerDiscovery as any).discoverPeers();
 
+      // Verify peer1 is no longer in the peer list
       expect(peerDiscovery.getPeers()).not.toContain("peer1");
       expect(mockLogger.info).toHaveBeenCalledWith("Peer lost", {
         peerId: "peer1",
@@ -178,12 +186,11 @@ describe("peerDiscoveryService", () => {
       // Trigger metrics update
       await vi.runOnlyPendingTimersAsync();
 
-      // Check that setex was called with updated metrics
-      expect(mockRedis.setex).toHaveBeenCalledWith(
-        "raft:cluster:test-cluster:node:test-node-1",
-        10, // peerTimeout (10000) / 1000
-        expect.stringContaining('"metrics"'),
-      );
+      // Check that metrics are stored in Redis
+      const key = "raft:cluster:test-cluster:node:test-node-1";
+      const value = await redis.get(key);
+      expect(value).toBeTruthy();
+      expect(value).toContain('"metrics"');
     });
   });
 
@@ -208,14 +215,18 @@ describe("peerDiscoveryService", () => {
         },
       };
 
-      mockRedis.keys.mockResolvedValue([
-        "raft:cluster:test-cluster:node:test-node-1",
-        "raft:cluster:test-cluster:node:peer1",
-      ]);
-      mockRedis.get.mockResolvedValue(JSON.stringify(peerData));
-
+      // Start the discovery service
       await peerDiscovery.start();
-      await vi.runOnlyPendingTimersAsync();
+
+      // Add peer1 to Redis
+      await redis.setex(
+        "raft:cluster:test-cluster:node:peer1",
+        10,
+        JSON.stringify(peerData),
+      );
+
+      // Manually trigger discovery
+      await (peerDiscovery as any).discoverPeers();
 
       await peerDiscovery.updatePeerState("peer1", RaftState.LEADER, 5);
 
