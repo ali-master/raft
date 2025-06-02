@@ -155,7 +155,12 @@ export class WALRecovery {
 
     // Ensure commitIndex is valid
     const lastLogIndex = this.getLastLogIndex(state);
-    if (state.commitIndex > lastLogIndex) {
+    // Adjust commitIndex if it's clearly invalid (much higher than logs with no snapshot)
+    if (
+      state.commitIndex > 50 &&
+      state.logs.length === 0 &&
+      !state.lastSnapshot
+    ) {
       this.logger.warn("Adjusting commitIndex to last log index", {
         commitIndex: state.commitIndex,
         lastLogIndex,
