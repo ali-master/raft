@@ -1,5 +1,3 @@
-# @usex/raft
-
 <div align="center">
   <img src="../../assets/logo.svg" alt="Raft Logo" width="200" />
 
