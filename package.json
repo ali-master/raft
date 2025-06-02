@@ -18,7 +18,8 @@
     "test:types": "pnpm -r test:types",
     "test:knip": "pnpm -r test:knip",
     "test:coverage": "pnpm -r test:coverage",
-    "postinstall": "simple-git-hooks install"
+    "postinstall": "simple-git-hooks install",
+    "preinstall": "npx is-ci || npx only-allow pnpm"
   },
   "devDependencies": {
     "@antfu/eslint-config": "4.13.2",

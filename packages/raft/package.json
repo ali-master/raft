@@ -61,7 +61,8 @@
     "format": "prettier --write \"**/*.ts\"",
     "lint": "eslint \"src/**/*.ts\" --fix",
     "prepublishOnly": "pnpm lint && pnpm test",
-    "release": "pnpm test && bumpp && pnpm publish"
+    "release": "pnpm test && bumpp && pnpm publish",
+    "preinstall": "npx is-ci || npx only-allow pnpm"
   },
   "peerDependencies": {
     "ioredis": "^5",
