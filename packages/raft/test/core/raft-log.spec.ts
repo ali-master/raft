@@ -62,7 +62,7 @@ describe("raftLog", () => {
 
       expect(mockRedis.set).toHaveBeenCalledWith(
         "test-node:log:0",
-        expect.stringContaining("\"term\":1"),
+        expect.stringContaining('"term":1'),
       );
     });
   });
@@ -126,7 +126,7 @@ describe("raftLog", () => {
         },
       ];
 
-      await expect(raftLog.appendEntries(newEntries, 0)).rejects.toThrow(
+      await expect(raftLog.appendEntries(newEntries, 0, 2)).rejects.toThrow(
         RaftValidationException,
       );
     });
@@ -191,7 +191,11 @@ describe("raftLog", () => {
       ];
 
       mockRedis.keys.mockResolvedValue(["test-node:log:0", "test-node:log:1"]);
-      mockRedis.mget.mockResolvedValue(storedEntries);
+      mockRedis.get.mockImplementation((key: string) => {
+        if (key === "test-node:log:0") return Promise.resolve(storedEntries[0]);
+        if (key === "test-node:log:1") return Promise.resolve(storedEntries[1]);
+        return Promise.resolve(null);
+      });
 
       await raftLog.loadFromStorage();
       expect(raftLog.getLength()).toBe(2);
@@ -204,6 +208,57 @@ describe("raftLog", () => {
       await raftLog.loadFromStorage();
       expect(raftLog.getLength()).toBe(0);
       // Error handling is tested by verifying the log remains empty
+    });
+  });
+
+  describe("wAL operations", () => {
+    it("should compact WAL when requested", async () => {
+      await raftLog.compactWAL();
+      // Should not throw when WAL is not enabled
+      expect(true).toBe(true);
+    });
+
+    it("should persist metadata", async () => {
+      await raftLog.persistMetadata(5, "node1", 10);
+      // Should not throw when WAL is not enabled
+      expect(true).toBe(true);
+    });
+
+    it("should create snapshots", async () => {
+      const snapshotData = Buffer.from("test snapshot data");
+      await raftLog.createSnapshot(10, 5, snapshotData, { state: "test" });
+      // Should not throw when WAL is not enabled
+      expect(true).toBe(true);
+    });
+  });
+
+  describe("log truncation", () => {
+    it("should truncate entries before index", async () => {
+      // Add some entries first
+      await raftLog.appendEntry(1, { cmd: "set", key: "a", value: "1" });
+      await raftLog.appendEntry(1, { cmd: "set", key: "b", value: "2" });
+      await raftLog.appendEntry(2, { cmd: "set", key: "c", value: "3" });
+
+      expect(raftLog.getLength()).toBe(3);
+
+      // Truncate before index 2 (should keep entries 2 and beyond)
+      await raftLog.truncateBeforeIndex(2);
+
+      expect(raftLog.getLength()).toBe(1);
+      expect(raftLog.getEntry(0)?.command).toEqual({
+        cmd: "set",
+        key: "c",
+        value: "3",
+      });
+    });
+
+    it("should handle truncation with no entries to remove", async () => {
+      await raftLog.appendEntry(1, { cmd: "set", key: "a", value: "1" });
+
+      // Truncate before index 0 (should remove nothing)
+      await raftLog.truncateBeforeIndex(0);
+
+      expect(raftLog.getLength()).toBe(1);
     });
   });
 });

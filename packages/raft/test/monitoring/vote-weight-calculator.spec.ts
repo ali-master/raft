@@ -4,7 +4,11 @@ import { RaftMetricsCollector } from "../../src/monitoring/metrics-collector";
 import { PeerDiscoveryService } from "../../src/services";
 import { RaftState } from "../../src/constants";
 import type { PeerInfo } from "../../src/types";
-import { createTestConfig, createMockRedis, createMockLogger } from "../shared/test-utils";
+import {
+  createTestConfig,
+  createMockRedis,
+  createMockLogger,
+} from "../shared/test-utils";
 
 describe("voteWeightCalculator", () => {
   let calculator: VoteWeightCalculator;
@@ -18,15 +22,27 @@ describe("voteWeightCalculator", () => {
     metricsCollector = new RaftMetricsCollector(config.metrics);
 
     mockRedis = createMockRedis();
-    peerDiscovery = new PeerDiscoveryService(mockRedis as any, config, createMockLogger());
-    calculator = new VoteWeightCalculator(config.voting, metricsCollector, peerDiscovery);
+    peerDiscovery = new PeerDiscoveryService(
+      mockRedis as any,
+      config,
+      createMockLogger(),
+    );
+    calculator = new VoteWeightCalculator(
+      config.voting,
+      metricsCollector,
+      peerDiscovery,
+    );
   });
 
   it("should return default weight when weighting is disabled", () => {
     const disabledConfig = createTestConfig({
       voting: { ...config.voting, enableWeighting: false },
     });
-    const calc = new VoteWeightCalculator(disabledConfig.voting, metricsCollector, peerDiscovery);
+    const calc = new VoteWeightCalculator(
+      disabledConfig.voting,
+      metricsCollector,
+      peerDiscovery,
+    );
 
     const weight = calc.calculateWeight("node1");
     expect(weight).toBe(disabledConfig.voting.defaultWeight);
@@ -64,12 +80,24 @@ describe("voteWeightCalculator", () => {
     const fullConfig = createTestConfig({
       voting: {
         enableWeighting: true,
-        weightMetrics: ["cpuUsage", "memoryUsage", "diskUsage", "networkLatency", "loadAverage", "uptime", "logLength"],
+        weightMetrics: [
+          "cpuUsage",
+          "memoryUsage",
+          "diskUsage",
+          "networkLatency",
+          "loadAverage",
+          "uptime",
+          "logLength",
+        ],
         defaultWeight: 10,
       },
     });
 
-    const calc = new VoteWeightCalculator(fullConfig.voting, metricsCollector, peerDiscovery);
+    const calc = new VoteWeightCalculator(
+      fullConfig.voting,
+      metricsCollector,
+      peerDiscovery,
+    );
 
     const peerInfo: PeerInfo = {
       nodeId: "node1",

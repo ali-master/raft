@@ -1,16 +1,8 @@
-import { vi, it, expect, describe, beforeEach } from "vitest";
+import { vi, it, expect, describe } from "vitest";
 import { RaftLogger } from "../../src/services";
-import { LogLevel } from "../../src/constants";
-import { createTestConfig } from "../shared/test-utils";
+import { LogLevel } from "../../src";
 
 describe("raftLogger", () => {
-  let logger: RaftLogger;
-
-  beforeEach(() => {
-    const config = createTestConfig();
-    logger = new RaftLogger(config.logging);
-  });
-
   it("should format log messages correctly", () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     const testLogger = new RaftLogger({
@@ -26,13 +18,14 @@ describe("raftLogger", () => {
     const logOutput = spy.mock.calls[0]![0];
     expect(logOutput).toContain("INFO");
     expect(logOutput).toContain("Test message");
-    expect(logOutput).toContain("\"key\":\"value\"");
+    expect(logOutput).toContain('"key":"value"');
 
     spy.mockRestore();
   });
 
   it("should respect log levels", () => {
     const debugSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const warnLogger = new RaftLogger({
@@ -48,9 +41,11 @@ describe("raftLogger", () => {
     warnLogger.error("Error message");
 
     expect(debugSpy).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledTimes(2); // warn and error
+    expect(warnSpy).toHaveBeenCalledTimes(1); // warn
+    expect(errorSpy).toHaveBeenCalledTimes(1); // error
 
     debugSpy.mockRestore();
+    warnSpy.mockRestore();
     errorSpy.mockRestore();
   });
 
@@ -71,9 +66,9 @@ describe("raftLogger", () => {
 
     expect(spy).toHaveBeenCalled();
     const logOutput = spy.mock.calls[0]![0];
-    expect(logOutput).toContain("\"nodeId\":\"test-node\"");
-    expect(logOutput).toContain("\"term\":5");
-    expect(logOutput).toContain("\"nested\":{\"value\":42}");
+    expect(logOutput).toContain('"nodeId":"test-node"');
+    expect(logOutput).toContain('"term":5');
+    expect(logOutput).toContain('"nested":{"value":42}');
 
     spy.mockRestore();
   });

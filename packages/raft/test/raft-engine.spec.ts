@@ -1,15 +1,11 @@
 import { it, expect, describe, beforeEach, afterEach } from "vitest";
-import { RaftEngine } from "../src/raft-engine";
-import { RaftState } from "../src/constants";
-import { RaftValidationException } from "../src/exceptions";
-import { createTestConfig, createMockRedis } from "./shared/test-utils";
+import { RaftState, RaftEngine, RaftConfigurationException } from "../src";
+import { createTestConfig } from "./shared/test-utils";
 
 describe("raftEngine", () => {
   let engine: RaftEngine;
-  let mockRedis: any;
 
   beforeEach(() => {
-    mockRedis = createMockRedis();
     engine = new RaftEngine();
   });
 
@@ -35,7 +31,9 @@ describe("raftEngine", () => {
       const config = createTestConfig({ nodeId: "node1" });
       await engine.createNode(config);
 
-      await expect(engine.createNode(config)).rejects.toThrow(RaftValidationException);
+      await expect(engine.createNode(config)).rejects.toThrow(
+        RaftConfigurationException,
+      );
     });
 
     it("should start and stop nodes", async () => {
@@ -49,8 +47,12 @@ describe("raftEngine", () => {
     });
 
     it("should handle non-existent nodes", async () => {
-      await expect(engine.startNode("non-existent")).rejects.toThrow(RaftValidationException);
-      await expect(engine.stopNode("non-existent")).rejects.toThrow(RaftValidationException);
+      await expect(engine.startNode("non-existent")).rejects.toThrow(
+        RaftConfigurationException,
+      );
+      await expect(engine.stopNode("non-existent")).rejects.toThrow(
+        RaftConfigurationException,
+      );
       expect(engine.getNode("non-existent")).toBeUndefined();
     });
 
@@ -70,11 +72,14 @@ describe("raftEngine", () => {
 
   describe("default configuration", () => {
     it("should create valid default configuration", () => {
-      const config = RaftEngine.createDefaultConfiguration("test-node", "test-cluster");
+      const config = RaftEngine.createDefaultConfiguration(
+        "test-node",
+        "test-cluster",
+      );
 
       expect(config.nodeId).toBe("test-node");
       expect(config.clusterId).toBe("test-cluster");
-      expect(config.httpHost).toBe("127.0.0.1");
+      expect(config.httpHost).toBe("localhost");
       expect(config.httpPort).toBeGreaterThan(0);
       expect(config.electionTimeout).toHaveLength(2);
       expect(config.heartbeatInterval).toBeGreaterThan(0);
@@ -86,7 +91,10 @@ describe("raftEngine", () => {
       process.env.REDIS_PASSWORD = "secret";
       process.env.REDIS_DB = "2";
 
-      const config = RaftEngine.createDefaultConfiguration("test-node", "test-cluster");
+      const config = RaftEngine.createDefaultConfiguration(
+        "test-node",
+        "test-cluster",
+      );
 
       expect(config.redis.host).toBe("custom-redis");
       expect(config.redis.port).toBe(6380);

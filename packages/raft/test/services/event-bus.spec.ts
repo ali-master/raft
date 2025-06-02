@@ -1,5 +1,5 @@
 import { it, expect, describe, beforeEach } from "vitest";
-import { RaftEventBus } from "../../src/services/event-bus";
+import { RaftEventBus } from "../../src/services";
 import { RaftEvent } from "../../src/types";
 import { RaftState, RaftEventType } from "../../src/constants";
 
@@ -11,7 +11,9 @@ describe("raftEventBus", () => {
   });
 
   it("should publish and emit events", async () => {
-    const event = new RaftEvent(RaftEventType.STATE_CHANGE, "node1", { state: RaftState.LEADER });
+    const event = new RaftEvent(RaftEventType.STATE_CHANGE, "node1", {
+      state: RaftState.LEADER,
+    });
 
     const eventPromise = new Promise<void>((resolve) => {
       eventBus.on(RaftEventType.STATE_CHANGE, (receivedEvent: RaftEvent) => {
@@ -27,31 +29,44 @@ describe("raftEventBus", () => {
   });
 
   it("should store events and retrieve them", () => {
-    const event1 = new RaftEvent(RaftEventType.STATE_CHANGE, "node1", { state: RaftState.FOLLOWER });
-    const event2 = new RaftEvent(RaftEventType.LEADER_ELECTED, "node1", { leader: "node2" });
+    const event1 = new RaftEvent(RaftEventType.STATE_CHANGE, "node1", {
+      state: RaftState.FOLLOWER,
+    });
+    const event2 = new RaftEvent(RaftEventType.LEADER_ELECTED, "node1", {
+      leader: "node2",
+    });
 
     eventBus.publish(event1);
     eventBus.publish(event2);
 
     const allEvents = eventBus.getEvents("node1");
     expect(allEvents).toHaveLength(2);
-    expect(allEvents[0].type).toBe(RaftEventType.STATE_CHANGE);
-    expect(allEvents[1].type).toBe(RaftEventType.LEADER_ELECTED);
+    expect(allEvents[0]!.type).toBe(RaftEventType.STATE_CHANGE);
+    expect(allEvents[1]!.type).toBe(RaftEventType.LEADER_ELECTED);
   });
 
   it("should filter events by type", () => {
-    const event1 = new RaftEvent(RaftEventType.STATE_CHANGE, "node1", { state: RaftState.FOLLOWER });
-    const event2 = new RaftEvent(RaftEventType.LEADER_ELECTED, "node1", { leader: "node2" });
-    const event3 = new RaftEvent(RaftEventType.STATE_CHANGE, "node1", { state: RaftState.CANDIDATE });
+    const event1 = new RaftEvent(RaftEventType.STATE_CHANGE, "node1", {
+      state: RaftState.FOLLOWER,
+    });
+    const event2 = new RaftEvent(RaftEventType.LEADER_ELECTED, "node1", {
+      leader: "node2",
+    });
+    const event3 = new RaftEvent(RaftEventType.STATE_CHANGE, "node1", {
+      state: RaftState.CANDIDATE,
+    });
 
     eventBus.publish(event1);
     eventBus.publish(event2);
     eventBus.publish(event3);
 
-    const stateChangeEvents = eventBus.getEvents("node1", RaftEventType.STATE_CHANGE);
+    const stateChangeEvents = eventBus.getEvents(
+      "node1",
+      RaftEventType.STATE_CHANGE,
+    );
     expect(stateChangeEvents).toHaveLength(2);
-    expect(stateChangeEvents[0].data.state).toBe(RaftState.FOLLOWER);
-    expect(stateChangeEvents[1].data.state).toBe(RaftState.CANDIDATE);
+    expect(stateChangeEvents[0]!.data.state).toBe(RaftState.FOLLOWER);
+    expect(stateChangeEvents[1]!.data.state).toBe(RaftState.CANDIDATE);
   });
 
   it("should handle multiple listeners", () => {
@@ -70,7 +85,9 @@ describe("raftEventBus", () => {
 
   it("should remove listeners", () => {
     let called = false;
-    const listener = () => { called = true; };
+    const listener = () => {
+      called = true;
+    };
 
     eventBus.on(RaftEventType.HEARTBEAT, listener);
     eventBus.off(RaftEventType.HEARTBEAT, listener);

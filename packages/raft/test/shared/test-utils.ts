@@ -2,7 +2,9 @@ import { vi } from "vitest";
 import type { RaftConfiguration } from "../../src/types";
 import { LogLevel } from "../../src/constants";
 
-export function createTestConfig(overrides: Partial<RaftConfiguration> = {}): RaftConfiguration {
+export function createTestConfig(
+  overrides: Partial<RaftConfiguration> = {},
+): RaftConfiguration {
   const defaults: RaftConfiguration = {
     nodeId: overrides.nodeId || "test-node-1",
     clusterId: "test-cluster",
@@ -79,6 +81,8 @@ export function createMockRedis() {
     keys: vi.fn().mockResolvedValue([]),
     set: vi.fn().mockResolvedValue("OK"),
     mget: vi.fn().mockResolvedValue([]),
+    quit: vi.fn().mockResolvedValue("OK"),
+    status: "ready",
   };
 }
 

@@ -55,10 +55,18 @@ describe("prometheusMetrics", () => {
     prometheusMetrics.updateRaftMetrics("node1", "cluster1", raftMetrics);
 
     const metrics = await prometheusMetrics.getMetrics();
-    expect(metrics).toContain("raft_current_term{node_id=\"node1\",cluster_id=\"cluster1\"} 5");
-    expect(metrics).toContain("raft_state{node_id=\"node1\",cluster_id=\"cluster1\",state=\"leader\"} 2");
-    expect(metrics).toContain("raft_log_entries_total{node_id=\"node1\",cluster_id=\"cluster1\"} 15");
-    expect(metrics).toContain("raft_commit_index{node_id=\"node1\",cluster_id=\"cluster1\"} 10");
+    expect(metrics).toContain(
+      'raft_current_term{node_id="node1",cluster_id="cluster1"} 5',
+    );
+    expect(metrics).toContain(
+      'raft_state{node_id="node1",cluster_id="cluster1",state="leader"} 2',
+    );
+    expect(metrics).toContain(
+      'raft_log_entries_total{node_id="node1",cluster_id="cluster1"} 15',
+    );
+    expect(metrics).toContain(
+      'raft_commit_index{node_id="node1",cluster_id="cluster1"} 10',
+    );
   });
 
   it("should increment counters", async () => {
@@ -73,7 +81,9 @@ describe("prometheusMetrics", () => {
     });
 
     const metrics = await prometheusMetrics.getMetrics();
-    expect(metrics).toContain("raft_elections_total{node_id=\"node1\",cluster_id=\"cluster1\"} 2");
+    expect(metrics).toContain(
+      'raft_elections_total{node_id="node1",cluster_id="cluster1"} 2',
+    );
   });
 
   it("should observe histogram values", async () => {

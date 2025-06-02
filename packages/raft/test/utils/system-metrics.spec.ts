@@ -12,7 +12,9 @@ describe("systemMetrics", () => {
     it("should return different values on consecutive calls", async () => {
       const usage1 = await SystemMetrics.getCpuUsage();
       // Do some work to change CPU usage
-      const _arr = Array.from({ length: 1000000 }).fill(0).map((_, i) => i * 2);
+      const _arr = Array.from({ length: 1000000 })
+        .fill(0)
+        .map((_, i) => i * 2);
       const usage2 = await SystemMetrics.getCpuUsage();
 
       expect(usage1).not.toBe(usage2);

@@ -1,7 +1,13 @@
 import { vi, it, expect, describe, beforeEach } from "vitest";
 import { RaftNetwork } from "../../src/network/raft-network";
+import { RetryStrategy } from "../../src/utils/retry-strategy";
 import type { VoteRequest } from "../../src/types";
-import { createTestConfig, createMockPeerDiscovery, createMockMetricsCollector, createMockLogger } from "../shared/test-utils";
+import {
+  createTestConfig,
+  createMockPeerDiscovery,
+  createMockMetricsCollector,
+  createMockLogger,
+} from "../shared/test-utils";
 
 describe("raftNetwork", () => {
   let network: RaftNetwork;
@@ -9,14 +15,22 @@ describe("raftNetwork", () => {
   let mockLogger: any;
   let mockPeerDiscovery: any;
   let mockMetrics: any;
+  let mockRetry: RetryStrategy;
 
   beforeEach(() => {
     config = createTestConfig();
     mockLogger = createMockLogger();
     mockPeerDiscovery = createMockPeerDiscovery();
     mockMetrics = createMockMetricsCollector();
+    mockRetry = new RetryStrategy(config.retry);
 
-    network = new RaftNetwork(config, mockLogger, mockPeerDiscovery, mockMetrics);
+    network = new RaftNetwork(
+      config,
+      mockRetry,
+      mockLogger,
+      mockPeerDiscovery,
+      mockMetrics,
+    );
   });
 
   describe("circuit breaker initialization", () => {
