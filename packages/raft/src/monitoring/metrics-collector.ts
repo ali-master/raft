@@ -41,8 +41,7 @@ export class RaftMetricsCollector {
   }
 
   public async getPrometheusMetrics(): Promise<string> {
-    if (!this.config.enablePrometheus)
-return "";
+    if (!this.config.enablePrometheus) return "";
     return await this.prometheusMetrics.getMetrics();
   }
 

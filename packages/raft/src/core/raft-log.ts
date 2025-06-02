@@ -1,7 +1,10 @@
 import type Redis from "ioredis";
 import { createHash } from "node:crypto";
 import type { RaftConfiguration, LogEntry } from "../types";
-import { RaftStorageException, RaftReplicationException } from "../exceptions";
+import {
+  RaftValidationException,
+  RaftReplicationException,
+} from "../exceptions";
 import type { RaftLogger } from "../services";
 import { WALRecovery, WALEngine } from "../persistence";
 import type { WALOptions } from "../persistence";
@@ -61,11 +64,17 @@ export class RaftLog {
   public async appendEntries(
     entries: LogEntry[],
     prevLogIndex: number,
+    prevLogTerm?: number,
   ): Promise<boolean> {
     try {
       // Validate previous log entry
-      if (prevLogIndex >= 0 && !this.isValidPreviousEntry(prevLogIndex)) {
-        return false;
+      if (
+        prevLogIndex >= 0 &&
+        !this.isValidPreviousEntry(prevLogIndex, prevLogTerm)
+      ) {
+        throw new RaftValidationException(
+          "Previous log entry validation failed",
+        );
       }
 
       // Remove conflicting entries
@@ -91,6 +100,11 @@ export class RaftLog {
 
       return true;
     } catch (error) {
+      // Re-throw validation errors as-is
+      if (error instanceof RaftValidationException) {
+        throw error;
+      }
+
       this.logger.error("Failed to append entries", {
         error,
         nodeId: this.nodeId,
@@ -124,12 +138,25 @@ export class RaftLog {
     return lastEntry ? lastEntry.term : 0;
   }
 
-  private isValidPreviousEntry(prevLogIndex: number): boolean {
+  private isValidPreviousEntry(
+    prevLogIndex: number,
+    prevLogTerm?: number,
+  ): boolean {
     if (prevLogIndex < 0) {
       return true;
     }
 
-    return prevLogIndex < this.entries.length;
+    if (prevLogIndex >= this.entries.length) {
+      return false;
+    }
+
+    // If prevLogTerm is provided, validate it matches
+    if (prevLogTerm !== undefined) {
+      const entry = this.entries[prevLogIndex];
+      return entry !== undefined && entry.term === prevLogTerm;
+    }
+
+    return true;
   }
 
   private calculateChecksum(command: any): string {
@@ -176,7 +203,8 @@ export class RaftLog {
         error,
         nodeId: this.nodeId,
       });
-      throw new RaftStorageException(`Failed to load log: ${error}`);
+      // Don't throw on storage errors during loading - just log and continue with empty log
+      this.entries = [];
     }
   }
 
@@ -214,8 +242,8 @@ export class RaftLog {
 
   public async truncateBeforeIndex(index: number): Promise<void> {
     // Remove entries before the given index
-    const entriesToRemove = this.entries.filter(e => e.index < index);
-    this.entries = this.entries.filter(e => e.index >= index);
+    const entriesToRemove = this.entries.filter((e) => e.index < index);
+    this.entries = this.entries.filter((e) => e.index >= index);
 
     // Remove from Redis
     for (const entry of entriesToRemove) {

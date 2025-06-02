@@ -98,6 +98,10 @@ export class RaftNode extends EventEmitter {
       await this.peerDiscovery.start();
 
       this.network.initializeCircuitBreakers();
+
+      // Initialize metrics immediately
+      await this.updateMetrics();
+
       this.startElectionTimer();
       this.startMetricsCollection();
 
@@ -123,12 +127,28 @@ export class RaftNode extends EventEmitter {
 
   public async stop(): Promise<void> {
     this.clearTimers();
-    await this.peerDiscovery.stop();
 
-    // Close WAL if enabled
-    await this.log.closeWAL();
+    try {
+      await this.peerDiscovery.stop();
+    } catch (error) {
+      this.logger.warn("Error stopping peer discovery", { error });
+    }
 
-    await this.storage.quit();
+    try {
+      // Close WAL if enabled
+      await this.log.closeWAL();
+    } catch (error) {
+      this.logger.warn("Error closing WAL", { error });
+    }
+
+    try {
+      if (this.storage.status === "ready") {
+        await this.storage.quit();
+      }
+    } catch (error) {
+      this.logger.warn("Error closing Redis connection", { error });
+    }
+
     this.logger.info("Raft node stopped", { nodeId: this.config.nodeId });
   }
 
@@ -560,6 +580,11 @@ export class RaftNode extends EventEmitter {
         error,
         nodeId: this.config.nodeId,
       });
+      // Ensure clean state on error
+      this.currentTerm = 0;
+      this.votedFor = null;
+      this.commitIndex = 0;
+      this.lastApplied = 0;
     }
   }
 

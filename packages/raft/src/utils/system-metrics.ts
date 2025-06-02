@@ -66,7 +66,10 @@ export class SystemMetrics {
     return process.uptime();
   }
 
-  public static getNetworkStats(): { bytesSent: number; bytesReceived: number } {
+  public static getNetworkStats(): {
+    bytesSent: number;
+    bytesReceived: number;
+  } {
     // Simplified implementation - in production, you'd track actual network I/O
     const usage = process.resourceUsage();
     return {
