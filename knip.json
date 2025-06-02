@@ -1,4 +1,17 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "project": ["./packages/*/src/**/*.ts"]
+  "project": ["./packages/*/src/**/*.ts"],
+  "ignore": [
+    "./packages/*/dist",
+    "./packages/*/node_modules",
+    "./packages/*/test",
+    "./packages/*/tests",
+    "./packages/*/coverage",
+    "./packages/*/benchmarks",
+    "./packages/*/bench",
+    "./packages/*/docs",
+    "./packages/*/examples",
+    "./packages/*/scripts",
+    "./packages/*/src/**/*.test.ts"
+  ]
 }

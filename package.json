@@ -13,9 +13,11 @@
   "scripts": {
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
+    "format": "pnpm -r format",
     "test:unit": "pnpm -r test:unit",
     "test:types": "pnpm -r test:types",
-    "test:knip": "knip",
+    "test:knip": "pnpm -r test:knip",
+    "test:coverage": "pnpm -r test:coverage",
     "postinstall": "simple-git-hooks install"
   },
   "devDependencies": {
@@ -31,6 +33,7 @@
     "installed-check": "9.3.0",
     "knip": "5.58.1",
     "lint-staged": "16.1.0",
+    "node-modules-inspector": "^0.6.8",
     "prettier": "^3.5.3",
     "simple-git-hooks": "2.13.0",
     "typescript": "5.8.3",

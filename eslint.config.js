@@ -26,6 +26,7 @@ export default antfu({
   ignores: ["README.md", "packages/*/README.md"],
   files: ["./packages/**/*.ts"],
   rules: {
+    "antfu/if-newline": "off",
     "style/indent": "off",
     "style/brace-style": "off",
     "style/arrow-parens": "off",

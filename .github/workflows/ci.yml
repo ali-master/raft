@@ -3,10 +3,12 @@ name: ci
 on:
   pull_request:
     branches:
-      - main
+      - master
+      - develop
   push:
     branches:
-      - main
+      - master
+      - develop
 
 jobs:
   lint:
@@ -56,7 +58,7 @@ jobs:
         run: pnpm test:types
 
       - name: 🧪 Test project
-        run: pnpm test:unit --coverage
+        run: pnpm test:coverage
 
       - name: 🟩 Coverage
         uses: codecov/codecov-action@v5

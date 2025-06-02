@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.0.0",
   "packageManager": "pnpm@10.11.0",
-  "description": "Raft implementation in NodeJS for distributed systems.",
+  "description": "Production-ready Raft consensus for Node.js. Build distributed systems with leader election, fault tolerance, and data replication.",
   "author": {
     "name": "Ali Torki",
     "email": "ali_4286@live.com",
@@ -17,7 +17,13 @@
   },
   "keywords": [
     "raft",
+    "distributed-systems",
+    "leader-election",
+    "fault-tolerance",
+    "data-replication",
     "distributed",
+    "consensus-algorithm",
+    "distributed-consensus",
     "consensus",
     "nodejs",
     "javascript",
@@ -49,14 +55,18 @@
     "test:debug": "vitest --inspect-brk --pool forks --poolOptions.forks.singleFork",
     "test:debug:watch": "pnpm run test:debug --watch --poolOptions.threads.isolate false",
     "inspect": "node-modules-inspector",
-    "knip": "knip",
-    "knip:fix": "knip --fix",
-    "lint": "eslint .",
+    "test:types": "tsc --noEmit",
+    "test:knip": "knip",
+    "test:knip:fix": "knip --fix",
+    "format": "prettier --write \"**/*.ts\"",
+    "lint": "eslint \"src/**/*.ts\" --fix",
     "prepublishOnly": "pnpm lint && pnpm test",
     "release": "pnpm test && bumpp && pnpm publish"
   },
-  "publishConfig": {
-    "access": "public"
+  "peerDependencies": {
+    "ioredis": "^5",
+    "opossum": "^8",
+    "prom-client": "^15"
   },
   "dependencies": {
     "ioredis": "^5.6.1",
@@ -65,5 +75,8 @@
   },
   "devDependencies": {
     "@types/opossum": "^8.1.8"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
