@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./assets/logo-abstract.svg" alt="RAFT Logo" width="150" height="150" />
+  <img src="./assets/logo-alt.svg" alt="RAFT Logo" width="150" height="150" />
 
   <h1>RAFT</h1>
   <p><strong>Production-ready Raft consensus implementation for Node.js</strong></p>
