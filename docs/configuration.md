@@ -28,8 +28,10 @@ interface RaftConfiguration {
   heartbeatInterval: number;         // Milliseconds between heartbeats
   
   // Storage Limits
-  maxLogEntries?: number;            // Maximum log entries before snapshot
-  snapshotThreshold?: number;        // Entries before triggering snapshot
+  maxLogEntries?: number;            // Optional: Maximum log entries to keep in memory independent of snapshotting. (Not currently primary mechanism for log pruning, see snapshotThreshold)
+  snapshotThreshold?: number;        // Number of log entries accumulated in memory since the last snapshot
+                                     // before a new snapshot is automatically triggered. This is the primary
+                                     // mechanism for log-size-based snapshot creation.
   
   // Redis Configuration
   redis: RedisConfig;                // Redis connection settings
@@ -87,17 +89,36 @@ const config = {
   maxLogEntries: 10000,
   
   // Trigger snapshot after this many entries
-  snapshotThreshold: 1000,
+  snapshotThreshold: 1000, // Default: 1000 (from RaftEngine.createDefaultConfiguration).
+                           // This is the primary setting that determines how many log entries are
+                           // accumulated in memory before the Raft node attempts to create a new snapshot.
+                           // The check typically happens after a log entry is successfully appended.
   
   persistence: {
-    enableSnapshots: true,
-    snapshotInterval: 300000, // 5 minutes
-    dataDir: '/var/lib/raft',
-    walEnabled: true,
-    walSizeLimit: 104857600, // 100MB
+    enableSnapshots: true,     // Enables the snapshotting mechanism. Default: true.
+    snapshotInterval: 300000, // Default: 300000 ms (5 minutes).
+                              // This setting defines a time-based interval, in milliseconds, for creating snapshots.
+                              // Note: The current snapshot triggering is primarily based on `snapshotThreshold`.
+                              // A dedicated timer for this interval that proactively calls `maybeCreateSnapshot`
+                              // would be needed for purely time-based snapshots irrespective of log activity.
+                              // As of now, snapshots are created if `snapshotThreshold` is met OR if a
+                              // time-based mechanism (if one were added to periodically check) found it was due.
+    dataDir: '/var/lib/raft', // Directory for storing all persistent data, including:
+                              // - Write-Ahead Log (WAL) files (if `walEnabled` is true).
+                              // - Snapshot files (e.g., `snapshot-<term>-<index>.snap`).
+    walEnabled: true,         // Enables the Write-Ahead Log for log entry durability. Default: true.
+    walSizeLimit: 104857600,  // 100MB. A target for WAL size before it may be compacted or rotated.
   }
 };
 ```
+
+**Note on StateMachine for Snapshots:**
+
+For snapshot functionality to be operational, a `StateMachine` implementation must be provided to the `RaftNode` when it's created (e.g., via `RaftEngine.createNode(config, stateMachine)`). This `StateMachine` is responsible for:
+- Providing its current state when a snapshot is being created (via the `getSnapshotData` method).
+- Restoring its state from a snapshot when one is loaded on startup or received from a leader (via the `applySnapshot` method).
+
+Refer to the [Architecture Guide](./architecture.md#state-machine) for more details on the `StateMachine` interface and its role in the system.
 
 ## Redis Configuration
 
@@ -356,11 +377,12 @@ Configure data persistence and WAL:
 
 ```typescript
 interface PersistenceConfig {
-  enableSnapshots: boolean;      // Enable snapshots
-  snapshotInterval: number;      // Snapshot frequency
-  dataDir: string;              // Data directory
-  walEnabled: boolean;          // Enable Write-Ahead Log
-  walSizeLimit: number;         // WAL size limit
+  enableSnapshots: boolean;      // Enable/disable the snapshotting feature.
+  snapshotInterval: number;      // Time-based snapshot creation interval in milliseconds.
+                                 // See the note in the "Storage Configuration" example regarding current trigger mechanisms.
+  dataDir: string;              // Directory path for storing WAL (Write-Ahead Log) files and snapshot files.
+  walEnabled: boolean;          // Enable/disable the Write-Ahead Log for durable log storage.
+  walSizeLimit: number;         // Approximate maximum size limit for the WAL before compaction/rotation may occur.
 }
 ```
 

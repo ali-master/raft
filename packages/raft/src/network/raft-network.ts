@@ -8,6 +8,8 @@ import type {
   PeerInfo,
   AppendEntriesResponse,
   AppendEntriesRequest,
+  InstallSnapshotRequest,
+  InstallSnapshotResponse,
 } from "../types";
 import { MessageType } from "../constants";
 import { RaftNetworkException } from "../exceptions";
@@ -68,6 +70,17 @@ export class RaftNetwork {
     return this.sendRequestWithRetry(
       targetNodeId,
       MessageType.VOTE_REQUEST,
+      request,
+    );
+  }
+
+  public async sendInstallSnapshot(
+    targetNodeId: string,
+    request: InstallSnapshotRequest,
+  ): Promise<InstallSnapshotResponse> {
+    return this.sendRequestWithRetry(
+      targetNodeId,
+      MessageType.INSTALL_SNAPSHOT,
       request,
     );
   }

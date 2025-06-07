@@ -1,8 +1,15 @@
-import type { RaftConfiguration } from "./types";
+import type { RaftConfiguration, StateMachine } from "./types";
 import { LogLevel } from "./constants";
 import { RaftConfigurationException } from "./exceptions";
 import { RaftLogger } from "./services";
 import { RaftNode } from "./core";
+
+// A mock state machine for default configuration
+const defaultStateMachine: StateMachine = {
+  apply: async () => { /* no-op */ },
+  getSnapshotData: async () => Buffer.from(""),
+  applySnapshot: async () => { /* no-op */ },
+};
 
 export class RaftEngine {
   private readonly nodes: Map<string, RaftNode> = new Map();
@@ -17,14 +24,15 @@ export class RaftEngine {
     });
   }
 
-  public async createNode(config: RaftConfiguration): Promise<RaftNode> {
+  public async createNode(config: RaftConfiguration, stateMachine?: StateMachine): Promise<RaftNode> {
     if (this.nodes.has(config.nodeId)) {
       throw new RaftConfigurationException(
         `Node ${config.nodeId} already exists`,
       );
     }
 
-    const node = new RaftNode(config);
+    const sm = stateMachine || defaultStateMachine;
+    const node = new RaftNode(config, sm);
     this.nodes.set(config.nodeId, node);
 
     this.logger.info("Raft node created", {
@@ -75,6 +83,7 @@ export class RaftEngine {
   public static createDefaultConfiguration(
     nodeId: string,
     clusterId: string,
+    // StateMachine is not included here, will be defaulted in createNode
   ): RaftConfiguration {
     return {
       nodeId,

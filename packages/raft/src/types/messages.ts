@@ -28,3 +28,17 @@ export interface AppendEntriesResponse {
   success: boolean;
   lastLogIndex: number;
 }
+
+export interface InstallSnapshotRequest {
+  term: number;
+  leaderId: string;
+  lastIncludedIndex: number;
+  lastIncludedTerm: number;
+  offset: number;
+  data: Buffer;
+  done: boolean;
+}
+
+export interface InstallSnapshotResponse {
+  term: number;
+}
