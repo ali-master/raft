@@ -13,6 +13,7 @@ import type {
 } from "./wal-types";
 import { WALSegmentStatus, WALEntryType } from "./wal-types";
 import type { RaftLogger } from "../services";
+import { calculateChecksum } from "../utils";
 
 export class WALEngine extends EventEmitter {
   private readonly options: WALOptions;
@@ -434,9 +435,8 @@ export class WALEngine extends EventEmitter {
     if (!this.options.checksumEnabled) {
       return "";
     }
-    const hash = crypto.createHash("sha256");
-    hash.update(JSON.stringify(data));
-    return hash.digest("hex");
+
+    return calculateChecksum(data);
   }
 
   private verifyChecksum(entry: WALEntry): boolean {
