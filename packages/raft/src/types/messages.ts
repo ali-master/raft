@@ -59,13 +59,3 @@ export interface TimeoutNowRequest {
   term: number;     // Leader's current term
   leaderId: string; // Leader's ID
 }
-
-export interface TimeoutNowRequest {
-  term: number;     // Leader's current term
-  leaderId: string; // Leader's ID
-}
-
-export interface TimeoutNowRequest {
-  term: number;     // Leader's current term
-  leaderId: string; // Leader's ID
-}
