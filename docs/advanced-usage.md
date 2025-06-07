@@ -335,6 +335,42 @@ class DynamicMembership {
 }
 ```
 
+### Leadership Transfer
+
+The Raft library supports graceful leadership transfer, allowing an administrator or an automated process to request the current leader to step down and nominate a specific, up-to-date follower to become the new leader. This is particularly useful for planned maintenance on the leader node or for rebalancing leadership across the cluster.
+
+**How to Initiate a Transfer:**
+
+If you have a reference to the current leader `RaftNode` instance, you can call its `transferLeadership` method:
+
+```typescript
+// Assuming 'leaderNode' is the current leader and 'targetNodeId' is the ID of a peer.
+try {
+  await leaderNode.transferLeadership('target-node-id');
+  console.log(`Leadership transfer initiated to target-node-id`);
+} catch (error) {
+  console.error(`Leadership transfer failed: ${error.message}`);
+}
+```
+
+**Prerequisites:**
+1.  The node calling `transferLeadership` must currently be the LEADER.
+2.  The `targetPeerId` must be a recognized peer in the current active cluster configuration.
+3.  The target peer's log must be reasonably up-to-date with the leader's log. The `transferLeadership` method will attempt to send any missing entries to the target for a limited number of retries. If the target cannot be brought up-to-date quickly, the transfer will fail.
+
+**Expected Outcomes:**
+-   **Success:** The `TimeoutNowRequest` is successfully sent to the target peer, and the current leader transitions to the follower state. The target peer, upon receiving this request, will immediately start an election (bypassing the pre-vote phase) to become the new leader. The `transferLeadership` promise resolves after the current leader has sent the request and stepped down. It does not wait for the target to become the new leader, as that's a separate consensus process.
+-   **Failure:** The method will throw an error if:
+    *   The current node is not the leader.
+    *   The `targetPeerId` is invalid or not part of the current configuration.
+    *   The leader fails to bring the target peer's log up-to-date after several attempts.
+    *   The `TimeoutNowRequest` RPC fails to send to the target.
+
+**Use Cases:**
+-   **Planned Maintenance:** Transfer leadership away from a node before taking it offline for updates or hardware maintenance.
+-   **Rebalancing Leadership:** Periodically move leadership to different nodes to distribute load or ensure other nodes are capable of becoming leader.
+-   **Graceful Shutdown:** Before shutting down a leader node as part of a scaling-down event or cluster decommissioning.
+
 ### Removing Nodes Safely
 
 ```typescript

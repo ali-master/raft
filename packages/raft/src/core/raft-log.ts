@@ -199,9 +199,10 @@ export class RaftLog {
     // Returns the last index in the in-memory log.
     if (this.entries.length === 0) {
       // If log is empty, the last known index is one less than the starting index.
-      // If logStartIndex is 0 (never snapshotted, or fresh), return -1 to represent an empty log.
+      // If logStartIndex is 0 (never snapshotted, or fresh), then -1 might be returned.
+      // Raft typically expects lastLogIndex to be >= 0 for a non-empty log.
       // If logStartIndex is from a snapshot, e.g. 100, and entries is empty, last index is 99.
-      return this.logStartIndex > 0 ? this.logStartIndex - 1 : -1;
+      return this.logStartIndex > 0 ? this.logStartIndex -1 : 0;
     }
     return this.entries[this.entries.length - 1].index;
   }
