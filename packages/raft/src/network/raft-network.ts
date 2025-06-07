@@ -10,6 +10,9 @@ import type {
   AppendEntriesRequest,
   InstallSnapshotRequest,
   InstallSnapshotResponse,
+  PreVoteRequest,
+  PreVoteResponse,
+  TimeoutNowRequest, // Added
 } from "../types";
 import { MessageType } from "../constants";
 import { RaftNetworkException } from "../exceptions";
@@ -70,6 +73,28 @@ export class RaftNetwork {
     return this.sendRequestWithRetry(
       targetNodeId,
       MessageType.VOTE_REQUEST,
+      request,
+    );
+  }
+
+  public async sendTimeoutNowRequest(
+    targetNodeId: string,
+    request: TimeoutNowRequest,
+  ): Promise<void> { // Assuming no specific response, or a generic ack not strictly needed by caller
+    await this.sendRequestWithRetry<void>( // Type T is void if no meaningful response expected
+      targetNodeId,
+      MessageType.TIMEOUT_NOW_REQUEST, // Assuming this type will be added
+      request,
+    );
+  }
+
+  public async sendPreVoteRequest(
+    targetNodeId: string,
+    request: PreVoteRequest,
+  ): Promise<PreVoteResponse> {
+    return this.sendRequestWithRetry(
+      targetNodeId,
+      MessageType.PRE_VOTE_REQUEST, // Assuming this type will be added to MessageType enum
       request,
     );
   }

@@ -73,4 +73,8 @@ export enum MessageType {
   APPEND_ENTRIES_RESPONSE = "append_entries_response",
   INSTALL_SNAPSHOT = "install_snapshot",
   INSTALL_SNAPSHOT_RESPONSE = "install_snapshot_response",
+  PRE_VOTE_REQUEST = "pre_vote_request",
+  PRE_VOTE_RESPONSE = "pre_vote_response",
+  TIMEOUT_NOW_REQUEST = "timeout_now_request",
+  // No TIMEOUT_NOW_RESPONSE needed as per current design
 }

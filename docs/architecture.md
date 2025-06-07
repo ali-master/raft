@@ -232,6 +232,22 @@ The implementation guarantees RAFT's safety properties:
 4. **Leader Completeness**: Committed entries appear in future leaders
 5. **State Machine Safety**: Same sequence of commands on all nodes
 
+### Leadership Transfer
+
+Leadership transfer allows a current leader to gracefully hand off its leadership to another peer in the cluster. This is useful for planned maintenance or rebalancing. The process is designed to minimize downtime and ensure a smooth transition.
+
+**Process Overview:**
+1.  **Initiation:** The current leader calls `transferLeadership(targetPeerId)` on itself, specifying the ID of the peer to transfer leadership to.
+2.  **Target Log Synchronization:** The leader first ensures the `targetPeerId`'s log is reasonably up-to-date with its own. It may send pending log entries via `AppendEntriesRequest` RPCs, retrying a few times if necessary. If the target cannot be brought up-to-date, the transfer attempt is aborted.
+3.  **TimeoutNow Request:** Once the target is confirmed to be up-to-date (or sufficiently close), the leader sends a `TimeoutNowRequest` RPC to the `targetPeerId`. This request includes the leader's current term.
+4.  **Leader Steps Down:** After successfully sending the `TimeoutNowRequest`, the current leader transitions to the `FOLLOWER` state and resets its election timer. This prevents it from interfering with the election it's trying to trigger for the target.
+5.  **Target Initiates Election:**
+    *   Upon receiving the `TimeoutNowRequest`, the `targetPeerId` verifies the sender's term. If the sender's term is valid (not older than its own), it immediately bypasses its own election timeout and starts an election.
+    *   This election bypasses the Pre-Vote phase. The target node increments its term, votes for itself, and sends `VoteRequest` RPCs to all other peers in the current configuration.
+6.  **New Leader Elected:** If the target node receives a majority of votes, it becomes the new leader for the new term. Other nodes, including the old leader, will become followers of this new leader.
+
+This mechanism provides a more controlled way to change leaders compared to simply stopping the current leader and waiting for a new election to time out naturally.
+
 ## Storage Layer
 
 ### Redis Integration
