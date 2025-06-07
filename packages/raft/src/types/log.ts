@@ -1,6 +1,6 @@
 export enum RaftCommandType {
-  APPLICATION = 'APPLICATION', // For regular client commands
-  CHANGE_CONFIG = 'CHANGE_CONFIG',
+  APPLICATION = "APPLICATION", // For regular client commands
+  CHANGE_CONFIG = "CHANGE_CONFIG",
 }
 
 export interface LogEntry {

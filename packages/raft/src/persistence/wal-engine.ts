@@ -137,6 +137,51 @@ export class WALEngine extends EventEmitter {
     });
   }
 
+  public async truncateLogEntriesBefore(index: number): Promise<void> {
+    // Remove entries from in-memory storage
+    // We need to filter out LOG_ENTRY type entries with index < given index
+    for (let i = this.inMemoryEntries.length - 1; i >= 0; i--) {
+      const entry = this.inMemoryEntries[i]!;
+      if (
+        entry.type === WALEntryType.LOG_ENTRY &&
+        (entry.data as LogEntry).index < index
+      ) {
+        this.inMemoryEntries.splice(i, 1);
+      }
+    }
+
+    // For segments, we need to read and filter entries
+    // This is more complex as segments might contain mixed entries
+    // For now, we'll mark segments for compaction if they might contain
+    // entries before the given index
+    const segmentsToCheck: WALSegment[] = [];
+
+    for (const segment of this.segments.values()) {
+      // We'll need to check segments individually
+      segmentsToCheck.push(segment);
+    }
+
+    for (const segment of segmentsToCheck) {
+      const entries = await this.readSegment(segment);
+      const hasEntriesBeforeIndex = entries.some(
+        (entry) =>
+          entry.type === WALEntryType.LOG_ENTRY &&
+          (entry.data as LogEntry).index < index,
+      );
+
+      if (hasEntriesBeforeIndex) {
+        // Mark for compaction rather than immediate removal
+        segment.status = WALSegmentStatus.COMPACTED;
+        await this.updateSegmentMetadata(segment);
+      }
+    }
+
+    this.logger.info("WAL truncated log entries before index", {
+      beforeIndex: index,
+      segmentsMarkedForCompaction: segmentsToCheck.length,
+    });
+  }
+
   public async compact(): Promise<void> {
     const totalSize = await this.getTotalSize();
     if (totalSize < this.options.maxWalSize) {

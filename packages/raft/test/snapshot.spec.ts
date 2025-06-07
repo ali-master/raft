@@ -10,7 +10,7 @@ import { createTempDataDir, cleanupDataDir } from "./shared/utils/temp-dir";
 import { RaftNetwork } from "../src/network/raft-network";
 
 // Helper function to delay execution
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe("Snapshot Functionality", () => {
   let dataDir: string;
@@ -22,8 +22,8 @@ describe("Snapshot Functionality", () => {
     heartbeatInterval: 50,
     logging: { level: LogLevel.ERROR }, // Keep logs quiet for tests
     persistence: {
-        walEnabled: false, // For simplicity in these tests, focus on snapshot files
-    }
+      walEnabled: false, // For simplicity in these tests, focus on snapshot files
+    },
   };
 
   beforeEach(async () => {
@@ -70,16 +70,19 @@ describe("Snapshot Functionality", () => {
     await delay(config.electionTimeout[1] + 50);
     expect(node1.getState()).toBe(RaftState.LEADER);
 
-    const getSnapshotDataSpy = vi.spyOn(mockStateMachine1, 'getSnapshotData');
+    const getSnapshotDataSpy = vi.spyOn(mockStateMachine1, "getSnapshotData");
 
     for (let i = 0; i < totalEntries; i++) {
       await node1.appendLog({ command: `entry-${i}` });
-      if (i === snapshotThreshold -1) { // Snapshot should be triggered after this entry
+      if (i === snapshotThreshold - 1) {
+        // Snapshot should be triggered after this entry
         await delay(100); // Give time for snapshot creation
         expect(getSnapshotDataSpy).toHaveBeenCalled();
 
         const files = await fs.readdir(dataDir);
-        const snapshotFile = files.find(f => f.match(/^snapshot-\d+-\d+\.snap$/));
+        const snapshotFile = files.find((f) =>
+          f.match(/^snapshot-\d+-\d+\.snap$/),
+        );
         expect(snapshotFile).toBeDefined();
 
         //@ts-ignore access private member for test
@@ -100,14 +103,16 @@ describe("Snapshot Functionality", () => {
     const engine2 = new RaftEngine();
     const node2 = await engine2.createNode(config, mockStateMachine2);
 
-    const applySnapshotSpy = vi.spyOn(mockStateMachine2, 'applySnapshot');
+    const applySnapshotSpy = vi.spyOn(mockStateMachine2, "applySnapshot");
 
     await node2.start();
     await delay(config.electionTimeout[1] + 50); // Allow time to load snapshot and potentially become leader
 
     expect(applySnapshotSpy).toHaveBeenCalledOnce();
     expect(mockStateMachine2.snapshotApplied).toBe(true);
-    expect(mockStateMachine2.appliedSnapshotData?.toString()).toEqual(snapshotDataContent);
+    expect(mockStateMachine2.appliedSnapshotData?.toString()).toEqual(
+      snapshotDataContent,
+    );
 
     //@ts-ignore
     const loadedMeta = node2.latestSnapshotMeta;
@@ -163,8 +168,11 @@ describe("Snapshot Functionality", () => {
     // We need to spy on the RaftNetwork instance of the leader
     //@ts-ignore access private member for test
     const leaderNetwork = leaderNode.network as RaftNetwork;
-    const sendInstallSnapshotSpy = vi.spyOn(leaderNetwork, 'sendInstallSnapshot');
-    const followerApplySnapshotSpy = vi.spyOn(followerSM, 'applySnapshot');
+    const sendInstallSnapshotSpy = vi.spyOn(
+      leaderNetwork,
+      "sendInstallSnapshot",
+    );
+    const followerApplySnapshotSpy = vi.spyOn(followerSM, "applySnapshot");
 
     await leaderNode.start();
     await followerNode.start();
@@ -181,25 +189,35 @@ describe("Snapshot Functionality", () => {
 
     //@ts-ignore
     expect(leaderNode.latestSnapshotMeta).not.toBeNull();
-    const leaderSnapshotIndex = leaderNode.latestSnapshotMeta!.lastIncludedIndex;
-
+    const leaderSnapshotIndex =
+      leaderNode.latestSnapshotMeta!.lastIncludedIndex;
 
     // Trigger replication - a heartbeat or another append should do.
     // Sending another entry will ensure replication attempt.
-    await leaderNode.appendLog({ command: 'trigger-replication' });
-    await delay( (leaderConfig.heartbeatInterval * 3) + (leaderConfig.network!.requestTimeout * 2) ); // Wait for heartbeats and potential snapshot transfer
+    await leaderNode.appendLog({ command: "trigger-replication" });
+    await delay(
+      leaderConfig.heartbeatInterval * 3 +
+        leaderConfig.network!.requestTimeout * 2,
+    ); // Wait for heartbeats and potential snapshot transfer
 
-    expect(sendInstallSnapshotSpy).toHaveBeenCalledWith(followerConfig.nodeId, expect.anything());
+    expect(sendInstallSnapshotSpy).toHaveBeenCalledWith(
+      followerConfig.nodeId,
+      expect.anything(),
+    );
 
     const requestSent = sendInstallSnapshotSpy.mock.calls[0][1];
     expect(requestSent.lastIncludedIndex).toEqual(leaderSnapshotIndex);
 
     expect(followerApplySnapshotSpy).toHaveBeenCalledOnce();
     expect(followerSM.snapshotApplied).toBe(true);
-    expect(followerSM.appliedSnapshotData?.toString()).toEqual("leader_snapshot_data");
+    expect(followerSM.appliedSnapshotData?.toString()).toEqual(
+      "leader_snapshot_data",
+    );
 
     const followerFiles = await fs.readdir(followerDataDir);
-    const followerSnapshotFile = followerFiles.find(f => f.match(/^snapshot-\d+-\d+\.snap$/));
+    const followerSnapshotFile = followerFiles.find((f) =>
+      f.match(/^snapshot-\d+-\d+\.snap$/),
+    );
     expect(followerSnapshotFile).toBeDefined();
 
     //@ts-ignore
@@ -209,7 +227,9 @@ describe("Snapshot Functionality", () => {
 
     expect(followerNode.getCommitIndex()).toEqual(leaderSnapshotIndex);
     expect(followerNode.getLastApplied()).toEqual(leaderSnapshotIndex);
-    expect(followerNode.getLog().getFirstIndex()).toEqual(leaderSnapshotIndex + 1);
+    expect(followerNode.getLog().getFirstIndex()).toEqual(
+      leaderSnapshotIndex + 1,
+    );
 
     await leaderNode.stop();
     await followerNode.stop();

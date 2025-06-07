@@ -6,9 +6,13 @@ import { RaftNode } from "./core";
 
 // A mock state machine for default configuration
 const defaultStateMachine: StateMachine = {
-  apply: async () => { /* no-op */ },
+  apply: async () => {
+    /* no-op */
+  },
   getSnapshotData: async () => Buffer.from(""),
-  applySnapshot: async () => { /* no-op */ },
+  applySnapshot: async () => {
+    /* no-op */
+  },
 };
 
 export class RaftEngine {
@@ -24,7 +28,10 @@ export class RaftEngine {
     });
   }
 
-  public async createNode(config: RaftConfiguration, stateMachine?: StateMachine): Promise<RaftNode> {
+  public async createNode(
+    config: RaftConfiguration,
+    stateMachine?: StateMachine,
+  ): Promise<RaftNode> {
     if (this.nodes.has(config.nodeId)) {
       throw new RaftConfigurationException(
         `Node ${config.nodeId} already exists`,

@@ -1,9 +1,9 @@
-import { mkdtemp, rm } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
+import { mkdtemp, rm } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
 
 export async function createTempDataDir(): Promise<string> {
-  return mkdtemp(join(tmpdir(), 'raft-test-'));
+  return mkdtemp(join(tmpdir(), "raft-test-"));
 }
 
 export async function cleanupDataDir(dir: string): Promise<void> {

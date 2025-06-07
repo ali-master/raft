@@ -19,6 +19,7 @@ export interface WALSnapshot {
   lastIncludedTerm: number;
   data: Buffer;
   stateData?: Record<string, unknown>;
+  filePath?: string;
 }
 
 export interface WALMetadata {

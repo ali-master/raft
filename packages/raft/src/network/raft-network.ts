@@ -4,15 +4,15 @@ import CircuitBreaker from "opossum";
 import type {
   VoteResponse,
   VoteRequest,
+  TimeoutNowRequest,
   RaftConfiguration,
+  PreVoteResponse,
+  PreVoteRequest,
   PeerInfo,
+  InstallSnapshotResponse,
+  InstallSnapshotRequest,
   AppendEntriesResponse,
   AppendEntriesRequest,
-  InstallSnapshotRequest,
-  InstallSnapshotResponse,
-  PreVoteRequest,
-  PreVoteResponse,
-  TimeoutNowRequest, // Added
 } from "../types";
 import { MessageType } from "../constants";
 import { RaftNetworkException } from "../exceptions";
@@ -80,7 +80,8 @@ export class RaftNetwork {
   public async sendTimeoutNowRequest(
     targetNodeId: string,
     request: TimeoutNowRequest,
-  ): Promise<void> { // Assuming no specific response, or a generic ack not strictly needed by caller
+  ): Promise<void> {
+    // Assuming no specific response, or a generic ack not strictly needed by caller
     await this.sendRequestWithRetry<void>( // Type T is void if no meaningful response expected
       targetNodeId,
       MessageType.TIMEOUT_NOW_REQUEST, // Assuming this type will be added

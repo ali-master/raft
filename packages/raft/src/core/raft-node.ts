@@ -1,19 +1,20 @@
 import { EventEmitter } from "node:events";
 import Redis from "ioredis";
-import { RaftEvent } from "../types";
+import { RaftEvent, RaftCommandType } from "../types";
 import type {
   VoteResponse,
   VoteRequest,
+  TimeoutNowRequest,
+  StateMachine,
   RaftMetrics,
   RaftConfiguration,
-  PeerInfo,
-  AppendEntriesRequest,
-  ConfigurationChangePayload, // Added
-  LogEntry as RaftLogEntry, // Added to avoid naming conflict
-  RaftCommandType, // Added
-  PreVoteRequest,
   PreVoteResponse,
-  TimeoutNowRequest, // Added
+  PreVoteRequest,
+  PeerInfo,
+  InstallSnapshotResponse,
+  InstallSnapshotRequest,
+  ConfigurationChangePayload,
+  AppendEntriesRequest,
 } from "../types";
 import { RaftState, RaftEventType } from "../constants";
 import {
@@ -27,7 +28,6 @@ import { RaftLogger, RaftEventBus, PeerDiscoveryService } from "../services";
 import { VoteWeightCalculator, RaftMetricsCollector } from "../monitoring";
 import { RaftNetwork } from "../network";
 import { RaftLog } from "./raft-log";
-import type { StateMachine } from "../types/state-machine";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
@@ -61,7 +61,11 @@ export class RaftNode extends EventEmitter {
   private metricsTimer: NodeJS.Timeout | null = null;
 
   // Snapshot metadata
-  private latestSnapshotMeta: { lastIncludedIndex: number, lastIncludedTerm: number, filePath: string } | null = null;
+  private latestSnapshotMeta: {
+    lastIncludedIndex: number;
+    lastIncludedTerm: number;
+    filePath: string;
+  } | null = null;
 
   // Cluster Configuration State
   // Represents the currently active configuration. Can be C_old (simple array), C_joint (oldPeers/newPeers), or C_new (simple array).
@@ -128,14 +132,22 @@ export class RaftNode extends EventEmitter {
       // If activeConfiguration wasn't loaded from persisted state (e.g. fresh start),
       // initialize it based on discovered peers.
       // This ensures that even on a fresh start, the node knows its initial peers for consensus.
-      if (this.activeConfiguration.newPeers.length === 0 && (!this.activeConfiguration.oldPeers || this.activeConfiguration.oldPeers.length === 0)) {
+      if (
+        this.activeConfiguration.newPeers.length === 0 &&
+        (!this.activeConfiguration.oldPeers ||
+          this.activeConfiguration.oldPeers.length === 0)
+      ) {
         const discoveredPeers = this.peerDiscovery.getPeers();
         // Also include self in the initial configuration if not already via discovery
-        const initialPeers = Array.from(new Set([...discoveredPeers, this.config.nodeId]));
+        const initialPeers = Array.from(
+          new Set([...discoveredPeers, this.config.nodeId]),
+        );
         this.activeConfiguration = { newPeers: initialPeers };
-        this.logger.info("Initialized activeConfiguration with discovered peers", { peers: initialPeers });
+        this.logger.info(
+          "Initialized activeConfiguration with discovered peers",
+          { peers: initialPeers },
+        );
       }
-
 
       this.network.initializeCircuitBreakers();
 
@@ -201,11 +213,16 @@ export class RaftNode extends EventEmitter {
 
     try {
       // For regular app commands, commandType is APPLICATION
-      const index = await this.log.appendEntry(this.currentTerm, RaftCommandType.APPLICATION, applicationCommandPayload);
+      const index = await this.log.appendEntry(
+        this.currentTerm,
+        RaftCommandType.APPLICATION,
+        applicationCommandPayload,
+      );
       // TODO: this.lastApplied needs to be updated when entries are actually applied after commitment.
       // For now, this is just appending. The commit logic will handle majority checks.
 
-      this.publishEvent(RaftEventType.LOG_REPLICATED, { // This event might be premature here
+      this.publishEvent(RaftEventType.LOG_REPLICATED, {
+        // This event might be premature here
         index,
         commandPayload: applicationCommandPayload,
         term: this.currentTerm,
@@ -213,7 +230,6 @@ export class RaftNode extends EventEmitter {
 
       // Trigger replication to followers
       await this.replicateLogToFollowers();
-
 
       // After successfully appending and replicating, check for snapshotting
       // This might need to be tied to the actual commitment and application of the log entry.
@@ -225,7 +241,9 @@ export class RaftNode extends EventEmitter {
         error,
         nodeId: this.config.nodeId,
       });
-      throw new RaftReplicationException(`Failed to append application log: ${error}`);
+      throw new RaftReplicationException(
+        `Failed to append application log: ${error}`,
+      );
     }
   }
 
@@ -247,9 +265,17 @@ export class RaftNode extends EventEmitter {
 
   public getPeers(): string[] {
     // Returns the list of voting members based on the current phase of configuration change.
-    if (this.activeConfiguration.oldPeers && this.activeConfiguration.oldPeers.length > 0) {
+    if (
+      this.activeConfiguration.oldPeers &&
+      this.activeConfiguration.oldPeers.length > 0
+    ) {
       // Joint consensus: C_old,new. Voters are union of old and new.
-      return Array.from(new Set([...this.activeConfiguration.oldPeers, ...this.activeConfiguration.newPeers]));
+      return Array.from(
+        new Set([
+          ...this.activeConfiguration.oldPeers,
+          ...this.activeConfiguration.newPeers,
+        ]),
+      );
     }
     // Simple configuration: C_old or C_new.
     return [...this.activeConfiguration.newPeers];
@@ -260,8 +286,11 @@ export class RaftNode extends EventEmitter {
    * or the current set of peers if not in joint consensus.
    */
   private getOldConfigPeers(): string[] {
-    if (this.activeConfiguration.oldPeers && this.activeConfiguration.oldPeers.length > 0) {
-        return this.activeConfiguration.oldPeers;
+    if (
+      this.activeConfiguration.oldPeers &&
+      this.activeConfiguration.oldPeers.length > 0
+    ) {
+      return this.activeConfiguration.oldPeers;
     }
     return this.activeConfiguration.newPeers; // In C_new or initial C_old state
   }
@@ -272,7 +301,6 @@ export class RaftNode extends EventEmitter {
   private getNewConfigPeers(): string[] {
     return this.activeConfiguration.newPeers;
   }
-
 
   public getPeerInfo(nodeId: string): PeerInfo | undefined {
     return this.peerDiscovery.getPeerInfo(nodeId);
@@ -363,73 +391,126 @@ export class RaftNode extends EventEmitter {
     return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 
-  private async startElection(triggeredByTimeoutNow: boolean = false): Promise<void> {
+  private async startElection(
+    triggeredByTimeoutNow: boolean = false,
+  ): Promise<void> {
     if (!triggeredByTimeoutNow) {
-        this.logger.info("Election timer elapsed, starting Pre-Vote phase.", { nodeId: this.config.nodeId, currentTerm: this.currentTerm });
-        // Pre-Vote Phase logic (already implemented)
-        const prospectiveTermPreVote = this.currentTerm + 1;
-        const preVoteRequest: PreVoteRequest = {
-            term: prospectiveTermPreVote,
-            candidateId: this.config.nodeId,
-            lastLogIndex: this.log.getLastIndex(),
-            lastLogTerm: this.log.getLastTerm(),
-        };
+      this.logger.info("Election timer elapsed, starting Pre-Vote phase.", {
+        nodeId: this.config.nodeId,
+        currentTerm: this.currentTerm,
+      });
+      // Pre-Vote Phase logic (already implemented)
+      const prospectiveTermPreVote = this.currentTerm + 1;
+      const preVoteRequest: PreVoteRequest = {
+        term: prospectiveTermPreVote,
+        candidateId: this.config.nodeId,
+        lastLogIndex: this.log.getLastIndex(),
+        lastLogTerm: this.log.getLastTerm(),
+      };
 
-        const otherPeers = this.getPeers().filter(p => p !== this.config.nodeId);
-        if (otherPeers.length === 0 && this.getPeers().includes(this.config.nodeId) && this.getPeers().length === 1) {
-            this.logger.info("Single node cluster, proceeding directly to election (no Pre-Vote needed).", { nodeId: this.config.nodeId });
-        } else if (otherPeers.length > 0) {
-            const preVotePromises = otherPeers.map(peerId =>
-                this.network.sendPreVoteRequest(peerId, preVoteRequest).catch(err => {
-                    this.logger.warn("PreVoteRequest failed to send or errored", { peerId, error: err });
-                    return { term: this.currentTerm, voteGranted: false };
-                })
+      const otherPeers = this.getPeers().filter(
+        (p) => p !== this.config.nodeId,
+      );
+      if (
+        otherPeers.length === 0 &&
+        this.getPeers().includes(this.config.nodeId) &&
+        this.getPeers().length === 1
+      ) {
+        this.logger.info(
+          "Single node cluster, proceeding directly to election (no Pre-Vote needed).",
+          { nodeId: this.config.nodeId },
+        );
+      } else if (otherPeers.length > 0) {
+        const preVotePromises = otherPeers.map((peerId) =>
+          this.network
+            .sendPreVoteRequest(peerId, preVoteRequest)
+            .catch((err) => {
+              this.logger.warn("PreVoteRequest failed to send or errored", {
+                peerId,
+                error: err,
+              });
+              return { term: this.currentTerm, voteGranted: false };
+            }),
+        );
+        const preVoteResponses = await Promise.all(preVotePromises);
+        let grantedPreVotes = this.getPeers().includes(this.config.nodeId)
+          ? 1
+          : 0;
+
+        for (const response of preVoteResponses) {
+          if (response.voteGranted) grantedPreVotes++;
+          if (response.term > this.currentTerm) {
+            this.logger.info(
+              "Discovered higher term during Pre-Vote. Transitioning to follower.",
+              { peerTerm: response.term, myTerm: this.currentTerm },
             );
-            const preVoteResponses = await Promise.all(preVotePromises);
-            let grantedPreVotes = this.getPeers().includes(this.config.nodeId) ? 1 : 0;
-
-            for (const response of preVoteResponses) {
-                if (response.voteGranted) grantedPreVotes++;
-                if (response.term > this.currentTerm) {
-                    this.logger.info("Discovered higher term during Pre-Vote. Transitioning to follower.", { peerTerm: response.term, myTerm: this.currentTerm });
-                    await this.becomeFollower(response.term);
-                    return;
-                }
-            }
-
-            let preVoteMajorityAchieved = false;
-            if (this.activeConfiguration.oldPeers && this.activeConfiguration.oldPeers.length > 0) {
-                const oldConfigPeers = this.getOldConfigPeers();
-                const newConfigPeers = this.getNewConfigPeers();
-                let preVotesFromOld = oldConfigPeers.includes(this.config.nodeId) ? 1 : 0;
-                let preVotesFromNew = newConfigPeers.includes(this.config.nodeId) ? 1 : 0;
-
-                preVoteResponses.forEach((response, index) => {
-                    if (response.voteGranted) {
-                        const peerId = otherPeers[index];
-                        if (oldConfigPeers.includes(peerId)) preVotesFromOld++;
-                        if (newConfigPeers.includes(peerId)) preVotesFromNew++;
-                    }
-                });
-                preVoteMajorityAchieved = (preVotesFromOld >= Math.floor(oldConfigPeers.length / 2) + 1) &&
-                                          (preVotesFromNew >= Math.floor(newConfigPeers.length / 2) + 1);
-                this.logger.info("Pre-Vote counts (Joint Consensus):", { preVotesFromOld, oldConfigSize: oldConfigPeers.length, preVotesFromNew, newConfigSize: newConfigPeers.length, achieved: preVoteMajorityAchieved });
-            } else {
-                const currentConfigPeers = this.getNewConfigPeers();
-                const requiredPreVotes = Math.floor(currentConfigPeers.length / 2) + 1;
-                preVoteMajorityAchieved = grantedPreVotes >= requiredPreVotes;
-                this.logger.info("Pre-Vote counts (Simple Consensus):", { grantedPreVotes, required: requiredPreVotes, configSize: currentConfigPeers.length, achieved: preVoteMajorityAchieved });
-            }
-
-            if (!preVoteMajorityAchieved) {
-                this.logger.info("Pre-Vote majority not achieved. Remaining Follower and resetting election timer.", { nodeId: this.config.nodeId });
-                this.startElectionTimer();
-                return;
-            }
-            this.logger.info("Pre-Vote majority achieved. Proceeding to actual election.", { nodeId: this.config.nodeId });
+            await this.becomeFollower(response.term);
+            return;
+          }
         }
+
+        let preVoteMajorityAchieved = false;
+        if (
+          this.activeConfiguration.oldPeers &&
+          this.activeConfiguration.oldPeers.length > 0
+        ) {
+          const oldConfigPeers = this.getOldConfigPeers();
+          const newConfigPeers = this.getNewConfigPeers();
+          let preVotesFromOld = oldConfigPeers.includes(this.config.nodeId)
+            ? 1
+            : 0;
+          let preVotesFromNew = newConfigPeers.includes(this.config.nodeId)
+            ? 1
+            : 0;
+
+          preVoteResponses.forEach((response, index) => {
+            if (response.voteGranted) {
+              const peerId = otherPeers[index];
+              if (oldConfigPeers.includes(peerId!)) preVotesFromOld++;
+              if (newConfigPeers.includes(peerId!)) preVotesFromNew++;
+            }
+          });
+          preVoteMajorityAchieved =
+            preVotesFromOld >= Math.floor(oldConfigPeers.length / 2) + 1 &&
+            preVotesFromNew >= Math.floor(newConfigPeers.length / 2) + 1;
+          this.logger.info("Pre-Vote counts (Joint Consensus):", {
+            preVotesFromOld,
+            oldConfigSize: oldConfigPeers.length,
+            preVotesFromNew,
+            newConfigSize: newConfigPeers.length,
+            achieved: preVoteMajorityAchieved,
+          });
+        } else {
+          const currentConfigPeers = this.getNewConfigPeers();
+          const requiredPreVotes =
+            Math.floor(currentConfigPeers.length / 2) + 1;
+          preVoteMajorityAchieved = grantedPreVotes >= requiredPreVotes;
+          this.logger.info("Pre-Vote counts (Simple Consensus):", {
+            grantedPreVotes,
+            required: requiredPreVotes,
+            configSize: currentConfigPeers.length,
+            achieved: preVoteMajorityAchieved,
+          });
+        }
+
+        if (!preVoteMajorityAchieved) {
+          this.logger.info(
+            "Pre-Vote majority not achieved. Remaining Follower and resetting election timer.",
+            { nodeId: this.config.nodeId },
+          );
+          this.startElectionTimer();
+          return;
+        }
+        this.logger.info(
+          "Pre-Vote majority achieved. Proceeding to actual election.",
+          { nodeId: this.config.nodeId },
+        );
+      }
     } else {
-        this.logger.info("Election triggered by TimeoutNow, bypassing Pre-Vote.", { nodeId: this.config.nodeId });
+      this.logger.info(
+        "Election triggered by TimeoutNow, bypassing Pre-Vote.",
+        { nodeId: this.config.nodeId },
+      );
     }
 
     // Actual Election Phase
@@ -442,74 +523,112 @@ export class RaftNode extends EventEmitter {
     };
 
     // Send PreVoteRequests to all *other* peers in the current configuration
-    const otherPeers = this.getPeers().filter(p => p !== this.config.nodeId);
-    if (otherPeers.length === 0 && this.getPeers().includes(this.config.nodeId) && this.getPeers().length ===1) {
-        this.logger.info("Single node cluster, proceeding directly to election (no Pre-Vote needed).", { nodeId: this.config.nodeId });
-        // Fall through to actual election phase for single node cluster
+    const otherPeers = this.getPeers().filter((p) => p !== this.config.nodeId);
+    if (
+      otherPeers.length === 0 &&
+      this.getPeers().includes(this.config.nodeId) &&
+      this.getPeers().length === 1
+    ) {
+      this.logger.info(
+        "Single node cluster, proceeding directly to election (no Pre-Vote needed).",
+        { nodeId: this.config.nodeId },
+      );
+      // Fall through to actual election phase for single node cluster
     } else if (otherPeers.length > 0) {
-        const preVotePromises = otherPeers.map(peerId =>
-            this.network.sendPreVoteRequest(peerId, preVoteRequest).catch(err => {
-                this.logger.warn("PreVoteRequest failed to send or errored", { peerId, error: err });
-                return { term: this.currentTerm, voteGranted: false }; // Treat errors as non-votes
-            })
+      const preVotePromises = otherPeers.map((peerId) =>
+        this.network.sendPreVoteRequest(peerId, preVoteRequest).catch((err) => {
+          this.logger.warn("PreVoteRequest failed to send or errored", {
+            peerId,
+            error: err,
+          });
+          return { term: this.currentTerm, voteGranted: false }; // Treat errors as non-votes
+        }),
+      );
+      const preVoteResponses = await Promise.all(preVotePromises);
+
+      let grantedPreVotes = 0;
+      // Self-vote is implicitly granted for pre-vote counting if node is part of config
+      if (this.getPeers().includes(this.config.nodeId)) {
+        grantedPreVotes = 1;
+      }
+
+      for (const response of preVoteResponses) {
+        if (response.voteGranted) {
+          grantedPreVotes++;
+        }
+        if (response.term > this.currentTerm) {
+          // A peer is in a higher term. We should not proceed with election.
+          // Become follower with that term.
+          this.logger.info(
+            "Discovered higher term during Pre-Vote. Transitioning to follower.",
+            { peerTerm: response.term, myTerm: this.currentTerm },
+          );
+          await this.becomeFollower(response.term); // This will also reset the election timer.
+          return;
+        }
+      }
+
+      // Check for majority based on activeConfiguration (joint or simple)
+      let preVoteMajorityAchieved = false;
+      if (
+        this.activeConfiguration.oldPeers &&
+        this.activeConfiguration.oldPeers.length > 0
+      ) {
+        // Joint Consensus
+        const oldConfigPeers = this.getOldConfigPeers();
+        const newConfigPeers = this.getNewConfigPeers();
+        let preVotesFromOld =
+          this.config.nodeId && oldConfigPeers.includes(this.config.nodeId)
+            ? 1
+            : 0;
+        let preVotesFromNew =
+          this.config.nodeId && newConfigPeers.includes(this.config.nodeId)
+            ? 1
+            : 0;
+
+        preVoteResponses.forEach((response, index) => {
+          if (response.voteGranted) {
+            const peerId = otherPeers[index];
+            if (oldConfigPeers.includes(peerId!)) preVotesFromOld++;
+            if (newConfigPeers.includes(peerId!)) preVotesFromNew++;
+          }
+        });
+        preVoteMajorityAchieved =
+          preVotesFromOld >= Math.floor(oldConfigPeers.length / 2) + 1 &&
+          preVotesFromNew >= Math.floor(newConfigPeers.length / 2) + 1;
+        this.logger.info("Pre-Vote counts (Joint Consensus):", {
+          preVotesFromOld,
+          oldConfigSize: oldConfigPeers.length,
+          preVotesFromNew,
+          newConfigSize: newConfigPeers.length,
+          achieved: preVoteMajorityAchieved,
+        });
+      } else {
+        // Simple Consensus
+        const currentConfigPeers = this.getNewConfigPeers();
+        const requiredPreVotes = Math.floor(currentConfigPeers.length / 2) + 1;
+        preVoteMajorityAchieved = grantedPreVotes >= requiredPreVotes;
+        this.logger.info("Pre-Vote counts (Simple Consensus):", {
+          grantedPreVotes,
+          required: requiredPreVotes,
+          configSize: currentConfigPeers.length,
+          achieved: preVoteMajorityAchieved,
+        });
+      }
+
+      if (!preVoteMajorityAchieved) {
+        this.logger.info(
+          "Pre-Vote majority not achieved. Remaining Follower and resetting election timer.",
+          { nodeId: this.config.nodeId },
         );
-        const preVoteResponses = await Promise.all(preVotePromises);
-
-        let grantedPreVotes = 0;
-        // Self-vote is implicitly granted for pre-vote counting if node is part of config
-        if (this.getPeers().includes(this.config.nodeId)) {
-            grantedPreVotes = 1;
-        }
-
-        for (const response of preVoteResponses) {
-            if (response.voteGranted) {
-                grantedPreVotes++;
-            }
-            if (response.term > this.currentTerm) {
-                // A peer is in a higher term. We should not proceed with election.
-                // Become follower with that term.
-                this.logger.info("Discovered higher term during Pre-Vote. Transitioning to follower.", { peerTerm: response.term, myTerm: this.currentTerm });
-                await this.becomeFollower(response.term); // This will also reset the election timer.
-                return;
-            }
-        }
-
-        // Check for majority based on activeConfiguration (joint or simple)
-        let preVoteMajorityAchieved = false;
-        if (this.activeConfiguration.oldPeers && this.activeConfiguration.oldPeers.length > 0) {
-            // Joint Consensus
-            const oldConfigPeers = this.getOldConfigPeers();
-            const newConfigPeers = this.getNewConfigPeers();
-            let preVotesFromOld = this.config.nodeId && oldConfigPeers.includes(this.config.nodeId) ? 1:0;
-            let preVotesFromNew = this.config.nodeId && newConfigPeers.includes(this.config.nodeId) ? 1:0;
-
-            preVoteResponses.forEach((response, index) => {
-                if (response.voteGranted) {
-                    const peerId = otherPeers[index];
-                    if (oldConfigPeers.includes(peerId)) preVotesFromOld++;
-                    if (newConfigPeers.includes(peerId)) preVotesFromNew++;
-                }
-            });
-            preVoteMajorityAchieved = (preVotesFromOld >= Math.floor(oldConfigPeers.length / 2) + 1) &&
-                                      (preVotesFromNew >= Math.floor(newConfigPeers.length / 2) + 1);
-            this.logger.info("Pre-Vote counts (Joint Consensus):", { preVotesFromOld, oldConfigSize: oldConfigPeers.length, preVotesFromNew, newConfigSize: newConfigPeers.length, achieved: preVoteMajorityAchieved });
-        } else {
-            // Simple Consensus
-            const currentConfigPeers = this.getNewConfigPeers();
-            const requiredPreVotes = Math.floor(currentConfigPeers.length / 2) + 1;
-            preVoteMajorityAchieved = grantedPreVotes >= requiredPreVotes;
-            this.logger.info("Pre-Vote counts (Simple Consensus):", { grantedPreVotes, required: requiredPreVotes, configSize: currentConfigPeers.length, achieved: preVoteMajorityAchieved });
-        }
-
-
-        if (!preVoteMajorityAchieved) {
-            this.logger.info("Pre-Vote majority not achieved. Remaining Follower and resetting election timer.", { nodeId: this.config.nodeId });
-            this.startElectionTimer(); // Reset timer and remain follower
-            return;
-        }
-        this.logger.info("Pre-Vote majority achieved. Proceeding to actual election.", { nodeId: this.config.nodeId });
+        this.startElectionTimer(); // Reset timer and remain follower
+        return;
+      }
+      this.logger.info(
+        "Pre-Vote majority achieved. Proceeding to actual election.",
+        { nodeId: this.config.nodeId },
+      );
     }
-
 
     try {
       this.state = RaftState.CANDIDATE;
@@ -518,30 +637,31 @@ export class RaftNode extends EventEmitter {
       // The `prospectiveTerm` for pre-vote was `this.currentTerm + 1`.
       // If pre-vote was skipped (single node or TimeoutNow), we must increment here.
       // If pre-vote passed, `this.currentTerm` is still the old term.
-      if (!triggeredByTimeoutNow) { // If pre-vote path was taken or single node
-          this.currentTerm = this.currentTerm + 1;
+      if (!triggeredByTimeoutNow) {
+        // If pre-vote path was taken or single node
+        this.currentTerm = this.currentTerm + 1;
       } else {
-          // For TimeoutNow, if request.term was > currentTerm, currentTerm was updated.
-          // If request.term == currentTerm, we need to increment it here.
-          // startElection is called by handleTimeoutNowRequest *after* term alignment or if term was already aligned.
-          // The handler for TimeoutNow will call startElection. It should ensure term is correct.
-          // Let's assume handleTimeoutNowRequest handles term increment appropriately before calling startElection(true)
-          // Or, more simply, if triggered by TimeoutNow, the handler should set the term.
-          // For now, let's ensure it increments if it's still the same as before this flow started.
-          // A specific check: if called by TimeoutNow, the term IS this.currentTerm +1, or already set higher.
-          // The main thing is that `this.currentTerm` for VoteRequest should be the new, higher term.
-          // The handler `handleTimeoutNowRequest` will call `becomeFollower(request.term)` if `request.term > this.currentTerm`.
-          // Then it will call `startElection(true, request.term)`. So `startElection` needs to accept the target term.
-          // This is getting complex. Simpler: `handleTimeoutNowRequest` ensures `this.currentTerm` is set to `request.term`
-          // (if `request.term > this.currentTerm`) or `this.currentTerm + 1` (if `request.term == this.currentTerm`)
-          // *before* calling `startElection(true)`.
-          // So, `startElection` when `triggeredByTimeoutNow` can assume `this.currentTerm` is already the prospective term.
-          // No, the standard is: candidate increments its term.
-          // If triggeredByTimeoutNow, the term should be incremented.
-          // If this.currentTerm was already updated by a TimeoutNow request with a higher term, that's fine.
-          // If TimeoutNow request had same term, we MUST increment.
-          // The `prospectiveTerm` variable isn't available here.
-          // This means `handleTimeoutNowRequest` MUST set `this.currentTerm` to the term it will campaign in.
+        // For TimeoutNow, if request.term was > currentTerm, currentTerm was updated.
+        // If request.term == currentTerm, we need to increment it here.
+        // startElection is called by handleTimeoutNowRequest *after* term alignment or if term was already aligned.
+        // The handler for TimeoutNow will call startElection. It should ensure term is correct.
+        // Let's assume handleTimeoutNowRequest handles term increment appropriately before calling startElection(true)
+        // Or, more simply, if triggered by TimeoutNow, the handler should set the term.
+        // For now, let's ensure it increments if it's still the same as before this flow started.
+        // A specific check: if called by TimeoutNow, the term IS this.currentTerm +1, or already set higher.
+        // The main thing is that `this.currentTerm` for VoteRequest should be the new, higher term.
+        // The handler `handleTimeoutNowRequest` will call `becomeFollower(request.term)` if `request.term > this.currentTerm`.
+        // Then it will call `startElection(true, request.term)`. So `startElection` needs to accept the target term.
+        // This is getting complex. Simpler: `handleTimeoutNowRequest` ensures `this.currentTerm` is set to `request.term`
+        // (if `request.term > this.currentTerm`) or `this.currentTerm + 1` (if `request.term == this.currentTerm`)
+        // *before* calling `startElection(true)`.
+        // So, `startElection` when `triggeredByTimeoutNow` can assume `this.currentTerm` is already the prospective term.
+        // No, the standard is: candidate increments its term.
+        // If triggeredByTimeoutNow, the term should be incremented.
+        // If this.currentTerm was already updated by a TimeoutNow request with a higher term, that's fine.
+        // If TimeoutNow request had same term, we MUST increment.
+        // The `prospectiveTerm` variable isn't available here.
+        // This means `handleTimeoutNowRequest` MUST set `this.currentTerm` to the term it will campaign in.
       }
       // The logic from pre-vote already set `this.currentTerm = prospectiveTerm` if pre-vote passed.
       // If pre-vote was skipped for single node, `prospectiveTerm` is `this.currentTerm + 1`.
@@ -578,7 +698,10 @@ export class RaftNode extends EventEmitter {
 
       const votes = await this.requestVotes();
 
-      if (this.activeConfiguration.oldPeers && this.activeConfiguration.oldPeers.length > 0) {
+      if (
+        this.activeConfiguration.oldPeers &&
+        this.activeConfiguration.oldPeers.length > 0
+      ) {
         // Joint Consensus: C_old,new
         // Candidate needs to win majority in C_old AND C_new
         const oldConfigPeers = this.getOldConfigPeers();
@@ -589,9 +712,10 @@ export class RaftNode extends EventEmitter {
         // For unweighted votes (defaultWeight = 1, enableWeighting = false), it's simpler:
         let votesFromOld = 0;
         let votesFromNew = 0;
-        if (this.votedFor === this.config.nodeId) { // Self-vote
-            if (oldConfigPeers.includes(this.config.nodeId)) votesFromOld++;
-            if (newConfigPeers.includes(this.config.nodeId)) votesFromNew++;
+        if (this.votedFor === this.config.nodeId) {
+          // Self-vote
+          if (oldConfigPeers.includes(this.config.nodeId)) votesFromOld++;
+          if (newConfigPeers.includes(this.config.nodeId)) votesFromNew++;
         }
 
         for (const [voterId, voteResponse] of votes.entries()) {
@@ -601,10 +725,19 @@ export class RaftNode extends EventEmitter {
           }
         }
 
-        const oldMajorityAchieved = votesFromOld >= Math.floor(oldConfigPeers.length / 2) + 1;
-        const newMajorityAchieved = votesFromNew >= Math.floor(newConfigPeers.length / 2) + 1;
+        const oldMajorityAchieved =
+          votesFromOld >= Math.floor(oldConfigPeers.length / 2) + 1;
+        const newMajorityAchieved =
+          votesFromNew >= Math.floor(newConfigPeers.length / 2) + 1;
 
-        this.logger.info("Election vote counts in joint consensus:", { votesFromOld, oldConfigSize: oldConfigPeers.length, oldMajorityAchieved, votesFromNew, newConfigSize: newConfigPeers.length, newMajorityAchieved });
+        this.logger.info("Election vote counts in joint consensus:", {
+          votesFromOld,
+          oldConfigSize: oldConfigPeers.length,
+          oldMajorityAchieved,
+          votesFromNew,
+          newConfigSize: newConfigPeers.length,
+          newMajorityAchieved,
+        });
 
         if (oldMajorityAchieved && newMajorityAchieved) {
           await this.becomeLeader();
@@ -620,10 +753,14 @@ export class RaftNode extends EventEmitter {
         let receivedVotes = 0;
         if (this.votedFor === this.config.nodeId) receivedVotes++; // Self-vote
         for (const voteResponse of votes.values()) {
-            if (voteResponse.voteGranted) receivedVotes++;
+          if (voteResponse.voteGranted) receivedVotes++;
         }
         const majorityCount = Math.floor(currentPeers.length / 2) + 1;
-        this.logger.info("Election vote counts in simple consensus:", { receivedVotes, currentConfigSize: currentPeers.length, majorityCount });
+        this.logger.info("Election vote counts in simple consensus:", {
+          receivedVotes,
+          currentConfigSize: currentPeers.length,
+          majorityCount,
+        });
 
         if (receivedVotes >= majorityCount) {
           await this.becomeLeader();
@@ -874,13 +1011,13 @@ export class RaftNode extends EventEmitter {
 
         // Leader advances its own commit index based on matchIndex from all (relevant) followers
         await this.advanceCommitIndex();
-
       } else {
         // If AppendEntries fails because of log inconsistency, decrement nextIndex for that follower and retry.
         // This is standard Raft log catch-up.
-        if (response.term === this.currentTerm) { // Only decrement if it's a log mismatch, not a term issue
-            const currentNext = this.nextIndex.get(peerId) || 0;
-            this.nextIndex.set(peerId, Math.max(0, currentNext - 1));
+        if (response.term === this.currentTerm) {
+          // Only decrement if it's a log mismatch, not a term issue
+          const currentNext = this.nextIndex.get(peerId) || 0;
+          this.nextIndex.set(peerId, Math.max(0, currentNext - 1));
         }
         // If it falls behind the first log index, the next attempt (e.g. next heartbeat) will send a snapshot.
         // If it falls behind the first log index, the next attempt will send a snapshot.
@@ -888,7 +1025,10 @@ export class RaftNode extends EventEmitter {
         this.nextIndex.set(peerId, Math.max(0, currentNext - 1));
         // No immediate retry here, will be picked up by next heartbeat or replication cycle.
         // If we wanted to immediately retry: await this.replicateLogToPeer(peerId);
-        this.logger.info(`Log replication failed for peer ${peerId}, nextIndex decremented to ${this.nextIndex.get(peerId)}. Will retry or send snapshot.`, { nodeId: this.config.nodeId });
+        this.logger.info(
+          `Log replication failed for peer ${peerId}, nextIndex decremented to ${this.nextIndex.get(peerId)}. Will retry or send snapshot.`,
+          { nodeId: this.config.nodeId },
+        );
       }
     } catch (error) {
       this.logger.warn("Failed to replicate log to peer", { peerId, error });
@@ -908,19 +1048,27 @@ export class RaftNode extends EventEmitter {
         this.lastApplied = state.lastApplied || 0;
         if (state.activeConfiguration) {
           this.activeConfiguration = state.activeConfiguration;
-          this.logger.info("Loaded activeConfiguration from persisted state", { config: this.activeConfiguration });
+          this.logger.info("Loaded activeConfiguration from persisted state", {
+            config: this.activeConfiguration,
+          });
         } else {
           // Initialize if not found in persisted state (e.g. older version or fresh start)
-           this.activeConfiguration = { newPeers: this.config.peers || [] };
-           if (this.activeConfiguration.newPeers.length === 0) {
-             // If config.peers is also empty, this will be populated by peerDiscovery later in start()
-             this.logger.info("No activeConfiguration in persisted state, initialized to empty/config peers.", { peers: this.config.peers });
-           }
+          this.activeConfiguration = { newPeers: this.config.peers || [] };
+          if (this.activeConfiguration.newPeers.length === 0) {
+            // If config.peers is also empty, this will be populated by peerDiscovery later in start()
+            this.logger.info(
+              "No activeConfiguration in persisted state, initialized to empty/config peers.",
+              { peers: this.config.peers },
+            );
+          }
         }
       } else {
         // Default initialization if no state is persisted (e.g. very first start)
         this.activeConfiguration = { newPeers: this.config.peers || [] };
-        this.logger.info("No persisted state found, initialized activeConfiguration based on config.peers.", { peers: this.config.peers });
+        this.logger.info(
+          "No persisted state found, initialized activeConfiguration based on config.peers.",
+          { peers: this.config.peers },
+        );
       }
     } catch (error) {
       this.logger.warn("Failed to load persisted state", {
@@ -987,7 +1135,7 @@ export class RaftNode extends EventEmitter {
   }
 
   private async maybeCreateSnapshot(): Promise<void> {
-    if (this.log.getLength() > this.config.snapshotThreshold) {
+    if (this.log.getLength() > this.config.snapshotThreshold!) {
       await this.createSnapshot();
     }
   }
@@ -1003,7 +1151,9 @@ export class RaftNode extends EventEmitter {
       const snapshotFilePath = path.join(snapshotDir, snapshotFileName);
 
       // Store the path of the *previous* snapshot before updating latestSnapshotMeta
-      const previousSnapshotFilePath = this.latestSnapshotMeta ? this.latestSnapshotMeta.filePath : null;
+      const previousSnapshotFilePath = this.latestSnapshotMeta
+        ? this.latestSnapshotMeta.filePath
+        : null;
 
       await fs.mkdir(snapshotDir, { recursive: true });
       await fs.writeFile(snapshotFilePath, snapshotData);
@@ -1023,15 +1173,27 @@ export class RaftNode extends EventEmitter {
 
       // The RaftLog's createSnapshot is for WAL integration.
       // Pass metadata (like filePath) instead of the full snapshotData.
-      await this.log.createSnapshot(lastIncludedIndex, lastIncludedTerm, snapshotFilePath);
+      await this.log.createSnapshot(
+        lastIncludedIndex,
+        lastIncludedTerm,
+        snapshotFilePath,
+      );
 
       // Clean up the immediately preceding snapshot file created by this node
-      if (previousSnapshotFilePath && previousSnapshotFilePath !== snapshotFilePath) {
+      if (
+        previousSnapshotFilePath &&
+        previousSnapshotFilePath !== snapshotFilePath
+      ) {
         try {
           await fs.unlink(previousSnapshotFilePath);
-          this.logger.info("Successfully deleted previous snapshot file", { deletedPath: previousSnapshotFilePath });
+          this.logger.info("Successfully deleted previous snapshot file", {
+            deletedPath: previousSnapshotFilePath,
+          });
         } catch (unlinkError) {
-          this.logger.warn("Failed to delete previous snapshot file", { path: previousSnapshotFilePath, error: unlinkError });
+          this.logger.warn("Failed to delete previous snapshot file", {
+            path: previousSnapshotFilePath,
+            error: unlinkError,
+          });
         }
       }
 
@@ -1039,11 +1201,14 @@ export class RaftNode extends EventEmitter {
       // (e.g. snapshots older than the log's new first index)
       await this.log.truncateBeforeIndex(lastIncludedIndex + 1);
 
-      this.logger.info("Snapshot created, log truncated, and snapshot meta updated", {
-        lastIncludedIndex,
-        lastIncludedTerm,
-        nodeId: this.config.nodeId,
-      });
+      this.logger.info(
+        "Snapshot created, log truncated, and snapshot meta updated",
+        {
+          lastIncludedIndex,
+          lastIncludedTerm,
+          nodeId: this.config.nodeId,
+        },
+      );
     } catch (error) {
       this.logger.error("Failed to create and save snapshot", {
         error,
@@ -1055,33 +1220,51 @@ export class RaftNode extends EventEmitter {
   }
 
   private async sendSnapshotToPeer(peerId: string): Promise<void> {
-    this.logger.info("Preparing to send snapshot to peer", { peerId, nodeId: this.config.nodeId });
+    this.logger.info("Preparing to send snapshot to peer", {
+      peerId,
+      nodeId: this.config.nodeId,
+    });
 
     if (!this.latestSnapshotMeta) {
-      this.logger.error("No snapshot metadata available to send to peer. This may indicate an issue with snapshot creation.", {
-        peerId,
-        nodeId: this.config.nodeId
-      });
+      this.logger.error(
+        "No snapshot metadata available to send to peer. This may indicate an issue with snapshot creation.",
+        {
+          peerId,
+          nodeId: this.config.nodeId,
+        },
+      );
       // Attempt to create a snapshot now if one is missing and conditions allow
       // This is a fallback, ideally snapshots are created proactively.
       if (this.state === RaftState.LEADER) {
-          this.logger.info("Attempting to create a snapshot on-demand before sending to peer.", { peerId });
-          await this.createSnapshot();
-          if (!this.latestSnapshotMeta) {
-              this.logger.error("On-demand snapshot creation failed. Cannot send snapshot.", { peerId });
-              return;
-          }
-      } else {
-          this.logger.warn("Not a leader, cannot create snapshot on-demand.", { peerId });
+        this.logger.info(
+          "Attempting to create a snapshot on-demand before sending to peer.",
+          { peerId },
+        );
+        await this.createSnapshot();
+        if (!this.latestSnapshotMeta) {
+          this.logger.error(
+            "On-demand snapshot creation failed. Cannot send snapshot.",
+            { peerId },
+          );
           return;
+        }
+      } else {
+        this.logger.warn("Not a leader, cannot create snapshot on-demand.", {
+          peerId,
+        });
+        return;
       }
     }
 
-    const { lastIncludedIndex, lastIncludedTerm, filePath } = this.latestSnapshotMeta;
+    const { lastIncludedIndex, lastIncludedTerm, filePath } =
+      this.latestSnapshotMeta;
 
     try {
       const snapshotData = await fs.readFile(filePath);
-      this.logger.info(`Read snapshot data from ${filePath} for peer ${peerId}`, { size: snapshotData.length });
+      this.logger.info(
+        `Read snapshot data from ${filePath} for peer ${peerId}`,
+        { size: snapshotData.length },
+      );
 
       const request: InstallSnapshotRequest = {
         term: this.currentTerm,
@@ -1093,7 +1276,12 @@ export class RaftNode extends EventEmitter {
         done: true,
       };
 
-      this.logger.info("Sending InstallSnapshot request to peer", { peerId, lastIncludedIndex, lastIncludedTerm, dataSize: snapshotData.length });
+      this.logger.info("Sending InstallSnapshot request to peer", {
+        peerId,
+        lastIncludedIndex,
+        lastIncludedTerm,
+        dataSize: snapshotData.length,
+      });
       const response = await this.network.sendInstallSnapshot(peerId, request);
 
       if (response.term > this.currentTerm) {
@@ -1119,7 +1307,9 @@ export class RaftNode extends EventEmitter {
     }
   }
 
-  public async handleInstallSnapshot(request: InstallSnapshotRequest): Promise<InstallSnapshotResponse> {
+  public async handleInstallSnapshot(
+    request: InstallSnapshotRequest,
+  ): Promise<InstallSnapshotResponse> {
     this.logger.info("Received InstallSnapshot request", {
       nodeId: this.config.nodeId,
       term: this.currentTerm,
@@ -1137,9 +1327,12 @@ export class RaftNode extends EventEmitter {
     }
 
     if (request.term > this.currentTerm) {
-      this.logger.info("Higher term received in InstallSnapshot, becoming follower", {
-        newTerm: request.term,
-      });
+      this.logger.info(
+        "Higher term received in InstallSnapshot, becoming follower",
+        {
+          newTerm: request.term,
+        },
+      );
       this.currentTerm = request.term;
       this.votedFor = null; // Clear votedFor when term changes
       await this.persistState(); // Persist new term and cleared votedFor
@@ -1147,7 +1340,10 @@ export class RaftNode extends EventEmitter {
     } else {
       // If terms are the same, ensure we are a follower. A leader should not normally receive InstallSnapshot.
       if (this.state !== RaftState.FOLLOWER) {
-        this.logger.info("Received InstallSnapshot request while not follower, transitioning to follower", { state: this.state });
+        this.logger.info(
+          "Received InstallSnapshot request while not follower, transitioning to follower",
+          { state: this.state },
+        );
         void this.becomeFollower(request.term);
       }
     }
@@ -1161,7 +1357,7 @@ export class RaftNode extends EventEmitter {
       offset: request.offset,
       done: request.done,
       dataSize: request.data.length,
-      leaderId: request.leaderId
+      leaderId: request.leaderId,
     });
 
     if (request.done) {
@@ -1178,25 +1374,34 @@ export class RaftNode extends EventEmitter {
           lastIncludedTerm: request.lastIncludedTerm,
           filePath: snapshotFilePath,
         };
-        this.logger.info("Snapshot saved to disk from leader", { filePath: snapshotFilePath });
+        this.logger.info("Snapshot saved to disk from leader", {
+          filePath: snapshotFilePath,
+        });
 
         await this.stateMachine.applySnapshot(request.data);
-        this.logger.info("Applied snapshot to state machine", { lastIncludedIndex: request.lastIncludedIndex });
+        this.logger.info("Applied snapshot to state machine", {
+          lastIncludedIndex: request.lastIncludedIndex,
+        });
 
         this.commitIndex = request.lastIncludedIndex;
         this.lastApplied = request.lastIncludedIndex;
 
         // This call might also clean up older on-disk snapshots
-        await this.log.truncateEntriesAfter(request.lastIncludedIndex, request.lastIncludedTerm);
+        await this.log.truncateEntriesAfter(
+          request.lastIncludedIndex,
+          request.lastIncludedTerm,
+        );
 
         await this.persistState();
 
-        this.logger.info("Successfully installed snapshot, updated state, and persisted", {
-          lastIncludedIndex: request.lastIncludedIndex,
-          lastIncludedTerm: request.lastIncludedTerm,
-          nodeId: this.config.nodeId
-        });
-
+        this.logger.info(
+          "Successfully installed snapshot, updated state, and persisted",
+          {
+            lastIncludedIndex: request.lastIncludedIndex,
+            lastIncludedTerm: request.lastIncludedTerm,
+            nodeId: this.config.nodeId,
+          },
+        );
       } catch (error) {
         this.logger.error("Failed to save snapshot or apply to state machine", {
           error,
@@ -1211,15 +1416,21 @@ export class RaftNode extends EventEmitter {
 
   private async loadLatestSnapshotFromDisk(): Promise<void> {
     const snapshotDir = this.config.persistence.dataDir;
-    this.logger.info("Scanning for snapshots on disk", { directory: snapshotDir });
+    this.logger.info("Scanning for snapshots on disk", {
+      directory: snapshotDir,
+    });
 
     try {
       await fs.mkdir(snapshotDir, { recursive: true }); // Ensure directory exists
       const files = await fs.readdir(snapshotDir);
-      const snapshotFiles = files.filter(file => file.match(/^snapshot-\d+-\d+\.snap$/));
+      const snapshotFiles = files.filter((file) =>
+        file.match(/^snapshot-\d+-\d+\.snap$/),
+      );
 
       if (snapshotFiles.length === 0) {
-        this.logger.info("No snapshots found on disk.", { directory: snapshotDir });
+        this.logger.info("No snapshots found on disk.", {
+          directory: snapshotDir,
+        });
         return;
       }
 
@@ -1230,8 +1441,8 @@ export class RaftNode extends EventEmitter {
       for (const file of snapshotFiles) {
         const parts = file.replace(".snap", "").split("-");
         if (parts.length === 3) {
-          const term = parseInt(parts[1], 10);
-          const index = parseInt(parts[2], 10);
+          const term = parseInt(parts[1]!, 10);
+          const index = parseInt(parts[2]!, 10);
 
           if (index > maxLastIncludedIndex) {
             maxLastIncludedIndex = index;
@@ -1271,17 +1482,26 @@ export class RaftNode extends EventEmitter {
 
         await this.persistState(); // Persist updated commitIndex and lastApplied
 
-        this.logger.info("Successfully loaded snapshot from disk and updated node state.", {
-          lastIncludedIndex: maxLastIncludedIndex,
-          lastIncludedTerm: maxLastIncludedTerm,
-        });
+        this.logger.info(
+          "Successfully loaded snapshot from disk and updated node state.",
+          {
+            lastIncludedIndex: maxLastIncludedIndex,
+            lastIncludedTerm: maxLastIncludedTerm,
+          },
+        );
       } else {
-        this.logger.info("No valid snapshot files found after parsing.", { directory: snapshotDir });
+        this.logger.info("No valid snapshot files found after parsing.", {
+          directory: snapshotDir,
+        });
       }
     } catch (error) {
-      this.logger.error("Failed to load snapshot from disk", { error, directory: snapshotDir });
+      this.logger.error("Failed to load snapshot from disk", {
+        error,
+        directory: snapshotDir,
+      });
       // If loading snapshot fails, proceed without it, Raft will recover via log or from leader.
     }
+  }
 
   private async applyCommittedEntries(): Promise<void> {
     let appliedSomething = false;
@@ -1290,15 +1510,27 @@ export class RaftNode extends EventEmitter {
       const entry = this.log.getEntry(entryToApplyIndex);
 
       if (!entry) {
-        this.logger.error("Entry not found in log for applying, though commitIndex was advanced.", { lastApplied: this.lastApplied, commitIndex: this.commitIndex, missingIndex: entryToApplyIndex });
+        this.logger.error(
+          "Entry not found in log for applying, though commitIndex was advanced.",
+          {
+            lastApplied: this.lastApplied,
+            commitIndex: this.commitIndex,
+            missingIndex: entryToApplyIndex,
+          },
+        );
         // This indicates a serious issue, potentially a bug in log management or commitIndex advancement.
         break;
       }
 
-      this.logger.debug("Applying entry to state machine / config", { index: entry.index, type: entry.commandType });
+      this.logger.debug("Applying entry to state machine / config", {
+        index: entry.index,
+        type: entry.commandType,
+      });
       if (entry.commandType === RaftCommandType.CHANGE_CONFIG) {
         // applyConfigurationChange calls persistState internally
-        this.applyConfigurationChange(entry.commandPayload as ConfigurationChangePayload);
+        this.applyConfigurationChange(
+          entry.commandPayload as ConfigurationChangePayload,
+        );
       } else if (entry.commandType === RaftCommandType.APPLICATION) {
         await this.stateMachine.apply(entry.commandPayload);
       }
@@ -1345,7 +1577,10 @@ export class RaftNode extends EventEmitter {
   }
 
   private applyConfigurationChange(payload: ConfigurationChangePayload): void {
-    this.logger.info("Applying new cluster configuration", { payload, oldConfig: this.activeConfiguration });
+    this.logger.info("Applying new cluster configuration", {
+      payload,
+      oldConfig: this.activeConfiguration,
+    });
 
     if (payload.oldPeers && payload.oldPeers.length > 0) {
       // This is a joint configuration C_old,new
@@ -1353,14 +1588,18 @@ export class RaftNode extends EventEmitter {
         oldPeers: [...payload.oldPeers],
         newPeers: [...payload.newPeers],
       };
-      this.logger.info("Transitioned to JOINT configuration C_old,new", { activeConfig: this.activeConfiguration });
+      this.logger.info("Transitioned to JOINT configuration C_old,new", {
+        activeConfig: this.activeConfiguration,
+      });
     } else {
       // This is a final new configuration C_new
       this.activeConfiguration = {
         newPeers: [...payload.newPeers],
         // oldPeers is implicitly undefined/empty, signifying not in joint consensus
       };
-      this.logger.info("Transitioned to NEW configuration C_new", { activeConfig: this.activeConfiguration });
+      this.logger.info("Transitioned to NEW configuration C_new", {
+        activeConfig: this.activeConfiguration,
+      });
     }
     // Persisting state after config change is crucial.
     // Consider if persistState should be called here or by the caller of applyCommittedEntries.
@@ -1370,19 +1609,29 @@ export class RaftNode extends EventEmitter {
 
   public async changeClusterConfiguration(newPeerIds: string[]): Promise<void> {
     if (this.state !== RaftState.LEADER) {
-      throw new RaftValidationException("Cluster configuration changes can only be initiated by the leader.");
+      throw new RaftValidationException(
+        "Cluster configuration changes can only be initiated by the leader.",
+      );
     }
 
-    if (!this.activeConfiguration.newPeers || this.activeConfiguration.oldPeers) {
+    if (
+      !this.activeConfiguration.newPeers ||
+      this.activeConfiguration.oldPeers
+    ) {
       // oldPeers being set means we are already in a joint configuration.
-      throw new RaftValidationException("Cannot initiate a new configuration change while already in a joint configuration state.");
+      throw new RaftValidationException(
+        "Cannot initiate a new configuration change while already in a joint configuration state.",
+      );
     }
 
-    this.logger.info("Initiating cluster configuration change (Phase 1: Proposing Joint Configuration)", {
-      currentNodeId: this.config.nodeId,
-      currentPeers: this.activeConfiguration.newPeers,
-      targetNewPeers: newPeerIds,
-    });
+    this.logger.info(
+      "Initiating cluster configuration change (Phase 1: Proposing Joint Configuration)",
+      {
+        currentNodeId: this.config.nodeId,
+        currentPeers: this.activeConfiguration.newPeers,
+        targetNewPeers: newPeerIds,
+      },
+    );
 
     const cOld = this.activeConfiguration.newPeers;
     const cNew = Array.from(new Set([...newPeerIds, this.config.nodeId])); // Ensure leader is part of C_new
@@ -1398,7 +1647,10 @@ export class RaftNode extends EventEmitter {
         RaftCommandType.CHANGE_CONFIG,
         jointConfigPayload,
       );
-      this.logger.info("Appended C_old,new (joint) configuration entry to log", { index: jointConfigLogIndex, payload: jointConfigPayload });
+      this.logger.info(
+        "Appended C_old,new (joint) configuration entry to log",
+        { index: jointConfigLogIndex, payload: jointConfigPayload },
+      );
 
       // Replicate this entry.
       // The leader itself "stores" the entry by appending it.
@@ -1411,22 +1663,44 @@ export class RaftNode extends EventEmitter {
       // This requires majorities in C_old AND C_new.
       // This is a more robust wait: leader waits for the entry to be committed (which implies it's also applied by the leader)
       await this.waitForLogEntryCommitment(jointConfigLogIndex, 30000); // Wait for 30 seconds max for C_joint
-      this.logger.info("C_old,new (joint) configuration committed and applied by leader.", { index: jointConfigLogIndex, activeConfig: this.activeConfiguration });
+      this.logger.info(
+        "C_old,new (joint) configuration committed and applied by leader.",
+        { index: jointConfigLogIndex, activeConfig: this.activeConfiguration },
+      );
 
       // Phase 2: Propose C_new (final configuration)
       // Ensure we are still leader and the active config is indeed the joint one.
       if (this.state !== RaftState.LEADER) {
-        this.logger.warn("Lost leadership before proposing C_new. Aborting configuration change.", { originalTargetPeers: newPeerIds });
+        this.logger.warn(
+          "Lost leadership before proposing C_new. Aborting configuration change.",
+          { originalTargetPeers: newPeerIds },
+        );
         throw new RaftException("Lost leadership during configuration change.");
       }
-      if (!this.activeConfiguration.oldPeers ||
-          !this.activeConfiguration.oldPeers.every(p => cOld.includes(p)) ||
-          !this.activeConfiguration.newPeers.every(p => cNew.includes(p))) {
-          this.logger.error("Internal state error: Active configuration is not the expected joint configuration.", { expectedJoint: jointConfigPayload, actualActive: this.activeConfiguration });
-          throw new RaftException("Configuration state error during joint consensus.");
+
+      if (
+        !this.activeConfiguration.oldPeers ||
+        !(this.activeConfiguration.oldPeers as Array<string>).every(
+          (p: string) => cOld.includes(p),
+        ) ||
+        !this.activeConfiguration.newPeers.every((p) => cNew.includes(p))
+      ) {
+        this.logger.error(
+          "Internal state error: Active configuration is not the expected joint configuration.",
+          {
+            expectedJoint: jointConfigPayload,
+            actualActive: this.activeConfiguration,
+          },
+        );
+        throw new RaftException(
+          "Configuration state error during joint consensus.",
+        );
       }
 
-      this.logger.info("Initiating cluster configuration change (Phase 2: Proposing Final C_new Configuration)", { newPeers: cNew });
+      this.logger.info(
+        "Initiating cluster configuration change (Phase 2: Proposing Final C_new Configuration)",
+        { newPeers: cNew },
+      );
       const newConfigPayload: ConfigurationChangePayload = {
         newPeers: cNew, // cNew was the newPeers list from the joint config
       };
@@ -1436,7 +1710,10 @@ export class RaftNode extends EventEmitter {
         RaftCommandType.CHANGE_CONFIG,
         newConfigPayload,
       );
-      this.logger.info("Appended C_new (final) configuration entry to log", { index: newConfigLogIndex, payload: newConfigPayload });
+      this.logger.info("Appended C_new (final) configuration entry to log", {
+        index: newConfigLogIndex,
+        payload: newConfigPayload,
+      });
 
       this.matchIndex.set(this.config.nodeId, newConfigLogIndex);
       this.nextIndex.set(this.config.nodeId, newConfigLogIndex + 1);
@@ -1446,14 +1723,21 @@ export class RaftNode extends EventEmitter {
       // Wait for C_new to be committed. Commitment still uses joint consensus rules (C_old,new)
       // because C_joint is active until C_new is committed *and applied*.
       await this.waitForLogEntryCommitment(newConfigLogIndex, 30000); // Wait for 30 seconds max for C_new
-      this.logger.info("C_new (final) configuration committed and applied by leader.", { index: newConfigLogIndex, activeConfig: this.activeConfiguration });
+      this.logger.info(
+        "C_new (final) configuration committed and applied by leader.",
+        { index: newConfigLogIndex, activeConfig: this.activeConfiguration },
+      );
 
       // Once C_new is committed and applied by the leader, its activeConfiguration will transition to simple C_new.
       // Followers will do the same when they apply C_new.
-      this.logger.info("Cluster configuration change to C_new completed successfully on leader.", { finalConfiguration: this.activeConfiguration.newPeers });
-
+      this.logger.info(
+        "Cluster configuration change to C_new completed successfully on leader.",
+        { finalConfiguration: this.activeConfiguration.newPeers },
+      );
     } catch (error) {
-      this.logger.error("Failed cluster configuration change process", { error });
+      this.logger.error("Failed cluster configuration change process", {
+        error,
+      });
       // Consider how to handle partial failure (e.g., C_joint committed but C_new failed).
       // Raft protocol suggests C_joint remains active. Retrying C_new might be an option.
       throw error;
@@ -1461,7 +1745,10 @@ export class RaftNode extends EventEmitter {
   }
 
   // Robust wait for a specific log entry to be committed.
-  private async waitForLogEntryCommitment(logIndex: number, timeoutMs: number): Promise<void> {
+  private async waitForLogEntryCommitment(
+    logIndex: number,
+    timeoutMs: number,
+  ): Promise<void> {
     const startTime = Date.now();
     return new Promise((resolve, reject) => {
       const checkCommit = () => {
@@ -1471,9 +1758,17 @@ export class RaftNode extends EventEmitter {
           // For now, resolving on commitIndex is the primary goal.
           resolve();
         } else if (this.state !== RaftState.LEADER) {
-          reject(new RaftException("Lost leadership or changed state while waiting for log entry commitment."));
+          reject(
+            new RaftException(
+              "Lost leadership or changed state while waiting for log entry commitment.",
+            ),
+          );
         } else if (Date.now() - startTime > timeoutMs) {
-          reject(new RaftException(`Timeout waiting for log entry ${logIndex} to be committed.`));
+          reject(
+            new RaftException(
+              `Timeout waiting for log entry ${logIndex} to be committed.`,
+            ),
+          );
         } else {
           setTimeout(checkCommit, 50 + Math.random() * 50); // Check every 50-100ms
         }
@@ -1496,13 +1791,20 @@ export class RaftNode extends EventEmitter {
         let cOldMajority = false;
         let cNewMajority = false;
 
-        if (this.activeConfiguration.oldPeers && this.activeConfiguration.oldPeers.length > 0) {
+        if (
+          this.activeConfiguration.oldPeers &&
+          this.activeConfiguration.oldPeers.length > 0
+        ) {
           // Joint Consensus C_old,new
           const oldPeersInConfig = this.getOldConfigPeers(); // Use helper
           const newPeersInConfig = this.getNewConfigPeers(); // Use helper
 
-          const oldPeersAckCount = oldPeersInConfig.filter(peerId => (this.matchIndex.get(peerId) || 0) >= N).length;
-          const newPeersAckCount = newPeersInConfig.filter(peerId => (this.matchIndex.get(peerId) || 0) >= N).length;
+          const oldPeersAckCount = oldPeersInConfig.filter(
+            (peerId) => (this.matchIndex.get(peerId) || 0) >= N,
+          ).length;
+          const newPeersAckCount = newPeersInConfig.filter(
+            (peerId) => (this.matchIndex.get(peerId) || 0) >= N,
+          ).length;
 
           const oldMajoritySize = Math.floor(oldPeersInConfig.length / 2) + 1;
           const newMajoritySize = Math.floor(newPeersInConfig.length / 2) + 1;
@@ -1518,7 +1820,9 @@ export class RaftNode extends EventEmitter {
         } else {
           // Simple Consensus C_old or C_new
           const currentPeersInConfig = this.getNewConfigPeers();
-          const ackCount = currentPeersInConfig.filter(peerId => (this.matchIndex.get(peerId) || 0) >= N).length;
+          const ackCount = currentPeersInConfig.filter(
+            (peerId) => (this.matchIndex.get(peerId) || 0) >= N,
+          ).length;
           const majoritySize = Math.floor(currentPeersInConfig.length / 2) + 1;
 
           if (ackCount >= majoritySize) {
@@ -1534,19 +1838,28 @@ export class RaftNode extends EventEmitter {
         // any preceding entries from older terms up to newCommitIndex are also considered committed.
         // The loop structure handles this naturally: if newCommitIndex advances, it covers these.
       } else if (!entry) {
-         this.logger.warn("advanceCommitIndex: Log entry not found during commit check. This should not happen.", { index: N });
-         break;
+        this.logger.warn(
+          "advanceCommitIndex: Log entry not found during commit check. This should not happen.",
+          { index: N },
+        );
+        break;
       }
       // If entry.term > this.currentTerm, this is an invalid state for a leader. Stop.
       else if (entry.term > this.currentTerm) {
-        this.logger.error("advanceCommitIndex: Leader encountered log entry from a future term. Stepping down.", { entryTerm: entry.term, currentTerm: this.currentTerm });
+        this.logger.error(
+          "advanceCommitIndex: Leader encountered log entry from a future term. Stepping down.",
+          { entryTerm: entry.term, currentTerm: this.currentTerm },
+        );
         void this.becomeFollower(entry.term); // Step down
         return;
       }
     }
 
     if (newCommitIndex > this.commitIndex) {
-      this.logger.info(`Commit index will be advanced from ${this.commitIndex} to ${newCommitIndex}`, { nodeId: this.config.nodeId });
+      this.logger.info(
+        `Commit index will be advanced from ${this.commitIndex} to ${newCommitIndex}`,
+        { nodeId: this.config.nodeId },
+      );
       this.commitIndex = newCommitIndex;
       await this.applyCommittedEntries(); // Apply newly committed entries on the leader
       // Persist state after applying, as lastApplied and potentially activeConfiguration changed.
@@ -1555,14 +1868,20 @@ export class RaftNode extends EventEmitter {
   }
 
   public async transferLeadership(targetPeerId: string): Promise<void> {
-    this.logger.info(`Attempting to transfer leadership to ${targetPeerId}`, { nodeId: this.config.nodeId });
+    this.logger.info(`Attempting to transfer leadership to ${targetPeerId}`, {
+      nodeId: this.config.nodeId,
+    });
     if (this.state !== RaftState.LEADER) {
-      throw new RaftValidationException("Leadership transfer can only be initiated by the leader.");
+      throw new RaftValidationException(
+        "Leadership transfer can only be initiated by the leader.",
+      );
     }
 
     const currentPeers = this.getPeers(); // Considers joint consensus
     if (!currentPeers.includes(targetPeerId)) {
-      throw new RaftValidationException(`Target peer ${targetPeerId} is not part of the current active configuration.`);
+      throw new RaftValidationException(
+        `Target peer ${targetPeerId} is not part of the current active configuration.`,
+      );
     }
     if (targetPeerId === this.config.nodeId) {
       // As per test case design, throwing an error for self-transfer for consistency.
@@ -1573,7 +1892,10 @@ export class RaftNode extends EventEmitter {
     const lastLogIdx = this.log.getLastIndex();
 
     if (targetMatchIndex !== lastLogIdx) {
-      this.logger.warn(`Target peer ${targetPeerId} is not fully up-to-date.`, { matchIndex: targetMatchIndex, lastLogIndex: lastLogIdx });
+      this.logger.warn(`Target peer ${targetPeerId} is not fully up-to-date.`, {
+        matchIndex: targetMatchIndex,
+        lastLogIndex: lastLogIdx,
+      });
       // For now, we proceed, but a more robust implementation might try to replicate missing entries first or fail.
       // Raft standard is that TimeoutNow should be sent regardless of log state, target campaigns if it can.
     }
@@ -1586,34 +1908,53 @@ export class RaftNode extends EventEmitter {
     };
 
     try {
-      this.logger.info(`Sending TimeoutNowRequest to ${targetPeerId}`, { request: timeoutNowRequest });
+      this.logger.info(`Sending TimeoutNowRequest to ${targetPeerId}`, {
+        request: timeoutNowRequest,
+      });
       await this.network.sendTimeoutNowRequest(targetPeerId, timeoutNowRequest);
 
       // After successfully sending, the current leader should facilitate the target winning.
       // Resetting its own election timer is a way to yield.
-      this.logger.info(`TimeoutNowRequest sent to ${targetPeerId}. Resetting own election timer.`, { nodeId: this.config.nodeId });
+      this.logger.info(
+        `TimeoutNowRequest sent to ${targetPeerId}. Resetting own election timer.`,
+        { nodeId: this.config.nodeId },
+      );
       this.startElectionTimer();
       // Optionally, could also transition to Follower here, but Raft paper suggests TimeoutNow is enough.
       // If it remains leader and target fails, it continues. If target succeeds, this node will become follower upon discovering higher term.
-
     } catch (error) {
-      this.logger.error(`Failed to send TimeoutNowRequest to ${targetPeerId}`, { error });
+      this.logger.error(`Failed to send TimeoutNowRequest to ${targetPeerId}`, {
+        error,
+      });
       // If sending fails, the leader continues its term.
-      throw new RaftReplicationException(`Failed to send TimeoutNowRequest: ${error}`);
+      throw new RaftReplicationException(
+        `Failed to send TimeoutNowRequest: ${error}`,
+      );
     }
   }
 
-
-  public async handleTimeoutNowRequest(request: TimeoutNowRequest): Promise<void> {
-    this.logger.info("Received TimeoutNowRequest", { nodeId: this.config.nodeId, from: request.leaderId, requestTerm: request.term });
+  public async handleTimeoutNowRequest(
+    request: TimeoutNowRequest,
+  ): Promise<void> {
+    this.logger.info("Received TimeoutNowRequest", {
+      nodeId: this.config.nodeId,
+      from: request.leaderId,
+      requestTerm: request.term,
+    });
 
     if (request.term < this.currentTerm) {
-      this.logger.warn("Ignoring TimeoutNowRequest from an old term", { requestTerm: request.term, currentTerm: this.currentTerm });
+      this.logger.warn("Ignoring TimeoutNowRequest from an old term", {
+        requestTerm: request.term,
+        currentTerm: this.currentTerm,
+      });
       return; // Do not send a response, as per Raft paper for RPCs with stale terms.
     }
 
     if (request.term > this.currentTerm) {
-      this.logger.info("Received TimeoutNowRequest from a higher term leader. Becoming follower.", { newTerm: request.term });
+      this.logger.info(
+        "Received TimeoutNowRequest from a higher term leader. Becoming follower.",
+        { newTerm: request.term },
+      );
       await this.becomeFollower(request.term);
       // Even if we become follower, if we are the target, we should still try to start an election for request.term + 1
       // However, the typical leadership transfer implies the target is in the same term or currentTerm+1.
@@ -1625,7 +1966,10 @@ export class RaftNode extends EventEmitter {
     // If request.term > this.currentTerm, we've updated our term and become follower.
     // The leader is asking us to start an election *now*.
 
-    this.logger.info(`Proceeding to start an election immediately due to TimeoutNowRequest from ${request.leaderId}.`, { currentTerm: this.currentTerm });
+    this.logger.info(
+      `Proceeding to start an election immediately due to TimeoutNowRequest from ${request.leaderId}.`,
+      { currentTerm: this.currentTerm },
+    );
 
     // We must campaign for a term higher than the term in the TimeoutNowRequest,
     // or higher than our currentTerm if it was already higher.
@@ -1647,13 +1991,21 @@ export class RaftNode extends EventEmitter {
     void this.startElection(true); // Pass true to bypass Pre-Vote
   }
 
-  public async handlePreVoteRequest(request: PreVoteRequest): Promise<PreVoteResponse> {
-    this.logger.debug("Handling PreVoteRequest", { nodeId: this.config.nodeId, request });
+  public async handlePreVoteRequest(
+    request: PreVoteRequest,
+  ): Promise<PreVoteResponse> {
+    this.logger.debug("Handling PreVoteRequest", {
+      nodeId: this.config.nodeId,
+      request,
+    });
 
     // Reply false if candidate's term is less than current term.
     // This is a strict check: pre-vote is for a *future* term.
     if (request.term < this.currentTerm) {
-      this.logger.info("Rejecting PreVote: Candidate term lower than current term.", { candidateTerm: request.term, currentTerm: this.currentTerm });
+      this.logger.info(
+        "Rejecting PreVote: Candidate term lower than current term.",
+        { candidateTerm: request.term, currentTerm: this.currentTerm },
+      );
       return { term: this.currentTerm, voteGranted: false };
     }
 
@@ -1665,8 +2017,11 @@ export class RaftNode extends EventEmitter {
     // However, the most common rule is: grant pre-vote if candidate's term > currentTerm AND log is up-to-date.
     // Let's use the stricter interpretation: candidate's *prospective* term must be > currentTerm.
     if (request.term <= this.currentTerm) {
-         this.logger.info("Rejecting PreVote: Candidate prospective term not greater than current term.", { candidateTerm: request.term, currentTerm: this.currentTerm });
-         return { term: this.currentTerm, voteGranted: false };
+      this.logger.info(
+        "Rejecting PreVote: Candidate prospective term not greater than current term.",
+        { candidateTerm: request.term, currentTerm: this.currentTerm },
+      );
+      return { term: this.currentTerm, voteGranted: false };
     }
 
     // Check if candidate's log is at least as up-to-date as receiver's log.
@@ -1675,21 +2030,28 @@ export class RaftNode extends EventEmitter {
 
     const logIsOk =
       request.lastLogTerm > localLastLogTerm ||
-      (request.lastLogTerm === localLastLogTerm && request.lastLogIndex >= localLastLogIndex);
+      (request.lastLogTerm === localLastLogTerm &&
+        request.lastLogIndex >= localLastLogIndex);
 
     if (!logIsOk) {
-      this.logger.info("Rejecting PreVote: Candidate log is not as up-to-date.", {
-        candidateLastLogTerm: request.lastLogTerm,
-        candidateLastLogIndex: request.lastLogIndex,
-        localLastLogTerm,
-        localLastLogIndex,
-      });
+      this.logger.info(
+        "Rejecting PreVote: Candidate log is not as up-to-date.",
+        {
+          candidateLastLogTerm: request.lastLogTerm,
+          candidateLastLogIndex: request.lastLogIndex,
+          localLastLogTerm,
+          localLastLogIndex,
+        },
+      );
       return { term: this.currentTerm, voteGranted: false };
     }
 
     // If all checks pass, grant pre-vote.
     // Importantly, DO NOT change this.currentTerm or this.votedFor.
-    this.logger.info("Granting PreVote.", { candidateId: request.candidateId, candidateTerm: request.term });
+    this.logger.info("Granting PreVote.", {
+      candidateId: request.candidateId,
+      candidateTerm: request.term,
+    });
     return { term: this.currentTerm, voteGranted: true };
   }
 }

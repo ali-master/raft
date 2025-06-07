@@ -51,11 +51,11 @@ export interface PreVoteRequest {
 }
 
 export interface PreVoteResponse {
-  term: number;     // Responder's current term
+  term: number; // Responder's current term
   voteGranted: boolean;
 }
 
 export interface TimeoutNowRequest {
-  term: number;     // Leader's current term
+  term: number; // Leader's current term
   leaderId: string; // Leader's ID
 }

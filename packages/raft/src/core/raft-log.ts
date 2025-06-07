@@ -498,6 +498,7 @@ export class RaftLog {
         lastIncludedIndex,
         lastIncludedTerm,
         filePath: snapshotFilePath, // Store path or identifier in WAL.
+        data: Buffer.alloc(0), // Empty buffer since actual data is stored in the file
         // Any other critical metadata for WAL recovery related to this snapshot event.
       });
 

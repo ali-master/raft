@@ -8,7 +8,8 @@ import { createTempDataDir, cleanupDataDir } from "./shared/utils/temp-dir";
 import { RaftNetwork } from "../src/network/raft-network";
 
 // Helper function to delay execution
-const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 interface TestNode {
   node: RaftNode;
@@ -26,14 +27,18 @@ const baseConfig: Partial<RaftConfiguration> = {
   heartbeatInterval: 50,
   logging: { level: LogLevel.ERROR },
   persistence: { walEnabled: false },
-  network: { requestTimeout: 200 } // Faster network timeout for tests
+  network: { requestTimeout: 200 }, // Faster network timeout for tests
 };
 
-async function createTestNode(nodeId: string, port: number, peerPorts: number[] = []): Promise<TestNode> {
+async function createTestNode(
+  nodeId: string,
+  port: number,
+  peerPorts: number[] = [],
+): Promise<TestNode> {
   const dataDir = await createTempDataDir();
   ALL_DATA_DIRS.push(dataDir);
 
-  const peers = peerPorts.map(p => `localhost:${p}`);
+  const peers = peerPorts.map((p) => `localhost:${p}`);
 
   const config: RaftConfiguration = {
     ...baseConfig,
@@ -58,7 +63,9 @@ async function cleanupAllNodes(): Promise<void> {
   for (const nodeId in NODES) {
     try {
       await NODES[nodeId].node.stop();
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      /* ignore */
+    }
   }
   // Vitest's clearAllMocks might be better if spies are on prototypes/classes
   vi.clearAllMocks();
@@ -69,10 +76,14 @@ async function cleanupAllNodes(): Promise<void> {
     await cleanupDataDir(dir);
   }
   ALL_DATA_DIRS.length = 0;
-  Object.keys(NODES).forEach(key => delete NODES[key]);
+  Object.keys(NODES).forEach((key) => delete NODES[key]);
 }
 
-async function waitForLeader(nodesToQuery: RaftNode[], timeoutMs = 5000, expectedLeaderId?: string): Promise<RaftNode | null> {
+async function waitForLeader(
+  nodesToQuery: RaftNode[],
+  timeoutMs = 5000,
+  expectedLeaderId?: string,
+): Promise<RaftNode | null> {
   const startTime = Date.now();
   while (Date.now() - startTime < timeoutMs) {
     for (const node of nodesToQuery) {
@@ -83,19 +94,19 @@ async function waitForLeader(nodesToQuery: RaftNode[], timeoutMs = 5000, expecte
     }
     await delay(100);
   }
-  console.warn(`Timeout waiting for leader. Expected: ${expectedLeaderId || 'any'}`);
+  console.warn(
+    `Timeout waiting for leader. Expected: ${expectedLeaderId || "any"}`,
+  );
   return null;
 }
 
 // Helper to manually trigger election logic for a node (bypassing actual timer)
 async function triggerElection(node: RaftNode) {
-    // @ts-ignore: Access private method for testing
-    await node.startElection();
+  // @ts-ignore: Access private method for testing
+  await node.startElection();
 }
 
-
 describe("Pre-Vote Protocol", () => {
-
   beforeEach(async () => {
     await cleanupAllNodes(); // Ensure clean state before each test
   });
@@ -117,20 +128,30 @@ describe("Pre-Vote Protocol", () => {
     const initialLeader = await waitForLeader([n1.node, n2.node], 5000);
     expect(initialLeader).not.toBeNull();
     const initialTerm = initialLeader!.getCurrentTerm();
-    console.log(`Initial leader ${initialLeader!.getNodeId()} at term ${initialTerm}`);
+    console.log(
+      `Initial leader ${initialLeader!.getNodeId()} at term ${initialTerm}`,
+    );
 
     // Simulate partition for node3
     // @ts-ignore : Access private network member
     const n3Network = n3.node.network as RaftNetwork;
-    const sendPreVoteSpyN3 = vi.spyOn(n3Network, 'sendPreVoteRequest').mockImplementation(async (peerId, request) => {
-        console.log(`Simulated partition: n3 trying to send PreVote to ${peerId} - blocked.`);
+    const sendPreVoteSpyN3 = vi
+      .spyOn(n3Network, "sendPreVoteRequest")
+      .mockImplementation(async (peerId, request) => {
+        console.log(
+          `Simulated partition: n3 trying to send PreVote to ${peerId} - blocked.`,
+        );
         throw new Error("Simulated network partition: cannot reach peer");
-    });
+      });
     // @ts-ignore
-    const sendVoteSpyN3 = vi.spyOn(n3Network, 'sendVoteRequest').mockImplementation(async (peerId, request) => {
-        console.log(`Simulated partition: n3 trying to send VoteRequest to ${peerId} - blocked.`);
+    const sendVoteSpyN3 = vi
+      .spyOn(n3Network, "sendVoteRequest")
+      .mockImplementation(async (peerId, request) => {
+        console.log(
+          `Simulated partition: n3 trying to send VoteRequest to ${peerId} - blocked.`,
+        );
         throw new Error("Simulated network partition: cannot reach peer");
-    });
+      });
 
     // Start n3 *after* its network is "partitioned" for outgoing requests
     await n3.node.start();
@@ -159,13 +180,13 @@ describe("Pre-Vote Protocol", () => {
     expect(initialLeader!.getState()).toBe(RaftState.LEADER); // Original leader still leader
     expect(initialLeader!.getCurrentTerm()).toBe(initialTerm);
 
-    const otherHealthyNode = initialLeader!.getNodeId() === 'node1' ? n2.node : n1.node;
+    const otherHealthyNode =
+      initialLeader!.getNodeId() === "node1" ? n2.node : n1.node;
     expect(otherHealthyNode.getState()).toBe(RaftState.FOLLOWER);
     expect(otherHealthyNode.getCurrentTerm()).toBe(initialTerm);
 
     console.log("Test Case 1 assertions passed.");
   }, 15000);
-
 
   it("Test Case 2: Pre-Vote Allows Election When Majority is Reachable", async () => {
     // 1. Setup: 3-node cluster
@@ -177,10 +198,15 @@ describe("Pre-Vote Protocol", () => {
     await n2.node.start();
     await n3.node.start();
 
-    const originalLeader = await waitForLeader([n1.node, n2.node, n3.node], 5000);
+    const originalLeader = await waitForLeader(
+      [n1.node, n2.node, n3.node],
+      5000,
+    );
     expect(originalLeader).not.toBeNull();
     const originalTerm = originalLeader!.getCurrentTerm();
-    console.log(`Original leader ${originalLeader!.getNodeId()} at term ${originalTerm}`);
+    console.log(
+      `Original leader ${originalLeader!.getNodeId()} at term ${originalTerm}`,
+    );
 
     // 2. Action: Stop the leader
     await originalLeader!.stop();
@@ -191,7 +217,9 @@ describe("Pre-Vote Protocol", () => {
     await delay(baseConfig.electionTimeout![1] * 3); // Wait for enough time for new election cycle
 
     // 3. Assertions
-    const remainingNodes = [n1.node, n2.node, n3.node].filter(n => n.getNodeId() !== originalLeader!.getNodeId());
+    const remainingNodes = [n1.node, n2.node, n3.node].filter(
+      (n) => n.getNodeId() !== originalLeader!.getNodeId(),
+    );
     const newLeader = await waitForLeader(remainingNodes, 5000);
     expect(newLeader).not.toBeNull();
 
@@ -200,12 +228,13 @@ describe("Pre-Vote Protocol", () => {
     expect(newLeader!.getState()).toBe(RaftState.LEADER);
 
     // The other remaining node should be a follower in the new term
-    const newFollower = remainingNodes.find(n => n.getNodeId() !== newLeader!.getNodeId());
+    const newFollower = remainingNodes.find(
+      (n) => n.getNodeId() !== newLeader!.getNodeId(),
+    );
     expect(newFollower).toBeDefined();
     expect(newFollower!.getState()).toBe(RaftState.FOLLOWER);
     expect(newFollower!.getCurrentTerm()).toEqual(newLeader!.getCurrentTerm());
 
     console.log("Test Case 2 assertions passed.");
   }, 20000);
-
 });

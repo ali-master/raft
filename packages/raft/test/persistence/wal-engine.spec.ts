@@ -8,6 +8,7 @@ import type {
   WALMetadata,
 } from "../../src/persistence";
 import type { LogEntry } from "../../src/types";
+import { RaftCommandType } from "../../src/types";
 import { RaftLogger } from "../../src/services";
 import { LogLevel } from "../../src/constants";
 
@@ -49,7 +50,8 @@ describe("wALEngine", () => {
       const logEntry: LogEntry = {
         index: 1,
         term: 1,
-        command: { type: "SET", key: "foo", value: "bar" },
+        commandType: RaftCommandType.APPLICATION,
+        commandPayload: { type: "SET", key: "foo", value: "bar" },
         timestamp: new Date(),
         checksum: "test-checksum",
       };
@@ -67,7 +69,8 @@ describe("wALEngine", () => {
         const entry: LogEntry = {
           index: i,
           term: 1,
-          command: { type: "SET", key: `key${i}`, value: `value${i}` },
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { type: "SET", key: `key${i}`, value: `value${i}` },
           timestamp: new Date(),
           checksum: `checksum${i}`,
         };
@@ -129,7 +132,8 @@ describe("wALEngine", () => {
         const entry: LogEntry = {
           index: i,
           term: 1,
-          command: { index: i },
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { index: i },
           timestamp: new Date(),
           checksum: `checksum${i}`,
         };
@@ -156,7 +160,8 @@ describe("wALEngine", () => {
         const entry: LogEntry = {
           index: i,
           term: 1,
-          command: { index: i },
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { index: i },
           timestamp: new Date(),
           checksum: `checksum${i}`,
         };
@@ -171,12 +176,46 @@ describe("wALEngine", () => {
     });
   });
 
+  describe("truncateLogEntriesBefore", () => {
+    it("should truncate log entries before given index", async () => {
+      // Append 10 entries with different indices
+      for (let i = 0; i < 10; i++) {
+        const entry: LogEntry = {
+          index: i + 100, // Using offset to distinguish from sequence
+          term: 1,
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { index: i },
+          timestamp: new Date(),
+          checksum: `checksum${i}`,
+        };
+        await walEngine.appendLogEntry(entry);
+      }
+
+      await walEngine.sync();
+      await walEngine.truncateLogEntriesBefore(105); // Should remove entries with index < 105
+
+      const remainingEntries = await walEngine.readEntries(0);
+      // Filter to only get LOG_ENTRY type entries
+      const logEntries = remainingEntries.filter((e) => e.type === "LOG_ENTRY");
+
+      // Verify all remaining log entries have index >= 105
+      expect(logEntries.every((e) => (e.data as LogEntry).index >= 105)).toBe(
+        true,
+      );
+      // Verify entries with index < 105 were removed
+      expect(logEntries.some((e) => (e.data as LogEntry).index < 105)).toBe(
+        false,
+      );
+    });
+  });
+
   describe("sync", () => {
     it("should persist pending writes", async () => {
       const entry: LogEntry = {
         index: 1,
         term: 1,
-        command: { type: "SET" },
+        commandType: RaftCommandType.APPLICATION,
+        commandPayload: { data: "x".repeat(50) }, // Large enough to trigger rotation
         timestamp: new Date(),
         checksum: "checksum",
       };
@@ -203,7 +242,8 @@ describe("wALEngine", () => {
         const entry: LogEntry = {
           index: i,
           term: 1,
-          command: { index: i },
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { index: i },
           timestamp: new Date(),
           checksum: `checksum${i}`,
         };
@@ -237,7 +277,8 @@ describe("wALEngine", () => {
         const entry: LogEntry = {
           index: i,
           term: 1,
-          command: { data: "x".repeat(50) }, // Large enough to trigger rotation
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { data: "x".repeat(50) }, // Large enough to trigger rotation
           timestamp: new Date(),
           checksum: `checksum${i}`,
         };
@@ -258,7 +299,8 @@ describe("wALEngine", () => {
       const entry: LogEntry = {
         index: 1,
         term: 1,
-        command: { type: "SET" },
+        commandType: RaftCommandType.APPLICATION,
+        commandPayload: { type: "SET" },
         timestamp: new Date(),
         checksum: "valid-checksum",
       };

@@ -8,7 +8,8 @@ import { createTempDataDir, cleanupDataDir } from "./shared/utils/temp-dir";
 import { RaftNetwork } from "../src/network/raft-network";
 import { RaftValidationException } from "../src/exceptions";
 
-const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 interface TestNode {
   node: RaftNode;
@@ -26,13 +27,17 @@ const baseConfig: Partial<RaftConfiguration> = {
   heartbeatInterval: 100,
   logging: { level: LogLevel.ERROR },
   persistence: { walEnabled: false },
-  network: { requestTimeout: 300, maxRetries: 3, retryDelay: 50 } // Faster network settings for tests
+  network: { requestTimeout: 300, maxRetries: 3, retryDelay: 50 }, // Faster network settings for tests
 };
 
-async function createTestNode(nodeId: string, port: number, peerPorts: number[] = []): Promise<TestNode> {
+async function createTestNode(
+  nodeId: string,
+  port: number,
+  peerPorts: number[] = [],
+): Promise<TestNode> {
   const dataDir = await createTempDataDir();
   ALL_DATA_DIRS.push(dataDir);
-  const peers = peerPorts.map(p => `localhost:${p}`);
+  const peers = peerPorts.map((p) => `localhost:${p}`);
   const config: RaftConfiguration = {
     ...baseConfig,
     nodeId,
@@ -55,17 +60,23 @@ async function cleanupAllNodes(): Promise<void> {
   for (const nodeId in NODES) {
     try {
       await NODES[nodeId].node.stop();
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      /* ignore */
+    }
   }
   vi.clearAllMocks();
   for (const dir of ALL_DATA_DIRS) {
     await cleanupDataDir(dir);
   }
   ALL_DATA_DIRS.length = 0;
-  Object.keys(NODES).forEach(key => delete NODES[key]);
+  Object.keys(NODES).forEach((key) => delete NODES[key]);
 }
 
-async function waitForLeader(nodesToQuery: RaftNode[], timeoutMs = 8000, expectedLeaderId?: string): Promise<RaftNode | null> {
+async function waitForLeader(
+  nodesToQuery: RaftNode[],
+  timeoutMs = 8000,
+  expectedLeaderId?: string,
+): Promise<RaftNode | null> {
   const startTime = Date.now();
   while (Date.now() - startTime < timeoutMs) {
     for (const node of nodesToQuery) {
@@ -76,21 +87,31 @@ async function waitForLeader(nodesToQuery: RaftNode[], timeoutMs = 8000, expecte
     }
     await delay(150);
   }
-  console.warn(`Timeout waiting for leader. Expected: ${expectedLeaderId || 'any'}`);
+  console.warn(
+    `Timeout waiting for leader. Expected: ${expectedLeaderId || "any"}`,
+  );
   return null;
 }
 
-async function waitForLogSync(node: RaftNode, targetIndex: number, timeoutMs = 5000): Promise<void> {
-    const startTime = Date.now();
-    while(Date.now() - startTime < timeoutMs) {
-        if (node.getLog().getLastIndex() >= targetIndex && node.getCommitIndex() >= targetIndex) {
-            return;
-        }
-        await delay(100);
+async function waitForLogSync(
+  node: RaftNode,
+  targetIndex: number,
+  timeoutMs = 5000,
+): Promise<void> {
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    if (
+      node.getLog().getLastIndex() >= targetIndex &&
+      node.getCommitIndex() >= targetIndex
+    ) {
+      return;
     }
-    throw new Error(`Timeout waiting for log sync on ${node.getNodeId()} to index ${targetIndex}. Last: ${node.getLog().getLastIndex()}, Commit: ${node.getCommitIndex()}`);
+    await delay(100);
+  }
+  throw new Error(
+    `Timeout waiting for log sync on ${node.getNodeId()} to index ${targetIndex}. Last: ${node.getLog().getLastIndex()}, Commit: ${node.getCommitIndex()}`,
+  );
 }
-
 
 describe("Leadership Transfer", () => {
   beforeEach(async () => {
@@ -118,10 +139,16 @@ describe("Leadership Transfer", () => {
 
     await leader1!.transferLeadership("node2");
 
-    const leader2 = await waitForLeader([n1.node, n2.node, n3.node], 5000, "node2");
+    const leader2 = await waitForLeader(
+      [n1.node, n2.node, n3.node],
+      5000,
+      "node2",
+    );
     expect(leader2).not.toBeNull();
     expect(leader2?.getNodeId()).toBe("node2");
-    expect(leader2!.getCurrentTerm()).toBeGreaterThan(leader1!.getCurrentTerm());
+    expect(leader2!.getCurrentTerm()).toBeGreaterThan(
+      leader1!.getCurrentTerm(),
+    );
 
     expect(n1.node.getState()).toBe(RaftState.FOLLOWER);
     expect(n3.node.getState()).toBe(RaftState.FOLLOWER);
@@ -136,7 +163,6 @@ describe("Leadership Transfer", () => {
     console.log("Test Case 1: Successful transfer completed.");
   }, 20000);
 
-
   it("Test Case 2: Transfer to a Slightly Out-of-Date Follower (Successful after Sync)", async () => {
     const n1 = await createTestNode("node1", 9051, [9052, 9053]);
     const n2 = await createTestNode("node2", 9052, [9051, 9053]);
@@ -150,7 +176,8 @@ describe("Leadership Transfer", () => {
     expect(leader1).not.toBeNull();
 
     // Leader 'node1' appends entries that 'node2' doesn't have
-    for(let i=0; i<5; i++) await leader1!.appendLog({ command: `entry-${i}` });
+    for (let i = 0; i < 5; i++)
+      await leader1!.appendLog({ command: `entry-${i}` });
     const lastIndex = leader1!.getLog().getLastIndex();
     await waitForLogSync(n3.node, lastIndex); // Ensure n3 has them
 
@@ -163,7 +190,11 @@ describe("Leadership Transfer", () => {
 
     await leader1!.transferLeadership("node2");
 
-    const leader2 = await waitForLeader([n1.node, n2.node, n3.node], 10000, "node2");
+    const leader2 = await waitForLeader(
+      [n1.node, n2.node, n3.node],
+      10000,
+      "node2",
+    );
     expect(leader2).not.toBeNull();
     expect(leader2?.getNodeId()).toBe("node2");
 
@@ -172,7 +203,6 @@ describe("Leadership Transfer", () => {
 
     console.log("Test Case 2: Transfer to out-of-date follower completed.");
   }, 25000);
-
 
   it("Test Case 3: Transfer Fails if Target Does Not Catch Up", async () => {
     const n1 = await createTestNode("node1", 9061, [9062, 9063]);
@@ -185,35 +215,47 @@ describe("Leadership Transfer", () => {
     const leader1 = await waitForLeader([n1.node, n3.node], 5000, "node1");
     expect(leader1).not.toBeNull();
 
-    for(let i=0; i<5; i++) await leader1!.appendLog({ command: `entry-${i}` });
+    for (let i = 0; i < 5; i++)
+      await leader1!.appendLog({ command: `entry-${i}` });
 
     // Mock n2's network or log to prevent catchup
     // @ts-ignore
-    vi.spyOn(n2.node.log, 'appendEntries').mockResolvedValue(false); // Simulate log append failure
+    vi.spyOn(n2.node.log, "appendEntries").mockResolvedValue(false); // Simulate log append failure
     // Or, mock network calls to n2 to fail from leader1's perspective
     // @ts-ignore
     const leader1Network = leader1.network as RaftNetwork;
-    vi.spyOn(leader1Network, 'sendAppendEntries').mockImplementation(async (peerId, request) => {
+    vi.spyOn(leader1Network, "sendAppendEntries").mockImplementation(
+      async (peerId, request) => {
         if (peerId === "node2") {
-            return { term: leader1!.getCurrentTerm(), success: false, lastLogIndex: 0 };
+          return {
+            term: leader1!.getCurrentTerm(),
+            success: false,
+            lastLogIndex: 0,
+          };
         }
         // Call actual for other peers if any (none in this specific setup for n2)
         // This requires careful spy management if other peers were involved.
         // For this test, we just need to ensure n2 never catches up.
-        return { term: leader1!.getCurrentTerm(), success: true, lastLogIndex: request.entries.length > 0 ? request.entries[request.entries.length-1].index : request.prevLogIndex };
-    });
-
+        return {
+          term: leader1!.getCurrentTerm(),
+          success: true,
+          lastLogIndex:
+            request.entries.length > 0
+              ? request.entries[request.entries.length - 1].index
+              : request.prevLogIndex,
+        };
+      },
+    );
 
     await n2.node.start(); // Start n2 now with mocked behavior
 
-    await expect(leader1!.transferLeadership("node2"))
-      .rejects
-      .toThrow(/Failed to bring peer node2 up-to-date/);
+    await expect(leader1!.transferLeadership("node2")).rejects.toThrow(
+      /Failed to bring peer node2 up-to-date/,
+    );
 
     expect(leader1!.getState()).toBe(RaftState.LEADER); // leader1 remains leader
     console.log("Test Case 3: Transfer failed as target did not catch up.");
   }, 15000);
-
 
   it("Test Case 4: Attempt Transfer when Not Leader", async () => {
     const n1 = await createTestNode("node1", 9071, [9072, 9073]);
@@ -224,10 +266,10 @@ describe("Leadership Transfer", () => {
     const leader = await waitForLeader([n1.node, n2.node, n3.node]);
     expect(leader).not.toBeNull();
 
-    const followerNode = (leader!.getNodeId() === "node1") ? n2.node : n1.node;
-    await expect(followerNode.transferLeadership("node3"))
-      .rejects
-      .toThrow(RaftValidationException);
+    const followerNode = leader!.getNodeId() === "node1" ? n2.node : n1.node;
+    await expect(followerNode.transferLeadership("node3")).rejects.toThrow(
+      RaftValidationException,
+    );
     console.log("Test Case 4: Transfer failed when not leader.");
   });
 
@@ -238,15 +280,14 @@ describe("Leadership Transfer", () => {
     const leader = await waitForLeader([n1.node, n2.node], 5000, "node1");
     expect(leader).not.toBeNull();
 
-    await expect(leader!.transferLeadership("nonExistentNode"))
-      .rejects
-      .toThrow(RaftValidationException);
+    await expect(leader!.transferLeadership("nonExistentNode")).rejects.toThrow(
+      RaftValidationException,
+    );
 
     await expect(leader!.transferLeadership("node1")) // Transfer to self
-      .rejects
-      .toThrow(RaftValidationException); // Or should it just return/log? Current impl throws.
-                                         // The prompt stated "return;" for self, changed to throw for consistency.
-                                         // Let's adjust the implementation to throw for self-transfer.
+      .rejects.toThrow(RaftValidationException); // Or should it just return/log? Current impl throws.
+    // The prompt stated "return;" for self, changed to throw for consistency.
+    // Let's adjust the implementation to throw for self-transfer.
     console.log("Test Case 5: Transfer failed for invalid targets.");
   });
 });

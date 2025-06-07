@@ -2,6 +2,7 @@ import { it, expect, describe, beforeEach } from "vitest";
 import { RaftLog } from "../../src/core/raft-log";
 import { RaftValidationException } from "../../src/exceptions";
 import type { LogEntry } from "../../src/types";
+import { RaftCommandType } from "../../src/types";
 import { createTestConfig, createMockRedis } from "../shared/test-utils";
 import { RaftLogger } from "../../src/services/logger";
 import { LogLevel } from "../../src/constants";
@@ -73,14 +74,16 @@ describe("raftLog", () => {
         {
           term: 1,
           index: 0,
-          command: { cmd: "set", key: "a", value: "1" },
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { cmd: "set", key: "a", value: "1" },
           timestamp: new Date(),
           checksum: "hash1",
         },
         {
           term: 1,
           index: 1,
-          command: { cmd: "set", key: "b", value: "2" },
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { cmd: "set", key: "b", value: "2" },
           timestamp: new Date(),
           checksum: "hash2",
         },
@@ -98,7 +101,8 @@ describe("raftLog", () => {
         {
           term: 2,
           index: 1,
-          command: { cmd: "set", key: "c", value: "3" },
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { cmd: "set", key: "c", value: "3" },
           timestamp: new Date(),
           checksum: "hash3",
         },
@@ -106,7 +110,7 @@ describe("raftLog", () => {
 
       await raftLog.appendEntries(newEntries, 0);
       expect(raftLog.getLength()).toBe(2);
-      expect(raftLog.getEntry(1)?.command).toEqual({
+      expect(raftLog.getEntry(1)?.commandPayload).toEqual({
         cmd: "set",
         key: "c",
         value: "3",
@@ -120,7 +124,8 @@ describe("raftLog", () => {
         {
           term: 2,
           index: 1,
-          command: { cmd: "set", key: "b", value: "2" },
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { cmd: "set", key: "b", value: "2" },
           timestamp: new Date(),
           checksum: "hash2",
         },
@@ -139,7 +144,11 @@ describe("raftLog", () => {
 
       expect(entry).toBeDefined();
       expect(entry?.term).toBe(1);
-      expect(entry?.command).toEqual({ cmd: "set", key: "a", value: "1" });
+      expect(entry?.commandPayload).toEqual({
+        cmd: "set",
+        key: "a",
+        value: "1",
+      });
     });
 
     it("should get entries range", async () => {
@@ -149,8 +158,16 @@ describe("raftLog", () => {
 
       const entries = raftLog.getEntries(1, 3);
       expect(entries).toHaveLength(2);
-      expect(entries[0]?.command).toEqual({ cmd: "set", key: "b", value: "2" });
-      expect(entries[1]?.command).toEqual({ cmd: "set", key: "c", value: "3" });
+      expect(entries[0]?.commandPayload).toEqual({
+        cmd: "set",
+        key: "b",
+        value: "2",
+      });
+      expect(entries[1]?.commandPayload).toEqual({
+        cmd: "set",
+        key: "c",
+        value: "3",
+      });
     });
 
     it("should get last entry", async () => {
@@ -159,7 +176,11 @@ describe("raftLog", () => {
 
       const lastEntry = raftLog.getLastEntry();
       expect(lastEntry?.term).toBe(2);
-      expect(lastEntry?.command).toEqual({ cmd: "set", key: "b", value: "2" });
+      expect(lastEntry?.commandPayload).toEqual({
+        cmd: "set",
+        key: "b",
+        value: "2",
+      });
     });
 
     it("should get last index and term", async () => {
@@ -177,14 +198,16 @@ describe("raftLog", () => {
         JSON.stringify({
           term: 1,
           index: 0,
-          command: { cmd: "set", key: "a", value: "1" },
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { cmd: "set", key: "a", value: "1" },
           timestamp: new Date(),
           checksum: "hash1",
         }),
         JSON.stringify({
           term: 1,
           index: 1,
-          command: { cmd: "set", key: "b", value: "2" },
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { cmd: "set", key: "b", value: "2" },
           timestamp: new Date(),
           checksum: "hash2",
         }),

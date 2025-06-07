@@ -9,6 +9,7 @@ export interface RaftConfiguration {
   heartbeatInterval: number;
   maxLogEntries?: number;
   snapshotThreshold?: number;
+  peers?: string[];
   redis: RedisConfig;
   peerDiscovery?: PeerDiscoveryConfig;
   voting: VotingConfig;

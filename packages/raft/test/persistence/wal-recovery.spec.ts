@@ -7,6 +7,7 @@ import type {
   WALMetadata,
 } from "../../src/persistence";
 import type { LogEntry } from "../../src/types";
+import { RaftCommandType } from "../../src/types";
 import { RaftLogger } from "../../src/services";
 import { LogLevel } from "../../src/constants";
 
@@ -52,7 +53,8 @@ describe("walRecovery", () => {
         const entry: LogEntry = {
           index: i,
           term: 1,
-          command: { type: "SET", key: `k${i}`, value: `v${i}` },
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { type: "SET", key: `k${i}`, value: `v${i}` },
           timestamp: new Date(),
           checksum: `checksum${i}`,
         };
@@ -118,7 +120,8 @@ describe("walRecovery", () => {
         await walEngine.appendLogEntry({
           index: i,
           term: 1,
-          command: { index: i },
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { index: i },
           timestamp: new Date(),
           checksum: `checksum${i}`,
         });
@@ -143,7 +146,8 @@ describe("walRecovery", () => {
         await walEngine.appendLogEntry({
           index: i,
           term: 2,
-          command: { index: i },
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { index: i },
           timestamp: new Date(),
           checksum: `checksum${i}`,
         });
@@ -165,7 +169,8 @@ describe("walRecovery", () => {
       await walEngine.appendLogEntry({
         index: 1,
         term: 1,
-        command: { value: "a" },
+        commandType: RaftCommandType.APPLICATION,
+        commandPayload: { value: "a" },
         timestamp: new Date(),
         checksum: "checksum1",
       });
@@ -173,7 +178,8 @@ describe("walRecovery", () => {
       await walEngine.appendLogEntry({
         index: 2,
         term: 1,
-        command: { value: "b" },
+        commandType: RaftCommandType.APPLICATION,
+        commandPayload: { value: "b" },
         timestamp: new Date(),
         checksum: "checksum2",
       });
@@ -182,7 +188,8 @@ describe("walRecovery", () => {
       await walEngine.appendLogEntry({
         index: 2,
         term: 2,
-        command: { value: "c" },
+        commandType: RaftCommandType.APPLICATION,
+        commandPayload: { value: "c" },
         timestamp: new Date(),
         checksum: "checksum3",
       });
@@ -190,7 +197,8 @@ describe("walRecovery", () => {
       await walEngine.appendLogEntry({
         index: 3,
         term: 2,
-        command: { value: "d" },
+        commandType: RaftCommandType.APPLICATION,
+        commandPayload: { value: "d" },
         timestamp: new Date(),
         checksum: "checksum4",
       });
@@ -199,7 +207,7 @@ describe("walRecovery", () => {
 
       expect(state.logs).toHaveLength(3);
       expect(state.logs[1]?.term).toBe(2); // Should use the later term
-      expect(state.logs[1]?.command).toEqual({ value: "c" });
+      expect(state.logs[1]?.commandPayload).toEqual({ value: "c" });
     });
 
     it("should validate recovered state", async () => {
@@ -207,7 +215,8 @@ describe("walRecovery", () => {
       await walEngine.appendLogEntry({
         index: 1,
         term: 1,
-        command: { value: "a" },
+        commandType: RaftCommandType.APPLICATION,
+        commandPayload: { value: "a" },
         timestamp: new Date(),
         checksum: "checksum1",
       });
@@ -215,7 +224,8 @@ describe("walRecovery", () => {
       await walEngine.appendLogEntry({
         index: 3, // Gap at index 2
         term: 1,
-        command: { value: "c" },
+        commandType: RaftCommandType.APPLICATION,
+        commandPayload: { value: "c" },
         timestamp: new Date(),
         checksum: "checksum3",
       });
@@ -246,7 +256,8 @@ describe("walRecovery", () => {
         await walEngine.appendLogEntry({
           index: i,
           term: 1,
-          command: { index: i },
+          commandType: RaftCommandType.APPLICATION,
+          commandPayload: { index: i },
           timestamp: new Date(),
           checksum: `checksum${i}`,
         });
@@ -266,7 +277,8 @@ describe("walRecovery", () => {
       await walEngine.appendLogEntry({
         index: 1,
         term: 1,
-        command: { value: "test" },
+        commandType: RaftCommandType.APPLICATION,
+        commandPayload: { value: "test" },
         timestamp: new Date(),
         checksum: "checksum",
       });
