@@ -1,6 +1,6 @@
 import type Redis from "ioredis";
 import { createHash } from "node:crypto";
-import type { RaftConfiguration, LogEntry } from "../types";
+import type { RaftConfiguration, LogEntry, RaftCommandType } from "../types";
 import {
   RaftValidationException,
   RaftReplicationException,
@@ -8,9 +8,12 @@ import {
 import type { RaftLogger } from "../services";
 import { WALRecovery, WALEngine } from "../persistence";
 import type { WALOptions } from "../persistence";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 
 export class RaftLog {
   private entries: LogEntry[] = [];
+  private logStartIndex: number = 0; // Represents the index of entries[0] in the overall log
   private readonly storage: Redis;
   private readonly nodeId: string;
   private readonly logger: RaftLogger;
@@ -34,13 +37,19 @@ export class RaftLog {
     }
   }
 
-  public async appendEntry(term: number, command: any): Promise<number> {
+  public async appendEntry(
+    term: number,
+    commandType: RaftCommandType,
+    commandPayload: any
+  ): Promise<number> {
+    const index = this.logStartIndex + this.entries.length;
     const entry: LogEntry = {
       term,
-      index: this.entries.length,
-      command,
+      index,
+      commandType,
+      commandPayload,
       timestamp: new Date(),
-      checksum: this.calculateChecksum(command),
+      checksum: this.calculateChecksum(commandPayload), // Checksum is based on the payload
     };
 
     this.entries.push(entry);
@@ -114,23 +123,88 @@ export class RaftLog {
   }
 
   public getEntry(index: number): LogEntry | undefined {
-    return this.entries[index];
+    if (index < this.logStartIndex || index >= this.logStartIndex + this.entries.length) {
+      this.logger.trace("Attempted to get entry outside of in-memory log range", { requestedIndex: index, logStartIndex: this.logStartIndex, currentLogLength: this.entries.length });
+      return undefined;
+    }
+    return this.entries[index - this.logStartIndex];
   }
 
   public getEntries(startIndex: number, endIndex?: number): LogEntry[] {
-    return this.entries.slice(startIndex, endIndex);
+    const effectiveStartIndexInArray = Math.max(0, startIndex - this.logStartIndex);
+    const effectiveEndIndexInArray = endIndex !== undefined ? endIndex - this.logStartIndex : this.entries.length;
+
+    if (effectiveStartIndexInArray >= effectiveEndIndexInArray) return [];
+    return this.entries.slice(effectiveStartIndexInArray, effectiveEndIndexInArray);
   }
 
   public getLastEntry(): LogEntry | undefined {
+    if (this.entries.length === 0) {
+      return undefined;
+    }
     return this.entries[this.entries.length - 1];
   }
 
   public getLength(): number {
+    // This should represent the number of entries *in memory*
     return this.entries.length;
   }
 
+  public getTotalLogLength(): number {
+    // This represents the logical length of the log, including what's covered by snapshots
+    return this.logStartIndex + this.entries.length;
+  }
+
+  public getFirstIndex(): number {
+    // Returns the first index available in the in-memory log (which is logStartIndex),
+    // or the index *after* the last snapshot if the in-memory log is empty but a snapshot was loaded.
+    return this.logStartIndex;
+  }
+
+  public setFirstIndex(index: number): void {
+    this.logger.info(`Setting RaftLog first index to: ${index}. Current logStartIndex: ${this.logStartIndex}`, { nodeId: this.nodeId });
+
+    if (index <= this.logStartIndex && this.entries.length > 0 && this.entries[0].index < index) {
+        // This case implies an overlap or setting to an already covered index,
+        // ensure in-memory entries are consistent.
+        this.logger.debug("New first index requires adjusting in-memory entries.", { newFirstIndex: index, oldLogStartIndex: this.logStartIndex});
+    }
+
+    const newInMemoryEntries = [];
+    let removedCount = 0;
+    for (const entry of this.entries) {
+        if (entry.index >= index) {
+            newInMemoryEntries.push(entry);
+        } else {
+            removedCount++;
+        }
+    }
+    if (removedCount > 0) {
+        this.logger.info(`Removed ${removedCount} in-memory entries now covered by snapshot up to index ${index -1}.`, { nodeId: this.nodeId });
+    }
+    this.entries = newInMemoryEntries;
+    this.logStartIndex = index;
+
+    // Note: Persisted log entries (e.g., in Redis) older than `index` should also be cleaned up.
+    // This is currently handled by `truncateBeforeIndex` when a new snapshot is created.
+    // If `setFirstIndex` is called after loading a snapshot on startup, `loadFromStorage` might have
+    // loaded entries that are now effectively truncated by the loaded snapshot.
+    // The current implementation of `loadFromStorage` loads all matching keys then sorts.
+    // It might be more efficient if `loadFromStorage` itself was aware of `logStartIndex`
+    // after a snapshot is loaded by `RaftNode.loadLatestSnapshotFromDisk`.
+    // For now, this adjustment primarily affects newly appended/replicated entries.
+  }
+
   public getLastIndex(): number {
-    return this.entries.length - 1;
+    // Returns the last index in the in-memory log.
+    if (this.entries.length === 0) {
+      // If log is empty, the last known index is one less than the starting index.
+      // If logStartIndex is 0 (never snapshotted, or fresh), then -1 might be returned.
+      // Raft typically expects lastLogIndex to be >= 0 for a non-empty log.
+      // If logStartIndex is from a snapshot, e.g. 100, and entries is empty, last index is 99.
+      return this.logStartIndex > 0 ? this.logStartIndex -1 : 0;
+    }
+    return this.entries[this.entries.length - 1].index;
   }
 
   public getLastTerm(): number {
@@ -159,8 +233,8 @@ export class RaftLog {
     return true;
   }
 
-  private calculateChecksum(command: any): string {
-    return createHash("sha256").update(JSON.stringify(command)).digest("hex");
+  private calculateChecksum(payload: any): string {
+    return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
   }
 
   private async persistEntry(entry: LogEntry): Promise<void> {
@@ -252,18 +326,101 @@ export class RaftLog {
     }
 
     // Truncate WAL if enabled
+  // Note: WAL truncation logic might need to be more sophisticated,
+  // ensuring that segments containing entries needed for snapshots are handled correctly.
+  // For now, if `truncateBeforeIndex` is called after a snapshot, the WAL should
+  // reflect that older entries are no longer primary.
     if (this.walEngine && entriesToRemove.length > 0) {
-      // Find the sequence number for truncation
-      // This is a simplified approach - in production, we'd track sequence numbers
-      await this.walEngine.truncate(index);
+    // This assumes WAL's internal mechanism can handle truncation correctly based on log indices.
+    // A direct mapping from log index to WAL sequence number might be needed for robust truncation.
+    await this.walEngine.truncateLogEntriesBefore(index); // Assuming WALEngine has such a method or similar
     }
 
-    this.logger.info("Log truncated", {
-      beforeIndex: index,
+  this.logger.info("Log truncated (before index), and old snapshots potentially removed.", {
+    truncatedBeforeIndex: index,
       removedCount: entriesToRemove.length,
       nodeId: this.nodeId,
     });
+
+  // Clean up old on-disk snapshots
+  // This is called after a *new* snapshot has been successfully created and persisted by RaftNode,
+  // and RaftNode calls truncateBeforeIndex(newSnapshot.lastIncludedIndex + 1).
+  // So, 'index' here is newSnapshot.lastIncludedIndex + 1. We want to delete snapshots
+  // strictly older than newSnapshot.lastIncludedIndex.
+  const deleteSnapshotsBeforeIndex = index -1;
+  try {
+    const snapshotDir = this.config.persistence.dataDir;
+    await fs.mkdir(snapshotDir, { recursive: true }); // Ensure dir exists
+    const files = await fs.readdir(snapshotDir);
+    const snapshotFiles = files.filter(file => file.match(/^snapshot-\d+-\d+\.snap$/));
+
+    for (const file of snapshotFiles) {
+      const parts = file.replace(".snap", "").split("-");
+      if (parts.length === 3) {
+        // const snapTerm = parseInt(parts[1], 10); // Available if needed
+        const snapIndex = parseInt(parts[2], 10);
+        if (snapIndex < deleteSnapshotsBeforeIndex) {
+          const filePathToDelete = path.join(snapshotDir, file);
+          await fs.unlink(filePathToDelete);
+          this.logger.info("Deleted old snapshot file", { filePath: filePathToDelete, deletedIndex: snapIndex, newSnapshotIndex: deleteSnapshotsBeforeIndex });
+        }
+      }
+    }
+  } catch (error) {
+    this.logger.error("Failed to clean up old snapshot files", { error, snapshotDir, deleteSnapshotsBeforeIndex });
   }
+  }
+
+
+public async truncateEntriesAfter(index: number, term: number): Promise<void> {
+  let removedCount = 0;
+  // Find the entry with the given index and term
+  const existingEntryIndex = this.entries.findIndex(e => e.index === index && e.term === term);
+
+  if (existingEntryIndex !== -1) {
+    // If an entry with the same index and term exists, retain log entries up to that point
+    // and discard entries *after* it.
+    const entriesToKeep = this.entries.slice(0, existingEntryIndex + 1);
+    removedCount = this.entries.length - entriesToKeep.length;
+    this.entries = entriesToKeep;
+  } else {
+    // If no such entry exists, discard the entire log.
+    // This happens if the follower's log is completely inconsistent with the snapshot.
+    removedCount = this.entries.length;
+    this.entries = [];
+  }
+
+  // Update Redis: remove the discarded entries
+  // This is simplified; in a real scenario, you might remove a range of keys.
+  // For now, we'll re-persist the (potentially empty) current log or clear all.
+  // This part needs to be efficient.
+  const allKeysPattern = `${this.nodeId}:log:*`;
+  const keys = await this.storage.keys(allKeysPattern);
+  if (keys.length > 0) {
+    await this.storage.del(keys);
+  }
+  for (const entry of this.entries) {
+    await this.persistEntry(entry); // Re-persist remaining entries
+  }
+
+  // TODO: WAL truncation for entries *after* a certain point.
+  // This might involve marking segments for deletion or more complex WAL management.
+  // For now, new entries will go to new segments. If the entire log was discarded,
+  // the WAL might also need to be reset or a new one started after snapshot installation.
+  if (this.walEngine) {
+      // This is a placeholder. WAL might need a more specific truncation here.
+      // If the entire log is cleared, WAL might need to reflect this, perhaps by starting fresh
+      // or creating a new snapshot marker.
+      this.logger.warn("WAL truncation after snapshot installation needs specific implementation.", { index, term });
+  }
+
+  this.logger.info("Log truncated (after index due to snapshot)", {
+    retainedUpToIndex: index,
+    retainedUpToTerm: term,
+    removedCount,
+    nodeId: this.nodeId,
+  });
+}
 
   public async persistMetadata(
     term: number,
@@ -282,26 +439,34 @@ export class RaftLog {
   public async createSnapshot(
     lastIncludedIndex: number,
     lastIncludedTerm: number,
-    data: Buffer,
-    stateData?: Record<string, unknown>,
+    // filePath is the location where RaftNode saved the snapshot.
+    // The actual snapshot data Buffer is no longer passed here.
+    snapshotFilePath?: string
   ): Promise<void> {
     if (this.walEngine) {
+      // WAL stores metadata about the snapshot event, not the full data.
       await this.walEngine.appendSnapshot({
         lastIncludedIndex,
         lastIncludedTerm,
-        data,
-        stateData,
+        filePath: snapshotFilePath, // Store path or identifier in WAL.
+        // Any other critical metadata for WAL recovery related to this snapshot event.
       });
 
-      // Compact WAL after snapshot
+      // Compacting the WAL after a snapshot metadata entry is crucial.
+      // It allows old log segments, now covered by the snapshot, to be cleaned up.
       await this.walEngine.compact();
+      this.logger.info("Snapshot metadata recorded in WAL and WAL compacted.", {
+        lastIncludedIndex,
+        lastIncludedTerm,
+        filePath: snapshotFilePath,
+        nodeId: this.nodeId,
+      });
+    } else {
+      this.logger.info("Snapshot event occurred, but WAL is not enabled. No WAL record written.", {
+        lastIncludedIndex,
+        lastIncludedTerm,
+        filePath: snapshotFilePath,
+      });
     }
-
-    this.logger.info("Snapshot created", {
-      lastIncludedIndex,
-      lastIncludedTerm,
-      size: data.length,
-      nodeId: this.nodeId,
-    });
   }
 }

@@ -191,6 +191,7 @@ class RaftNode extends EventEmitter {
   getPrometheusMetrics(): Promise<string>
   getPeers(): string[]
   getPeerInfo(nodeId: string): PeerInfo | undefined
+  transferLeadership(targetPeerId: string): Promise<void>
 }
 ```
 
@@ -360,6 +361,38 @@ const peerInfo = node.getPeerInfo('node-2');
 if (peerInfo) {
   console.log(`Peer state: ${peerInfo.state}`);
   console.log(`Last seen: ${peerInfo.lastSeen}`);
+}
+```
+
+#### transferLeadership
+
+```typescript
+async transferLeadership(targetPeerId: string): Promise<void>
+```
+
+Initiates a leadership transfer to the specified `targetPeerId`.
+
+The current leader will attempt to ensure the target peer is up-to-date with its log entries. If successful, it sends a `TimeoutNowRequest` to the target, prompting it to start an election immediately (bypassing Pre-Vote). The current leader then transitions to the follower state.
+
+**Parameters:**
+- `targetPeerId: string` - The unique ID of the peer node to transfer leadership to.
+
+**Returns:**
+- `Promise<void>` - Resolves when the `TimeoutNowRequest` has been successfully sent and the current leader has transitioned to a follower. Rejects if the transfer cannot be initiated or fails (e.g., current node is not leader, target peer is invalid or not up-to-date after retries, or RPC fails).
+
+**Throws:**
+- `RaftValidationException` - If the current node is not the leader, or if `targetPeerId` is invalid (e.g., non-existent, not in the current configuration, or the leader itself).
+- `RaftReplicationException` - If the leader fails to bring the target peer's log up-to-date after multiple attempts, or if sending the `TimeoutNowRequest` RPC fails.
+
+**Example:**
+```typescript
+if (node.getState() === RaftState.LEADER) {
+  try {
+    await node.transferLeadership('node-2');
+    console.log('Leadership transfer initiated to node-2.');
+  } catch (error) {
+    console.error('Leadership transfer failed:', error);
+  }
 }
 ```
 

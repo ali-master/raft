@@ -82,6 +82,14 @@ class RaftNode extends EventEmitter {
   private network: RaftNetwork
   private metrics: RaftMetricsCollector
   private peerDiscovery: PeerDiscoveryService
+  private stateMachine: StateMachine // Manages application state and snapshot data
+
+  // Snapshot metadata
+  private latestSnapshotMeta: { // Tracks the latest snapshot file created or installed
+    lastIncludedIndex: number,
+    lastIncludedTerm: number,
+    filePath: string
+  } | null
 
   // Timers
   private electionTimer: NodeJS.Timeout
@@ -224,6 +232,22 @@ The implementation guarantees RAFT's safety properties:
 4. **Leader Completeness**: Committed entries appear in future leaders
 5. **State Machine Safety**: Same sequence of commands on all nodes
 
+### Leadership Transfer
+
+Leadership transfer allows a current leader to gracefully hand off its leadership to another peer in the cluster. This is useful for planned maintenance or rebalancing. The process is designed to minimize downtime and ensure a smooth transition.
+
+**Process Overview:**
+1.  **Initiation:** The current leader calls `transferLeadership(targetPeerId)` on itself, specifying the ID of the peer to transfer leadership to.
+2.  **Target Log Synchronization:** The leader first ensures the `targetPeerId`'s log is reasonably up-to-date with its own. It may send pending log entries via `AppendEntriesRequest` RPCs, retrying a few times if necessary. If the target cannot be brought up-to-date, the transfer attempt is aborted.
+3.  **TimeoutNow Request:** Once the target is confirmed to be up-to-date (or sufficiently close), the leader sends a `TimeoutNowRequest` RPC to the `targetPeerId`. This request includes the leader's current term.
+4.  **Leader Steps Down:** After successfully sending the `TimeoutNowRequest`, the current leader transitions to the `FOLLOWER` state and resets its election timer. This prevents it from interfering with the election it's trying to trigger for the target.
+5.  **Target Initiates Election:**
+    *   Upon receiving the `TimeoutNowRequest`, the `targetPeerId` verifies the sender's term. If the sender's term is valid (not older than its own), it immediately bypasses its own election timeout and starts an election.
+    *   This election bypasses the Pre-Vote phase. The target node increments its term, votes for itself, and sends `VoteRequest` RPCs to all other peers in the current configuration.
+6.  **New Leader Elected:** If the target node receives a majority of votes, it becomes the new leader for the new term. Other nodes, including the old leader, will become followers of this new leader.
+
+This mechanism provides a more controlled way to change leaders compared to simply stopping the current leader and waiting for a new election to time out naturally.
+
 ## Storage Layer
 
 ### Redis Integration
@@ -303,37 +327,42 @@ class WALEngine {
 
 ### Snapshots
 
-Snapshots prevent unbounded log growth:
+Snapshots prevent unbounded log growth and allow faster recovery for lagging followers. The snapshot logic is primarily orchestrated by `RaftNode`, interacting with the `StateMachine` for data and `RaftLog` for WAL metadata and log truncation.
 
-```typescript
-class SnapshotManager {
-  async createSnapshot(): Promise<Snapshot> {
-    // 1. Get current state machine state
-    const state = await this.stateMachine.getState()
+**Triggering Snapshots:**
+- `RaftNode` automatically triggers a snapshot creation process when its log size (number of entries in memory) exceeds the `snapshotThreshold` defined in its configuration. This check is performed typically after new log entries are appended (in `maybeCreateSnapshot` called by `appendLog`).
 
-    // 2. Get last included log entry
-    const lastIncludedIndex = this.lastApplied
-    const lastIncludedTerm = await this.log.getTermAtIndex(lastIncludedIndex)
+**Snapshot Creation Process (Leader):**
+1.  **Get Application State:** `RaftNode` calls `this.stateMachine.getSnapshotData()` to obtain the current state of the application as a `Buffer`.
+2.  **Save to File:** `RaftNode` saves this `snapshotData` to a file in the directory specified by `config.persistence.dataDir`. The filename follows a convention like `snapshot-<lastIncludedTerm>-<lastIncludedIndex>.snap`.
+3.  **Update Metadata:** `RaftNode` updates its internal `this.latestSnapshotMeta` object with the `lastIncludedIndex`, `lastIncludedTerm`, and `filePath` of the newly created snapshot.
+4.  **Record in WAL:** `RaftNode` informs `RaftLog` about the new snapshot by calling `this.log.createSnapshot(lastIncludedIndex, lastIncludedTerm, snapshotFilePath)`. `RaftLog` then records *metadata* about this snapshot (including its term, index, and file path) into the Write-Ahead Log (WAL). This WAL entry is crucial for recovery, indicating that log entries up to `lastIncludedIndex` are covered by this snapshot. The WAL engine may then compact itself.
+5.  **Truncate Log:** `RaftLog` truncates its in-memory log entries and corresponding persisted entries (e.g., in Redis) that are now covered by the snapshot, using `this.log.truncateBeforeIndex(lastIncludedIndex + 1)`. This method also attempts to delete older on-disk snapshot files that are now superseded by the log's new starting point.
+6.  **Clean Up Previous Snapshot:** `RaftNode`, after successfully creating the new snapshot file and updating its metadata, deletes its *own* previously created snapshot file from disk.
 
-    // 3. Create snapshot
-    const snapshot: Snapshot = {
-      lastIncludedIndex,
-      lastIncludedTerm,
-      state,
-      timestamp: new Date()
-    }
+**Snapshot Storage:**
+- Snapshots are stored as individual files directly within the `config.persistence.dataDir`.
+- `RaftNode` uses `latestSnapshotMeta` to keep track of the most recent snapshot it has created or installed.
 
-    // 4. Compress and save
-    const compressed = await this.compress(snapshot)
-    await this.storage.saveSnapshot(compressed)
+**Installing Snapshots (via `InstallSnapshot` RPC):**
+When a follower is too far behind for efficient log replication, the leader sends a snapshot.
 
-    // 5. Truncate log
-    await this.log.truncateBefore(lastIncludedIndex)
-
-    return snapshot
-  }
-}
-```
+-   **RPC Messages:**
+    -   `InstallSnapshotRequest`: Contains `term`, `leaderId`, `lastIncludedIndex`, `lastIncludedTerm`, `offset` (for chunking, currently basic), `data` (snapshot content), and `done` flag.
+    -   `InstallSnapshotResponse`: Contains `term` for the leader to update itself if necessary.
+-   **Leader's Role:**
+    1.  Determines a follower needs a snapshot (e.g., `nextIndex` for the follower is less than `this.log.getFirstIndex()`).
+    2.  Reads its latest snapshot file (identified by `this.latestSnapshotMeta.filePath`) from disk.
+    3.  Sends the snapshot data to the follower via the `InstallSnapshotRequest` RPC (using `this.network.sendInstallSnapshot`). For now, it sends the whole snapshot as one chunk.
+-   **Follower's Role (`RaftNode.handleInstallSnapshot`):**
+    1.  Receives the `InstallSnapshotRequest`. Handles term checks and may become a follower if the leader's term is higher.
+    2.  If `request.done` is true (and assuming a single chunk for now):
+        a.  Saves the received `request.data` to a snapshot file in its own `config.persistence.dataDir` (e.g., `snapshot-<request.lastIncludedTerm>-<request.lastIncludedIndex>.snap`).
+        b.  Updates its `this.latestSnapshotMeta` with the details of this newly installed snapshot.
+        c.  Calls `this.stateMachine.applySnapshot(request.data)` to apply the snapshot to its application state.
+        d.  Updates its `commitIndex` and `lastApplied` to `request.lastIncludedIndex`.
+        e.  Calls `this.log.truncateEntriesAfter(request.lastIncludedIndex, request.lastIncludedTerm)` to discard existing log entries that are inconsistent with the snapshot. If an existing log entry matches the snapshot's `lastIncludedIndex` and `lastIncludedTerm`, logs after it are discarded; otherwise, the entire log might be cleared.
+        f.  Persists its updated state (term, votedFor, commitIndex, lastApplied).
 
 ## Network Layer
 
@@ -460,9 +489,9 @@ The library provides an abstract state machine interface:
 
 ```typescript
 interface StateMachine {
-  apply(command: any): Promise<void>
-  getSnapshot(): Promise<any>
-  restoreFromSnapshot(snapshot: any): Promise<void>
+  apply(command: any): Promise<void>;
+  getSnapshotData(): Promise<Buffer>; // To get state from application for snapshot
+  applySnapshot(data: Buffer): Promise<void>; // To apply snapshot to application
 }
 
 class StateMachineManager {
@@ -683,26 +712,24 @@ Automatic recovery from failures:
 
 ```typescript
 class RecoveryManager {
-  async recoverFromCrash(): Promise<void> {
-    // 1. Recover WAL
-    const walEntries = await this.wal.recover()
-
-    // 2. Rebuild log
-    await this.log.rebuild(walEntries)
-
-    // 3. Restore persistent state
-    const state = await this.storage.loadState()
-    this.restoreState(state)
-
-    // 4. Load latest snapshot
-    const snapshot = await this.storage.loadLatestSnapshot()
-    if (snapshot) {
-      await this.stateMachine.restoreFromSnapshot(snapshot)
-      this.lastApplied = snapshot.lastIncludedIndex
-    }
-
-    // 5. Re-apply committed entries
-    await this.applyCommittedEntries()
+  async recoverFromCrash(): Promise<void> { // This describes a general recovery flow.
+    // Actual startup sequence in RaftNode.start():
+    // 1. Load persisted Raft state (term, votedFor, etc.) via `loadPersistedState()`.
+    // 2. Initialize WAL engine via `this.log.initializeWALEngine()`.
+    // 3. Load log entries from storage (Redis or recovered from WAL) via `this.log.loadFromStorage()`.
+    // 4. Load the latest snapshot from disk via `this.loadLatestSnapshotFromDisk()`:
+    //    a. Scans `config.persistence.dataDir` for snapshot files.
+    //    b. Identifies the latest valid snapshot file based on term and index in its filename.
+    //    c. If a snapshot is found:
+    //        i. Reads its data.
+    //        ii. Calls `this.stateMachine.applySnapshot(snapshotData)` to restore application state.
+    //        iii. Updates `this.commitIndex` and `this.lastApplied` to the snapshot's `lastIncludedIndex`.
+    //        iv. Updates `this.latestSnapshotMeta` with the loaded snapshot's details.
+    //        v. Calls `this.log.setFirstIndex(snapshot.lastIncludedIndex + 1)` to inform `RaftLog` that entries up to this index are covered by the snapshot, so it can adjust its internal `logStartIndex`.
+    // 5. Start peer discovery and network services.
+    // 6. Start election timers.
+    // Note: Re-applying committed entries from the log beyond the snapshot's lastApplied happens as part of normal operation
+    // once the node is active and receives new commits or applies entries from its log.
   }
 }
 ```
