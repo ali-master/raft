@@ -488,18 +488,33 @@ export class RaftLog {
   public async createSnapshot(
     lastIncludedIndex: number,
     lastIncludedTerm: number,
-    // filePath is the location where RaftNode saved the snapshot.
-    // The actual snapshot data Buffer is no longer passed here.
+    snapshotDataOrFilePath: Buffer | string,
+    stateData?: Record<string, unknown>,
     snapshotFilePath?: string,
   ): Promise<void> {
+    // Determine if the third parameter is a Buffer (snapshotData) or a string (filePath)
+    let data: Buffer;
+    let filePath: string | undefined;
+
+    if (Buffer.isBuffer(snapshotDataOrFilePath)) {
+      // Third parameter is snapshotData (Buffer)
+      data = snapshotDataOrFilePath;
+      filePath = snapshotFilePath;
+    } else {
+      // Third parameter is filePath (string)
+      data = Buffer.alloc(0); // Empty buffer since actual data is stored in the file
+      filePath = snapshotDataOrFilePath;
+      // In this case, stateData is not provided
+    }
+
     if (this.walEngine) {
       // WAL stores metadata about the snapshot event, not the full data.
       await this.walEngine.appendSnapshot({
         lastIncludedIndex,
         lastIncludedTerm,
-        filePath: snapshotFilePath, // Store path or identifier in WAL.
-        data: Buffer.alloc(0), // Empty buffer since actual data is stored in the file
-        // Any other critical metadata for WAL recovery related to this snapshot event.
+        filePath, // Store path or identifier in WAL.
+        data, // Use the provided snapshot data or empty buffer
+        stateData, // Include state data if provided
       });
 
       // Compacting the WAL after a snapshot metadata entry is crucial.
@@ -508,7 +523,7 @@ export class RaftLog {
       this.logger.info("Snapshot metadata recorded in WAL and WAL compacted.", {
         lastIncludedIndex,
         lastIncludedTerm,
-        filePath: snapshotFilePath,
+        filePath,
         nodeId: this.nodeId,
       });
     } else {
@@ -517,7 +532,7 @@ export class RaftLog {
         {
           lastIncludedIndex,
           lastIncludedTerm,
-          filePath: snapshotFilePath,
+          filePath,
         },
       );
     }

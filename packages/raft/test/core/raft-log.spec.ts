@@ -33,16 +33,24 @@ describe("raftLog", () => {
 
   describe("appendEntry", () => {
     it("should append entries with correct index", async () => {
-      await raftLog.appendEntry(1, { cmd: "set", key: "a", value: "1" });
-      await raftLog.appendEntry(1, { cmd: "set", key: "b", value: "2" });
-
-      expect(raftLog.getLength()).toBe(2);
-      expect(raftLog.getEntry(0)?.command).toEqual({
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
         cmd: "set",
         key: "a",
         value: "1",
       });
-      expect(raftLog.getEntry(1)?.command).toEqual({
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "b",
+        value: "2",
+      });
+
+      expect(raftLog.getLength()).toBe(2);
+      expect(raftLog.getEntry(0)?.commandPayload).toEqual({
+        cmd: "set",
+        key: "a",
+        value: "1",
+      });
+      expect(raftLog.getEntry(1)?.commandPayload).toEqual({
         cmd: "set",
         key: "b",
         value: "2",
@@ -50,7 +58,11 @@ describe("raftLog", () => {
     });
 
     it("should calculate checksum for entries", async () => {
-      await raftLog.appendEntry(1, { cmd: "set", key: "a", value: "1" });
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "a",
+        value: "1",
+      });
       const entry = raftLog.getEntry(0);
 
       expect(entry).toBeDefined();
@@ -59,7 +71,11 @@ describe("raftLog", () => {
     });
 
     it("should persist entries to storage", async () => {
-      await raftLog.appendEntry(1, { cmd: "set", key: "a", value: "1" });
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "a",
+        value: "1",
+      });
 
       expect(mockRedis.set).toHaveBeenCalledWith(
         "test-node:log:0",
@@ -94,8 +110,16 @@ describe("raftLog", () => {
     });
 
     it("should handle conflicting entries", async () => {
-      await raftLog.appendEntry(1, { cmd: "set", key: "a", value: "1" });
-      await raftLog.appendEntry(1, { cmd: "set", key: "b", value: "2" });
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "a",
+        value: "1",
+      });
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "b",
+        value: "2",
+      });
 
       const newEntries: LogEntry[] = [
         {
@@ -118,7 +142,11 @@ describe("raftLog", () => {
     });
 
     it("should validate previous log entry", async () => {
-      await raftLog.appendEntry(1, { cmd: "set", key: "a", value: "1" });
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "a",
+        value: "1",
+      });
 
       const newEntries: LogEntry[] = [
         {
@@ -139,7 +167,11 @@ describe("raftLog", () => {
 
   describe("getters", () => {
     it("should get entry by index", async () => {
-      await raftLog.appendEntry(1, { cmd: "set", key: "a", value: "1" });
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "a",
+        value: "1",
+      });
       const entry = raftLog.getEntry(0);
 
       expect(entry).toBeDefined();
@@ -152,9 +184,21 @@ describe("raftLog", () => {
     });
 
     it("should get entries range", async () => {
-      await raftLog.appendEntry(1, { cmd: "set", key: "a", value: "1" });
-      await raftLog.appendEntry(1, { cmd: "set", key: "b", value: "2" });
-      await raftLog.appendEntry(2, { cmd: "set", key: "c", value: "3" });
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "a",
+        value: "1",
+      });
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "b",
+        value: "2",
+      });
+      await raftLog.appendEntry(2, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "c",
+        value: "3",
+      });
 
       const entries = raftLog.getEntries(1, 3);
       expect(entries).toHaveLength(2);
@@ -171,8 +215,16 @@ describe("raftLog", () => {
     });
 
     it("should get last entry", async () => {
-      await raftLog.appendEntry(1, { cmd: "set", key: "a", value: "1" });
-      await raftLog.appendEntry(2, { cmd: "set", key: "b", value: "2" });
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "a",
+        value: "1",
+      });
+      await raftLog.appendEntry(2, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "b",
+        value: "2",
+      });
 
       const lastEntry = raftLog.getLastEntry();
       expect(lastEntry?.term).toBe(2);
@@ -184,8 +236,16 @@ describe("raftLog", () => {
     });
 
     it("should get last index and term", async () => {
-      await raftLog.appendEntry(1, { cmd: "set", key: "a", value: "1" });
-      await raftLog.appendEntry(2, { cmd: "set", key: "b", value: "2" });
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "a",
+        value: "1",
+      });
+      await raftLog.appendEntry(2, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "b",
+        value: "2",
+      });
 
       expect(raftLog.getLastIndex()).toBe(1);
       expect(raftLog.getLastTerm()).toBe(2);
@@ -258,9 +318,21 @@ describe("raftLog", () => {
   describe("log truncation", () => {
     it("should truncate entries before index", async () => {
       // Add some entries first
-      await raftLog.appendEntry(1, { cmd: "set", key: "a", value: "1" });
-      await raftLog.appendEntry(1, { cmd: "set", key: "b", value: "2" });
-      await raftLog.appendEntry(2, { cmd: "set", key: "c", value: "3" });
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "a",
+        value: "1",
+      });
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "b",
+        value: "2",
+      });
+      await raftLog.appendEntry(2, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "c",
+        value: "3",
+      });
 
       expect(raftLog.getLength()).toBe(3);
 
@@ -268,7 +340,7 @@ describe("raftLog", () => {
       await raftLog.truncateBeforeIndex(2);
 
       expect(raftLog.getLength()).toBe(1);
-      expect(raftLog.getEntry(0)?.command).toEqual({
+      expect(raftLog.getEntry(0)?.commandPayload).toEqual({
         cmd: "set",
         key: "c",
         value: "3",
@@ -276,7 +348,11 @@ describe("raftLog", () => {
     });
 
     it("should handle truncation with no entries to remove", async () => {
-      await raftLog.appendEntry(1, { cmd: "set", key: "a", value: "1" });
+      await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
+        cmd: "set",
+        key: "a",
+        value: "1",
+      });
 
       // Truncate before index 0 (should remove nothing)
       await raftLog.truncateBeforeIndex(0);
