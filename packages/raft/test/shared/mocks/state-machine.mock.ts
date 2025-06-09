@@ -1,4 +1,4 @@
-import { StateMachine } from "../../../src/types";
+import type { StateMachine } from "../../../src/types";
 
 export class MockStateMachine implements StateMachine {
   public commands: any[] = [];

@@ -1,12 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RaftNode } from "../src/core/raft-node";
+import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
+import type { RaftNode } from "../src/core/raft-node";
 import { RaftEngine } from "../src/raft-engine";
 import { MockStateMachine } from "./shared/mocks/state-machine.mock";
-import type { RaftConfiguration, TimeoutNowRequest } from "../src/types";
-import { LogLevel, RaftState, MessageType } from "../src/constants";
+import type { RaftConfiguration } from "../src/types";
+import { RaftState, LogLevel } from "../src/constants";
 import { createTempDataDir, cleanupDataDir } from "./shared/utils/temp-dir";
-import { RaftNetwork } from "../src/network/raft-network";
+import type { RaftNetwork } from "../src/network/raft-network";
 import { RaftValidationException } from "../src/exceptions";
+import { createTestConfig } from "./shared/config/test-config";
 
 const delay = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -38,16 +39,16 @@ async function createTestNode(
   const dataDir = await createTempDataDir();
   ALL_DATA_DIRS.push(dataDir);
   const peers = peerPorts.map((p) => `localhost:${p}`);
-  const config: RaftConfiguration = {
+
+  const config = createTestConfig(nodeId, {
     ...baseConfig,
-    nodeId,
     clusterId: "leadership-transfer-cluster",
     httpHost: "localhost",
     httpPort: port,
     snapshotThreshold: 10000,
     persistence: { ...baseConfig.persistence, dataDir },
     peers,
-  } as RaftConfiguration;
+  });
 
   const stateMachine = new MockStateMachine();
   const engine = new RaftEngine();
@@ -60,7 +61,7 @@ async function cleanupAllNodes(): Promise<void> {
   for (const nodeId in NODES) {
     try {
       await NODES[nodeId].node.stop();
-    } catch (e) {
+    } catch {
       /* ignore */
     }
   }

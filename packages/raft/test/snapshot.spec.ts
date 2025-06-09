@@ -1,13 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { RaftNode } from "../src/core/raft-node";
 import { RaftEngine } from "../src/raft-engine";
 import { MockStateMachine } from "./shared/mocks/state-machine.mock";
 import type { RaftConfiguration } from "../src/types";
-import { LogLevel, RaftState } from "../src/constants";
+import { RaftState, LogLevel } from "../src/constants";
 import { createTempDataDir, cleanupDataDir } from "./shared/utils/temp-dir";
-import { RaftNetwork } from "../src/network/raft-network";
+import type { RaftNetwork } from "../src/network/raft-network";
+import { createTestConfig } from "./shared/config/test-config";
 
 // Helper function to delay execution
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -45,9 +45,8 @@ describe("Snapshot Functionality", () => {
     const totalEntries = 10;
     const snapshotDataContent = "snapshot_for_case_1";
 
-    const config: RaftConfiguration = {
+    const config = createTestConfig("single-node", {
       ...baseConfig,
-      nodeId: "single-node",
       clusterId: "test-cluster-1",
       httpHost: "localhost",
       httpPort: 8001,
@@ -56,7 +55,7 @@ describe("Snapshot Functionality", () => {
         ...baseConfig.persistence,
         dataDir,
       },
-    } as RaftConfiguration;
+    });
 
     const mockStateMachine1 = new MockStateMachine();
     mockStateMachine1.setSnapshotDataToReturn(Buffer.from(snapshotDataContent));

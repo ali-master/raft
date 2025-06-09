@@ -1,11 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RaftNode } from "../src/core/raft-node";
+import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
+import type { RaftNode } from "../src/core/raft-node";
 import { RaftEngine } from "../src/raft-engine";
 import { MockStateMachine } from "./shared/mocks/state-machine.mock";
-import type { RaftConfiguration, PreVoteResponse } from "../src/types";
-import { LogLevel, RaftState } from "../src/constants";
+import type { RaftConfiguration } from "../src/types";
+import { RaftState, LogLevel } from "../src/constants";
 import { createTempDataDir, cleanupDataDir } from "./shared/utils/temp-dir";
-import { RaftNetwork } from "../src/network/raft-network";
+import type { RaftNetwork } from "../src/network/raft-network";
+import { createTestConfig } from "./shared/config/test-config";
 
 // Helper function to delay execution
 const delay = (ms: number): Promise<void> =>
@@ -40,16 +41,15 @@ async function createTestNode(
 
   const peers = peerPorts.map((p) => `localhost:${p}`);
 
-  const config: RaftConfiguration = {
+  const config = createTestConfig(nodeId, {
     ...baseConfig,
-    nodeId,
     clusterId: "prevote-test-cluster",
     httpHost: "localhost",
     httpPort: port,
     snapshotThreshold: 10000, // High to prevent snapshots
     persistence: { ...baseConfig.persistence, dataDir },
     peers,
-  } as RaftConfiguration;
+  });
 
   const stateMachine = new MockStateMachine();
   const engine = new RaftEngine();
@@ -63,7 +63,7 @@ async function cleanupAllNodes(): Promise<void> {
   for (const nodeId in NODES) {
     try {
       await NODES[nodeId].node.stop();
-    } catch (e) {
+    } catch {
       /* ignore */
     }
   }
@@ -101,7 +101,7 @@ async function waitForLeader(
 }
 
 // Helper to manually trigger election logic for a node (bypassing actual timer)
-async function triggerElection(node: RaftNode) {
+async function _triggerElection(node: RaftNode) {
   // @ts-ignore: Access private method for testing
   await node.startElection();
 }
@@ -135,18 +135,18 @@ describe("Pre-Vote Protocol", () => {
     // Simulate partition for node3
     // @ts-ignore : Access private network member
     const n3Network = n3.node.network as RaftNetwork;
-    const sendPreVoteSpyN3 = vi
+    const _sendPreVoteSpyN3 = vi
       .spyOn(n3Network, "sendPreVoteRequest")
-      .mockImplementation(async (peerId, request) => {
+      .mockImplementation(async (peerId, _request) => {
         console.log(
           `Simulated partition: n3 trying to send PreVote to ${peerId} - blocked.`,
         );
         throw new Error("Simulated network partition: cannot reach peer");
       });
     // @ts-ignore
-    const sendVoteSpyN3 = vi
+    const _sendVoteSpyN3 = vi
       .spyOn(n3Network, "sendVoteRequest")
-      .mockImplementation(async (peerId, request) => {
+      .mockImplementation(async (peerId, _request) => {
         console.log(
           `Simulated partition: n3 trying to send VoteRequest to ${peerId} - blocked.`,
         );

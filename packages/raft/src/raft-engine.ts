@@ -1,4 +1,4 @@
-import type { RaftConfiguration, StateMachine } from "./types";
+import type { StateMachine, RaftConfiguration } from "./types";
 import { LogLevel } from "./constants";
 import { RaftConfigurationException } from "./exceptions";
 import { RaftLogger } from "./services";

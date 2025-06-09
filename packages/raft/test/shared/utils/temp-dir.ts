@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "fs/promises";
+import { rm, mkdtemp } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 

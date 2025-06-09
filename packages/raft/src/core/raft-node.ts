@@ -255,6 +255,18 @@ export class RaftNode extends EventEmitter {
     return this.currentTerm;
   }
 
+  public getNodeId(): string {
+    return this.config.nodeId;
+  }
+
+  public getLog(): RaftLog {
+    return this.log;
+  }
+
+  public getCommitIndex(): number {
+    return this.commitIndex;
+  }
+
   public getMetrics(): RaftMetrics | undefined {
     return this.metrics.getMetrics(this.config.nodeId);
   }

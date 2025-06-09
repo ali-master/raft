@@ -11,16 +11,36 @@ let globalRedisContext: RedisTestContext | null = null;
 export async function setupGlobalRedis(): Promise<RedisTestContext> {
   if (!globalRedisContext) {
     console.log("Setting up global Redis container for tests...");
-    globalRedisContext = await setupRedisContainer();
 
-    // Set environment variables for the Redis connection
-    const host = globalRedisContext.container.getHost();
-    const port = globalRedisContext.container.getMappedPort(6379);
+    try {
+      globalRedisContext = await setupRedisContainer();
 
-    process.env.REDIS_HOST = host;
-    process.env.REDIS_PORT = port.toString();
+      // Set environment variables for the Redis connection
+      const host = globalRedisContext.container.getHost();
+      const port = globalRedisContext.container.getMappedPort(6379);
 
-    console.log(`Redis container started at ${host}:${port}`);
+      process.env.REDIS_HOST = host;
+      process.env.REDIS_PORT = port.toString();
+
+      console.log(`Redis container started at ${host}:${port}`);
+    } catch (error) {
+      console.warn(
+        "Failed to setup Redis container:",
+        (error as Error).message,
+      );
+
+      // Set up minimal mock for unit tests that don't actually need Redis
+      process.env.REDIS_HOST = "localhost";
+      process.env.REDIS_PORT = "6379";
+
+      globalRedisContext = {
+        redis: null as any,
+        container: null as any,
+        connectionString: null as any,
+      };
+
+      console.log("Using mock Redis configuration for unit tests");
+    }
   }
   return globalRedisContext;
 }
@@ -32,7 +52,12 @@ export async function setupGlobalRedis(): Promise<RedisTestContext> {
 export async function teardownGlobalRedis(): Promise<void> {
   if (globalRedisContext) {
     console.log("Tearing down global Redis container...");
-    await teardownRedisContainer(globalRedisContext);
+
+    if (globalRedisContext.container) {
+      // Proper Docker container teardown
+      await teardownRedisContainer(globalRedisContext);
+    }
+
     globalRedisContext = null;
   }
 }
@@ -55,5 +80,7 @@ export function getGlobalRedisContext(): RedisTestContext {
  */
 export async function clearRedisData(): Promise<void> {
   const context = getGlobalRedisContext();
-  await context.redis.flushall();
+  if (context.redis && typeof context.redis.flushall === "function") {
+    await context.redis.flushall();
+  }
 }
