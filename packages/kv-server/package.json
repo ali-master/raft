@@ -1,7 +1,7 @@
 {
-  "name": "@usex/raft-nestjs",
+  "name": "@usex/raft-kv-server",
   "version": "0.0.0",
-  "description": "",
+  "description": "Enterprise-grade Raft KV Server with encryption support",
   "license": "MIT",
   "author": {
     "name": "Ali Torki",
@@ -11,9 +11,16 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ali-master/raft.git",
-    "directory": "packages/nest"
+    "directory": "packages/kv-server"
   },
-  "keywords": [],
+  "keywords": [
+    "raft",
+    "kv-store",
+    "distributed-systems",
+    "enterprise",
+    "encryption",
+    "cqrs"
+  ],
   "sideEffects": false,
   "exports": {
     ".": {
@@ -32,6 +39,10 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
+    "start:prod": "node dist/main",
     "test": "cross-env CI=true TESTCONTAINERS_RYUK_DISABLED=true vitest --typecheck",
     "test:watch": "pnpm run test --watch",
     "test:ui": "pnpm run test:watch --ui --coverage.enabled=true",
@@ -54,23 +65,51 @@
     "release": "release-it"
   },
   "dependencies": {
-    "@usex/raft": "workspace:^",
-    "eventemitter3": "^5.0.1"
+    "@nestjs/common": "^11.1.3",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/core": "^11.1.3",
+    "@nestjs/cqrs": "^11.0.3",
+    "@nestjs/platform-fastify": "^11.1.3",
+    "@nestjs/swagger": "^11.2.0",
+    "@nestjs/terminus": "^11.0.0",
+    "@usex/raft": "workspace:*",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
+    "crypto-js": "^4.2.0",
+    "eventemitter3": "^5.0.1",
+    "fastify": "^5.3.3",
+    "fastify-compress": "^4.1.0",
+    "fastify-cors": "^6.1.0",
+    "fastify-helmet": "^7.1.0",
+    "fastify-rate-limit": "^5.9.0",
+    "fastify-swagger": "^5.2.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
   },
   "devDependencies": {
-    "@nestjs/common": "11.1.3",
-    "@nestjs/core": "11.1.3",
-    "@nestjs/testing": "11.1.3",
+    "@nestjs/cli": "^11.0.7",
+    "@nestjs/schematics": "^11.0.5",
+    "@nestjs/testing": "^11.1.3",
     "@swc/core": "^1.11.31",
     "@testcontainers/redis": "^11.0.2",
+    "@types/crypto-js": "^4.2.2",
     "@types/express": "^5.0.3",
     "@types/jest": "^29.5.14",
     "@types/node": "22.15.30",
+    "@typescript-eslint/eslint-plugin": "^8.33.1",
+    "@typescript-eslint/parser": "^8.33.1",
+    "eslint": "^9.28.0",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-plugin-prettier": "^5.4.1",
     "ioredis": "^5.6.1",
-    "reflect-metadata": "0.2.2",
-    "rxjs": "7.8.2",
+    "prettier": "^3.5.3",
     "testcontainers": "^11.0.2",
-    "unplugin-swc": "^1.5.4"
+    "ts-loader": "^9.5.2",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.8.3",
+    "unplugin-swc": "^1.5.4",
+    "vitest": "^3.2.2"
   },
   "peerDependencies": {
     "@nestjs/common": "^10.0.0 || ^11.0.0",

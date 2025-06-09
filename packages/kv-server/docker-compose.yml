@@ -1,0 +1,48 @@
+version: "3.8"
+
+services:
+  kv1:
+    image: raft-kv-server:latest
+    container_name: kv1
+    environment:
+      - NODE_ID=kv1
+      - CLUSTER_ID=raft-cluster
+      - PEERS=kv2,kv3
+      - ENCRYPTION_KEY=your-secure-encryption-key
+      - PORT=3000
+    ports:
+      - "3001:3000"
+    networks:
+      - raft-net
+
+  kv2:
+    image: raft-kv-server:latest
+    container_name: kv2
+    environment:
+      - NODE_ID=kv2
+      - CLUSTER_ID=raft-cluster
+      - PEERS=kv1,kv3
+      - ENCRYPTION_KEY=your-secure-encryption-key
+      - PORT=3000
+    ports:
+      - "3002:3000"
+    networks:
+      - raft-net
+
+  kv3:
+    image: raft-kv-server:latest
+    container_name: kv3
+    environment:
+      - NODE_ID=kv3
+      - CLUSTER_ID=raft-cluster
+      - PEERS=kv1,kv2
+      - ENCRYPTION_KEY=your-secure-encryption-key
+      - PORT=3000
+    ports:
+      - "3003:3000"
+    networks:
+      - raft-net
+
+networks:
+  raft-net:
+    driver: bridge

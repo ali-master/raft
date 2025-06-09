@@ -27,6 +27,7 @@ export type {
   PeerInfo,
   RaftConfiguration,
   RaftMetrics,
+  StateMachine,
   SystemMetricsSnapshot,
   VoteRequest,
   VoteResponse,

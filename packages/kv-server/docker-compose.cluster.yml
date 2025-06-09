@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+
+  kv-node-1:
+    build: .
+    environment:
+      - PORT=3001
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RAFT_NODE_ID=node-1
+      - RAFT_CLUSTER_ID=kv-cluster
+      - RAFT_HTTP_HOST=kv-node-1
+      - RAFT_HTTP_PORT=4001
+      - RAFT_ELECTION_MIN=150
+      - RAFT_ELECTION_MAX=300
+      - ENCRYPTION_KEY=your-32-character-encryption-key
+    ports:
+      - "3001:3001"
+      - "4001:4001"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  kv-node-2:
+    build: .
+    environment:
+      - PORT=3002
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RAFT_NODE_ID=node-2
+      - RAFT_CLUSTER_ID=kv-cluster
+      - RAFT_HTTP_HOST=kv-node-2
+      - RAFT_HTTP_PORT=4002
+      - RAFT_ELECTION_MIN=150
+      - RAFT_ELECTION_MAX=300
+      - ENCRYPTION_KEY=your-32-character-encryption-key
+    ports:
+      - "3002:3002"
+      - "4002:4002"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  kv-node-3:
+    build: .
+    environment:
+      - PORT=3003
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RAFT_NODE_ID=node-3
+      - RAFT_CLUSTER_ID=kv-cluster
+      - RAFT_HTTP_HOST=kv-node-3
+      - RAFT_HTTP_PORT=4003
+      - RAFT_ELECTION_MIN=150
+      - RAFT_ELECTION_MAX=300
+      - ENCRYPTION_KEY=your-32-character-encryption-key
+    ports:
+      - "3003:3003"
+      - "4003:4003"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+volumes:
+  redis-data:

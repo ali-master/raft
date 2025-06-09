@@ -1,0 +1,195 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, -apple-system, sans-serif">
+  <defs>
+    <!-- Modern gradients with Redis-inspired colors -->
+    <linearGradient id="primaryGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#DC2626"/>
+      <stop offset="100%" style="stop-color:#B91C1C"/>
+    </linearGradient>
+    
+    <linearGradient id="secondaryGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#06B6D4"/>
+      <stop offset="100%" style="stop-color:#0284C7"/>
+    </linearGradient>
+    
+    <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10B981"/>
+      <stop offset="100%" style="stop-color:#059669"/>
+    </linearGradient>
+    
+    <radialGradient id="centralGradient" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" style="stop-color:#1E293B"/>
+      <stop offset="70%" style="stop-color:#0F172A"/>
+      <stop offset="100%" style="stop-color:#020617"/>
+    </radialGradient>
+    
+    <radialGradient id="kvGradient" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" style="stop-color:#F8FAFC"/>
+      <stop offset="100%" style="stop-color:#CBD5E1"/>
+    </radialGradient>
+    
+    <!-- Enhanced glow effects -->
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <filter id="strongGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- Data flow gradient -->
+    <linearGradient id="dataFlow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#DC2626" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#06B6D4" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#10B981" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="128" cy="128" r="120" fill="url(#centralGradient)" stroke="#334155" stroke-width="1" opacity="0.3"/>
+  
+  <!-- Main container -->
+  <g transform="translate(128, 128)">
+    
+    <!-- Central KV Store (modern hexagonal design) -->
+    <g id="kv-store">
+      <!-- Outer hexagon with depth -->
+      <path d="M-50,0 L-25,-43.3 L25,-43.3 L50,0 L25,43.3 L-25,43.3 Z" 
+            fill="url(#primaryGradient)" 
+            stroke="#EF4444" 
+            stroke-width="2" 
+            filter="url(#softGlow)"/>
+      
+      <!-- Inner hexagon -->
+      <path d="M-40,0 L-20,-34.6 L20,-34.6 L40,0 L20,34.6 L-20,34.6 Z" 
+            fill="url(#kvGradient)" 
+            stroke="#DC2626" 
+            stroke-width="1"/>
+      
+      <!-- Key-Value visual representation -->
+      <g id="kv-symbol">
+        <!-- Key icon -->
+        <g transform="translate(-15, -8)">
+          <rect x="0" y="0" width="12" height="4" rx="2" fill="#DC2626"/>
+          <circle cx="18" cy="2" r="3" fill="none" stroke="#DC2626" stroke-width="2"/>
+          <circle cx="18" cy="2" r="1" fill="#DC2626"/>
+        </g>
+        
+        <!-- Equals sign -->
+        <g transform="translate(-2, -3)">
+          <rect x="0" y="0" width="8" height="1.5" rx="0.75" fill="#64748B"/>
+          <rect x="0" y="3" width="8" height="1.5" rx="0.75" fill="#64748B"/>
+        </g>
+        
+        <!-- Value icon (database symbol) -->
+        <g transform="translate(12, -8)">
+          <ellipse cx="6" cy="2" rx="6" ry="2" fill="#06B6D4"/>
+          <rect x="0" y="2" width="12" height="8" fill="#06B6D4"/>
+          <ellipse cx="6" cy="10" rx="6" ry="2" fill="#0284C7"/>
+          <ellipse cx="6" cy="6" rx="6" ry="2" fill="#0891B2"/>
+        </g>
+      </g>
+      
+      <!-- RAFT label -->
+      <text x="0" y="25" fill="#F1F5F9" font-size="10" font-weight="600" text-anchor="middle" letter-spacing="2">RAFT</text>
+    </g>
+    
+    <!-- Consensus nodes arranged in a triangle -->
+    <g id="consensus-nodes">
+      <!-- Leader node (top) -->
+      <g id="leader" transform="translate(0, -80)">
+        <circle r="12" fill="url(#accentGradient)" filter="url(#strongGlow)">
+          <animate attributeName="r" values="12;14;12" dur="2s" repeatCount="indefinite"/>
+        </circle>
+        <circle r="6" fill="#F0FDF4" opacity="0.9"/>
+        <text y="1" fill="#065F46" font-size="8" font-weight="bold" text-anchor="middle">L</text>
+        
+        <!-- Leader crown -->
+        <g transform="translate(0, -18)">
+          <path d="M-4,-2 L0,-6 L4,-2 L2,0 L-2,0 Z" fill="#F59E0B" filter="url(#softGlow)"/>
+        </g>
+      </g>
+      
+      <!-- Follower nodes -->
+      <g id="follower1" transform="translate(70, 40)">
+        <circle r="10" fill="url(#secondaryGradient)" filter="url(#softGlow)">
+          <animate attributeName="r" values="10;11;10" dur="2.5s" repeatCount="indefinite" begin="0.5s"/>
+        </circle>
+        <circle r="5" fill="#F0F9FF" opacity="0.9"/>
+        <text y="1" fill="#0C4A6E" font-size="7" font-weight="bold" text-anchor="middle">F</text>
+      </g>
+      
+      <g id="follower2" transform="translate(-70, 40)">
+        <circle r="10" fill="url(#secondaryGradient)" filter="url(#softGlow)">
+          <animate attributeName="r" values="10;11;10" dur="2.5s" repeatCount="indefinite" begin="1s"/>
+        </circle>
+        <circle r="5" fill="#F0F9FF" opacity="0.9"/>
+        <text y="1" fill="#0C4A6E" font-size="7" font-weight="bold" text-anchor="middle">F</text>
+      </g>
+    </g>
+    
+    <!-- Data replication flows -->
+    <g id="replication" stroke-linecap="round" stroke-width="3">
+      <!-- Flow to right follower -->
+      <path d="M 0,-65 Q 35,-20 65,35" 
+            fill="none" 
+            stroke="url(#dataFlow)" 
+            filter="url(#softGlow)"
+            stroke-dasharray="20 10"
+            stroke-dashoffset="0">
+        <animate attributeName="stroke-dashoffset" values="0;-30" dur="2s" repeatCount="indefinite"/>
+      </path>
+      
+      <!-- Flow to left follower -->
+      <path d="M 0,-65 Q -35,-20 -65,35" 
+            fill="none" 
+            stroke="url(#dataFlow)" 
+            filter="url(#softGlow)"
+            stroke-dasharray="20 10"
+            stroke-dashoffset="0">
+        <animate attributeName="stroke-dashoffset" values="0;-30" dur="2s" repeatCount="indefinite" begin="0.5s"/>
+      </path>
+    </g>
+    
+    <!-- Consensus confirmation pulses -->
+    <g id="acknowledgments">
+      <circle cx="70" cy="40" r="15" fill="none" stroke="#10B981" stroke-width="2" opacity="0">
+        <animate attributeName="opacity" values="0;0.8;0" dur="0.5s" repeatCount="indefinite" begin="1.5s"/>
+        <animate attributeName="r" values="12;18" dur="0.5s" repeatCount="indefinite" begin="1.5s"/>
+      </circle>
+      
+      <circle cx="-70" cy="40" r="15" fill="none" stroke="#10B981" stroke-width="2" opacity="0">
+        <animate attributeName="opacity" values="0;0.8;0" dur="0.5s" repeatCount="indefinite" begin="2s"/>
+        <animate attributeName="r" values="12;18" dur="0.5s" repeatCount="indefinite" begin="2s"/>
+      </circle>
+    </g>
+    
+    <!-- Data particles for extra visual interest -->
+    <g id="data-particles" opacity="0.6">
+      <circle cx="30" cy="-40" r="2" fill="#06B6D4">
+        <animateTransform attributeName="transform" type="translate" values="0,0; 20,20; 0,0" dur="3s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.6;1;0.6" dur="3s" repeatCount="indefinite"/>
+      </circle>
+      
+      <circle cx="-30" cy="-40" r="2" fill="#10B981">
+        <animateTransform attributeName="transform" type="translate" values="0,0; -20,20; 0,0" dur="3s" repeatCount="indefinite" begin="1s"/>
+        <animate attributeName="opacity" values="0.6;1;0.6" dur="3s" repeatCount="indefinite" begin="1s"/>
+      </circle>
+      
+      <circle cx="0" cy="20" r="1.5" fill="#DC2626">
+        <animateTransform attributeName="transform" type="translate" values="0,0; 15,-15; 0,0" dur="4s" repeatCount="indefinite" begin="0.5s"/>
+        <animate attributeName="opacity" values="0.6;1;0.6" dur="4s" repeatCount="indefinite" begin="0.5s"/>
+      </circle>
+    </g>
+  </g>
+  
+  <!-- Subtle outer ring for polish -->
+  <circle cx="128" cy="128" r="126" fill="none" stroke="url(#primaryGradient)" stroke-width="2" opacity="0.3"/>
+</svg>
