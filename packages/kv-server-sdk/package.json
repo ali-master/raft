@@ -1,0 +1,48 @@
+{
+  "name": "@usex/kv-server-sdk",
+  "version": "0.0.0",
+  "description": "Open API SDK for kv-server, a distributed key-value store with Raft consensus.",
+  "author": {
+    "name": "Ali Torki",
+    "email": "ali_4286@live.com",
+    "url": "https://github.com/ali-master"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ali-master/raft.git",
+    "directory": "packages/kv-server-sdk"
+  },
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "generate:client": "openapi-ts",
+    "test": "vitest",
+    "release": "standard-version",
+    "postrelease": "git push --follow-tags origin master && npm publish",
+    "release:beta": "standard-version --prerelease beta",
+    "postrelease:beta": "git push --follow-tags origin master && npm publish --tag beta"
+  },
+  "dependencies": {
+    "@hey-api/client-fetch": "^0.12.0",
+    "load-script": "^2.0.0"
+  },
+  "devDependencies": {
+    "standard-version": "^9.5.0",
+    "@hey-api/openapi-ts": "^0.71.1",
+    "@testing-library/dom": "^10.4.0",
+    "happy-dom": "17.6.3",
+    "msw": "^2.10.2",
+    "typescript": "^5.8.3",
+    "vitest": "~3.2.2"
+  },
+  "engines": {
+    "node": ">=23.11.x",
+    "bun": ">=1.2.x"
+  },
+  "packageManager": "pnpm@10.12.1",
+  "publishConfig": {
+    "access": "public"
+  }
+}
