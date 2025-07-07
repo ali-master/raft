@@ -1,0 +1,53 @@
+{
+  "name": "@usex/raft-playground",
+  "version": "1.0.0",
+  "description": "Complete Raft consensus algorithm playground with 100% use case coverage",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "cluster": "tsx src/examples/cluster-demo.ts",
+    "election": "tsx src/examples/leader-election.ts",
+    "replication": "tsx src/examples/log-replication.ts",
+    "membership": "tsx src/examples/membership-changes.ts",
+    "snapshot": "tsx src/examples/snapshots.ts",
+    "failures": "tsx src/examples/failure-scenarios.ts",
+    "performance": "tsx src/examples/performance-tests.ts",
+    "monitoring": "tsx src/examples/monitoring.ts",
+    "weighted-voting": "tsx src/examples/weighted-voting.ts",
+    "network-partition": "tsx src/examples/network-partition.ts",
+    "leadership-transfer": "tsx src/examples/leadership-transfer.ts",
+    "concurrent-writes": "tsx src/examples/concurrent-writes.ts",
+    "recovery": "tsx src/examples/recovery-scenarios.ts",
+    "stress-test": "tsx src/examples/stress-test.ts",
+    "interactive": "tsx src/interactive/cli.ts",
+    "visualizer": "tsx src/visualization/cluster-visualizer.ts",
+    "all-examples": "npm run election && npm run replication && npm run membership && npm run snapshot && npm run failures",
+    "dev": "tsx watch src/main.ts",
+    "test:types": "tsc --noEmit",
+    "format": "prettier --write \"**/*.ts\"",
+    "lint": "eslint \"**/*.ts\"",
+    "lint:fix": "eslint \"**/*.ts\" --fix"
+  },
+  "dependencies": {
+    "@usex/raft": "workspace:*",
+    "commander": "^14.0.0",
+    "inquirer": "^12.7.0",
+    "chalk": "^5.4.1",
+    "ora": "^8.2.0",
+    "blessed": "^0.1.81",
+    "blessed-contrib": "^4.11.0",
+    "ioredis": "^5.6.1",
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "@types/blessed": "^0.1.25",
+    "@types/inquirer": "^9.0.8",
+    "@types/express": "^5.0.3",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}
