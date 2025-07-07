@@ -16,7 +16,6 @@
   "main": "lib/index.js",
   "scripts": {
     "build": "tsc",
-    "prepare": "tsc",
     "generate:client": "openapi-ts",
     "test": "vitest",
     "release": "standard-version",
@@ -25,23 +24,23 @@
     "postrelease:beta": "git push --follow-tags origin master && npm publish --tag beta"
   },
   "dependencies": {
-    "@hey-api/client-fetch": "^0.12.0",
+    "@hey-api/client-fetch": "^0.13.1",
     "load-script": "^2.0.0"
   },
   "devDependencies": {
     "standard-version": "^9.5.0",
-    "@hey-api/openapi-ts": "^0.71.1",
+    "@hey-api/openapi-ts": "^0.78.2",
     "@testing-library/dom": "^10.4.0",
-    "happy-dom": "17.6.3",
-    "msw": "^2.10.2",
+    "happy-dom": "18.0.1",
+    "msw": "^2.10.3",
     "typescript": "^5.8.3",
-    "vitest": "~3.2.2"
+    "vitest": "~3.2.4"
   },
   "engines": {
     "node": ">=23.11.x",
     "bun": ">=1.2.x"
   },
-  "packageManager": "pnpm@10.12.1",
+  "packageManager": "pnpm@10.12.4",
   "publishConfig": {
     "access": "public"
   }
