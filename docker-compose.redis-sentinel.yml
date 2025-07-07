@@ -1,0 +1,153 @@
+version: '3.8'
+
+services:
+  # ===================================
+  # Redis Master
+  # ===================================
+  redis-master:
+    image: redis:8-alpine
+    container_name: redis-master
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-master-data:/data
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ===================================
+  # Redis Replicas
+  # ===================================
+  redis-replica-1:
+    image: redis:8-alpine
+    container_name: redis-replica-1
+    command: redis-server --replicaof redis-master 6379 --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis-replica-1-data:/data
+    networks:
+      - redis-network
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis-replica-2:
+    image: redis:8-alpine
+    container_name: redis-replica-2
+    command: redis-server --replicaof redis-master 6379 --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6382:6379"
+    volumes:
+      - redis-replica-2-data:/data
+    networks:
+      - redis-network
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ===================================
+  # Redis Sentinels
+  # ===================================
+  redis-sentinel-1:
+    image: redis:8-alpine
+    container_name: redis-sentinel-1
+    volumes:
+      - ./config/sentinel.conf:/etc/redis-sentinel.conf:ro
+    command: redis-sentinel /etc/redis-sentinel.conf
+    ports:
+      - "26379:26379"
+    networks:
+      - redis-network
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica-1:
+        condition: service_healthy
+      redis-replica-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis-sentinel-2:
+    image: redis:8-alpine
+    container_name: redis-sentinel-2
+    volumes:
+      - ./config/sentinel.conf:/etc/redis-sentinel.conf:ro
+    command: redis-sentinel /etc/redis-sentinel.conf
+    ports:
+      - "26380:26379"
+    networks:
+      - redis-network
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica-1:
+        condition: service_healthy
+      redis-replica-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis-sentinel-3:
+    image: redis:8-alpine
+    container_name: redis-sentinel-3
+    volumes:
+      - ./config/sentinel.conf:/etc/redis-sentinel.conf:ro
+    command: redis-sentinel /etc/redis-sentinel.conf
+    ports:
+      - "26381:26379"
+    networks:
+      - redis-network
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica-1:
+        condition: service_healthy
+      redis-replica-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  redis-network:
+    driver: bridge
+    name: redis-network
+
+volumes:
+  redis-master-data:
+    name: redis-master-data
+  redis-replica-1-data:
+    name: redis-replica-1-data
+  redis-replica-2-data:
+    name: redis-replica-2-data

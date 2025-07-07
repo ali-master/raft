@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  redis-single:
+    image: redis:8-alpine
+    container_name: redis-single
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-single-data:/data
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  redis-network:
+    driver: bridge
+    name: redis-network
+
+volumes:
+  redis-single-data:
+    name: redis-single-data

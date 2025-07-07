@@ -1,0 +1,405 @@
+# Docker Compose - All Redis Configurations
+# This file includes all Redis setups for convenience
+# Use specific files for individual configurations:
+# - docker-compose.redis-single.yml
+# - docker-compose.redis-sentinel.yml  
+# - docker-compose.redis-cluster.yml
+
+version: '3.8'
+
+services:
+  # Include all services from individual compose files
+  # Use profiles to control which services start
+  
+  # Single Instance (profile: single)
+  redis-single:
+    image: redis:8-alpine
+    container_name: redis-single
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-single-data:/data
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["single", "all"]
+
+  # Sentinel Mode (profile: sentinel)
+  redis-master:
+    image: redis:8-alpine
+    container_name: redis-master
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-master-data:/data
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["sentinel", "all"]
+
+  redis-replica-1:
+    image: redis:8-alpine
+    container_name: redis-replica-1
+    command: redis-server --replicaof redis-master 6379 --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis-replica-1-data:/data
+    networks:
+      - redis-network
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["sentinel", "all"]
+
+  redis-replica-2:
+    image: redis:8-alpine
+    container_name: redis-replica-2
+    command: redis-server --replicaof redis-master 6379 --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6382:6379"
+    volumes:
+      - redis-replica-2-data:/data
+    networks:
+      - redis-network
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["sentinel", "all"]
+
+  redis-sentinel-1:
+    image: redis:8-alpine
+    container_name: redis-sentinel-1
+    volumes:
+      - ./config/sentinel.conf:/etc/redis-sentinel.conf:ro
+    command: redis-sentinel /etc/redis-sentinel.conf
+    ports:
+      - "26379:26379"
+    networks:
+      - redis-network
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica-1:
+        condition: service_healthy
+      redis-replica-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["sentinel", "all"]
+
+  redis-sentinel-2:
+    image: redis:8-alpine
+    container_name: redis-sentinel-2
+    volumes:
+      - ./config/sentinel.conf:/etc/redis-sentinel.conf:ro
+    command: redis-sentinel /etc/redis-sentinel.conf
+    ports:
+      - "26380:26379"
+    networks:
+      - redis-network
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica-1:
+        condition: service_healthy
+      redis-replica-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["sentinel", "all"]
+
+  redis-sentinel-3:
+    image: redis:8-alpine
+    container_name: redis-sentinel-3
+    volumes:
+      - ./config/sentinel.conf:/etc/redis-sentinel.conf:ro
+    command: redis-sentinel /etc/redis-sentinel.conf
+    ports:
+      - "26381:26379"
+    networks:
+      - redis-network
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica-1:
+        condition: service_healthy
+      redis-replica-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["sentinel", "all"]
+
+  # Cluster Mode (profile: cluster)
+  redis-cluster-1:
+    image: redis:8-alpine
+    container_name: redis-cluster-1
+    command: >
+      redis-server 
+      --port 7000 
+      --cluster-enabled yes 
+      --cluster-config-file nodes.conf 
+      --cluster-node-timeout 5000 
+      --appendonly yes 
+      --maxmemory 128mb 
+      --maxmemory-policy allkeys-lru
+      --bind 0.0.0.0
+      --protected-mode no
+    ports:
+      - "7000:7000"
+      - "17000:17000"
+    volumes:
+      - redis-cluster-1-data:/data
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7000", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["cluster", "all"]
+
+  redis-cluster-2:
+    image: redis:8-alpine
+    container_name: redis-cluster-2
+    command: >
+      redis-server 
+      --port 7001 
+      --cluster-enabled yes 
+      --cluster-config-file nodes.conf 
+      --cluster-node-timeout 5000 
+      --appendonly yes 
+      --maxmemory 128mb 
+      --maxmemory-policy allkeys-lru
+      --bind 0.0.0.0
+      --protected-mode no
+    ports:
+      - "7001:7001"
+      - "17001:17001"
+    volumes:
+      - redis-cluster-2-data:/data
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7001", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["cluster", "all"]
+
+  redis-cluster-3:
+    image: redis:8-alpine
+    container_name: redis-cluster-3
+    command: >
+      redis-server 
+      --port 7002 
+      --cluster-enabled yes 
+      --cluster-config-file nodes.conf 
+      --cluster-node-timeout 5000 
+      --appendonly yes 
+      --maxmemory 128mb 
+      --maxmemory-policy allkeys-lru
+      --bind 0.0.0.0
+      --protected-mode no
+    ports:
+      - "7002:7002"
+      - "17002:17002"
+    volumes:
+      - redis-cluster-3-data:/data
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7002", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["cluster", "all"]
+
+  redis-cluster-4:
+    image: redis:8-alpine
+    container_name: redis-cluster-4
+    command: >
+      redis-server 
+      --port 7003 
+      --cluster-enabled yes 
+      --cluster-config-file nodes.conf 
+      --cluster-node-timeout 5000 
+      --appendonly yes 
+      --maxmemory 128mb 
+      --maxmemory-policy allkeys-lru
+      --bind 0.0.0.0
+      --protected-mode no
+    ports:
+      - "7003:7003"
+      - "17003:17003"
+    volumes:
+      - redis-cluster-4-data:/data
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7003", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["cluster", "all"]
+
+  redis-cluster-5:
+    image: redis:8-alpine
+    container_name: redis-cluster-5
+    command: >
+      redis-server 
+      --port 7004 
+      --cluster-enabled yes 
+      --cluster-config-file nodes.conf 
+      --cluster-node-timeout 5000 
+      --appendonly yes 
+      --maxmemory 128mb 
+      --maxmemory-policy allkeys-lru
+      --bind 0.0.0.0
+      --protected-mode no
+    ports:
+      - "7004:7004"
+      - "17004:17004"
+    volumes:
+      - redis-cluster-5-data:/data
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7004", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["cluster", "all"]
+
+  redis-cluster-6:
+    image: redis:8-alpine
+    container_name: redis-cluster-6
+    command: >
+      redis-server 
+      --port 7005 
+      --cluster-enabled yes 
+      --cluster-config-file nodes.conf 
+      --cluster-node-timeout 5000 
+      --appendonly yes 
+      --maxmemory 128mb 
+      --maxmemory-policy allkeys-lru
+      --bind 0.0.0.0
+      --protected-mode no
+    ports:
+      - "7005:7005"
+      - "17005:17005"
+    volumes:
+      - redis-cluster-6-data:/data
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7005", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["cluster", "all"]
+
+  redis-cluster-init:
+    image: redis:8-alpine
+    container_name: redis-cluster-init
+    depends_on:
+      redis-cluster-1:
+        condition: service_healthy
+      redis-cluster-2:
+        condition: service_healthy
+      redis-cluster-3:
+        condition: service_healthy
+      redis-cluster-4:
+        condition: service_healthy
+      redis-cluster-5:
+        condition: service_healthy
+      redis-cluster-6:
+        condition: service_healthy
+    networks:
+      - redis-network
+    command: >
+      sh -c "
+        echo 'Waiting for Redis nodes to be ready...' &&
+        sleep 10 &&
+        echo 'Creating Redis cluster...' &&
+        redis-cli --cluster create
+        redis-cluster-1:7000
+        redis-cluster-2:7001
+        redis-cluster-3:7002
+        redis-cluster-4:7003
+        redis-cluster-5:7004
+        redis-cluster-6:7005
+        --cluster-replicas 1 --cluster-yes &&
+        echo 'Redis cluster created successfully!'
+      "
+    restart: "no"
+    profiles: ["cluster", "all"]
+
+networks:
+  redis-network:
+    driver: bridge
+    name: redis-network
+
+volumes:
+  redis-single-data:
+    name: redis-single-data
+  redis-master-data:
+    name: redis-master-data
+  redis-replica-1-data:
+    name: redis-replica-1-data
+  redis-replica-2-data:
+    name: redis-replica-2-data
+  redis-cluster-1-data:
+    name: redis-cluster-1-data
+  redis-cluster-2-data:
+    name: redis-cluster-2-data
+  redis-cluster-3-data:
+    name: redis-cluster-3-data
+  redis-cluster-4-data:
+    name: redis-cluster-4-data
+  redis-cluster-5-data:
+    name: redis-cluster-5-data
+  redis-cluster-6-data:
+    name: redis-cluster-6-data
