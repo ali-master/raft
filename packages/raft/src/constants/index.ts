@@ -78,3 +78,8 @@ export enum MessageType {
   TIMEOUT_NOW_REQUEST = "timeout_now_request",
   // No TIMEOUT_NOW_RESPONSE needed as per current design
 }
+
+export enum RaftCommandType {
+  APPLICATION = "APPLICATION", // For regular client commands
+  CHANGE_CONFIG = "CHANGE_CONFIG",
+}

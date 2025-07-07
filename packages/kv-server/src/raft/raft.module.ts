@@ -5,12 +5,13 @@ import { KVStateMachine } from "../kv-store/kv-state-machine";
 import { EncryptionService } from "../encryption/encryption.service";
 import { RaftService } from "./raft.service";
 import { RaftController } from "./raft.controller";
+import { RaftRpcController } from "./raft-rpc.controller";
 import { RedisConfigFactory, RaftConfigFactory } from "../shared";
 
 @Global()
 @Module({
   imports: [ConfigModule],
-  controllers: [RaftController],
+  controllers: [RaftController, RaftRpcController],
   providers: [
     {
       provide: KVStateMachine,
@@ -18,7 +19,8 @@ import { RedisConfigFactory, RaftConfigFactory } from "../shared";
         encryptionService: EncryptionService,
         configService: ConfigService,
       ) => {
-        const redisConfig = RedisConfigFactory.createKVStoreConfig(configService);
+        const redisConfig =
+          RedisConfigFactory.createKVStoreConfig(configService);
         return new KVStateMachine(encryptionService, redisConfig);
       },
       inject: [EncryptionService, ConfigService],
@@ -29,7 +31,8 @@ import { RedisConfigFactory, RaftConfigFactory } from "../shared";
         stateMachine: KVStateMachine,
         configService: ConfigService,
       ) => {
-        const raftConfig = RaftConfigFactory.createRaftConfiguration(configService);
+        const raftConfig =
+          RaftConfigFactory.createRaftConfiguration(configService);
 
         const raftEngine = new RaftEngine();
         const node = await raftEngine.createNode(raftConfig, stateMachine);

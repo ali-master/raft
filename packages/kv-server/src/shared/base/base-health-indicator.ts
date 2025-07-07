@@ -1,5 +1,5 @@
-import { HealthIndicator } from '@nestjs/terminus';
-import type { HealthIndicatorResult } from '@nestjs/terminus';
+import { HealthIndicator } from "@nestjs/terminus";
+import type { HealthIndicatorResult } from "@nestjs/terminus";
 
 export abstract class BaseHealthIndicator extends HealthIndicator {
   protected async checkHealth(

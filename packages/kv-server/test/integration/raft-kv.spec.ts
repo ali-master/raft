@@ -1,5 +1,6 @@
-import { Test, TestingModule } from "@nestjs/testing";
-import { INestApplication } from "@nestjs/common";
+import type { TestingModule } from "@nestjs/testing";
+import { Test } from "@nestjs/testing";
+import type { INestApplication } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { CqrsModule } from "@nestjs/cqrs";
 import { RaftModule } from "../../src/raft/raft.module";
@@ -7,8 +8,9 @@ import { KVStoreModule } from "../../src/kv-store/kv-store.module";
 import { EncryptionModule } from "../../src/encryption/encryption.module";
 import { KVStoreService } from "../../src/kv-store/kv-store.service";
 import { RaftService } from "../../src/raft/raft.service";
-import { GenericContainer, StartedTestContainer } from "testcontainers";
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import type { StartedTestContainer } from "testcontainers";
+import { GenericContainer } from "testcontainers";
+import { it, expect, describe, beforeAll, afterAll } from "vitest";
 
 describe("Raft-integrated KV Store", () => {
   let app: INestApplication;
@@ -25,7 +27,6 @@ describe("Raft-integrated KV Store", () => {
       imports: [
         ConfigModule.forRoot({
           isGlobal: true,
-          envFilePath: false,
           load: [
             () => ({
               REDIS_HOST: redisContainer.getHost(),

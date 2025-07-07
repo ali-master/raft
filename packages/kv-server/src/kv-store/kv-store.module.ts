@@ -24,7 +24,12 @@ const EventHandlers = [ValueSetHandler, ValueDeletedHandler];
 @Module({
   imports: [CqrsModule, EncryptionModule, RaftModule],
   controllers: [KVStoreController],
-  providers: [KVStoreService, ...CommandHandlers, ...QueryHandlers, ...EventHandlers],
+  providers: [
+    KVStoreService,
+    ...CommandHandlers,
+    ...QueryHandlers,
+    ...EventHandlers,
+  ],
   exports: [KVStoreService],
 })
 export class KVStoreModule {}

@@ -2,13 +2,13 @@ export const DEFAULT_CONFIG = {
   // Server defaults
   SERVER: {
     PORT: 3000,
-    HOST: '0.0.0.0',
-    CORS_ORIGIN: '*',
+    HOST: "0.0.0.0",
+    CORS_ORIGIN: "*",
   },
 
   // Redis defaults
   REDIS: {
-    HOST: 'localhost',
+    HOST: "localhost",
     PORT: 6379,
     DB: {
       KV_STORE: 1,
@@ -28,7 +28,7 @@ export const DEFAULT_CONFIG = {
     MAX_LOG_ENTRIES: 10000,
     SNAPSHOT_THRESHOLD: 1000,
     SNAPSHOT_INTERVAL: 300000,
-    DATA_DIR: './data/raft',
+    DATA_DIR: "./data/raft",
     WAL_SIZE_LIMIT: 104857600,
   },
 
@@ -70,43 +70,43 @@ export const DEFAULT_CONFIG = {
 
   // Logging defaults
   LOGGING: {
-    LEVEL: 'INFO' as const,
-    FILE_PATH: './logs/raft.log',
-    REDACTED_FIELDS: ['password', 'token', 'secret'],
+    LEVEL: "INFO" as const,
+    FILE_PATH: "./logs/raft.log",
+    REDACTED_FIELDS: ["password", "token", "secret"],
   },
 
   // Voting defaults
   VOTING: {
     DEFAULT_WEIGHT: 1,
-    WEIGHT_METRICS: ['cpu', 'memory', 'latency'],
+    WEIGHT_METRICS: ["cpu", "memory", "latency"],
   },
 } as const;
 
 export const ENV_KEYS = {
   // Server environment keys
-  PORT: 'PORT',
-  CORS_ORIGIN: 'CORS_ORIGIN',
+  PORT: "PORT",
+  CORS_ORIGIN: "CORS_ORIGIN",
 
   // Redis environment keys
-  REDIS_HOST: 'REDIS_HOST',
-  REDIS_PORT: 'REDIS_PORT',
-  REDIS_PASSWORD: 'REDIS_PASSWORD',
-  REDIS_DB: 'REDIS_DB',
+  REDIS_HOST: "REDIS_HOST",
+  REDIS_PORT: "REDIS_PORT",
+  REDIS_PASSWORD: "REDIS_PASSWORD",
+  REDIS_DB: "REDIS_DB",
 
   // Raft environment keys
-  RAFT_NODE_ID: 'RAFT_NODE_ID',
-  RAFT_CLUSTER_ID: 'RAFT_CLUSTER_ID',
-  RAFT_HTTP_HOST: 'RAFT_HTTP_HOST',
-  RAFT_HTTP_PORT: 'RAFT_HTTP_PORT',
-  RAFT_ELECTION_MIN: 'RAFT_ELECTION_MIN',
-  RAFT_ELECTION_MAX: 'RAFT_ELECTION_MAX',
-  RAFT_HEARTBEAT_INTERVAL: 'RAFT_HEARTBEAT_INTERVAL',
+  RAFT_NODE_ID: "RAFT_NODE_ID",
+  RAFT_CLUSTER_ID: "RAFT_CLUSTER_ID",
+  RAFT_HTTP_HOST: "RAFT_HTTP_HOST",
+  RAFT_HTTP_PORT: "RAFT_HTTP_PORT",
+  RAFT_ELECTION_MIN: "RAFT_ELECTION_MIN",
+  RAFT_ELECTION_MAX: "RAFT_ELECTION_MAX",
+  RAFT_HEARTBEAT_INTERVAL: "RAFT_HEARTBEAT_INTERVAL",
 
   // Encryption environment keys
-  ENCRYPTION_KEY: 'ENCRYPTION_KEY',
+  ENCRYPTION_KEY: "ENCRYPTION_KEY",
 } as const;
 
 export const NODE_DEFAULTS = {
-  NODE_ID: 'node-1',
-  CLUSTER_ID: 'kv-cluster',
+  NODE_ID: "node-1",
+  CLUSTER_ID: "kv-cluster",
 } as const;

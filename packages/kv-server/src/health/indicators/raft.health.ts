@@ -24,7 +24,7 @@ export class RaftHealthIndicator extends BaseHealthIndicator {
         return {
           isHealthy,
           nodeId,
-          state: RaftState[state],
+          state,
           isLeader,
           lastHeartbeat: metrics?.lastHeartbeat,
           term: metrics?.currentTerm,

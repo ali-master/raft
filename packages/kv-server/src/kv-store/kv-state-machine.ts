@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import type { StateMachine } from "@usex/raft";
 import type { EncryptionService } from "../encryption/encryption.service";
-import { RedisConfigFactory, type RedisConfig } from "../shared";
+import type { RedisConfig } from "../shared";
+import { RedisConfigFactory } from "../shared";
 import type { Redis } from "ioredis";
 
 export interface KVOperation {

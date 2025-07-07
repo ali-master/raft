@@ -14,6 +14,7 @@ import type {
   InstallSnapshotResponse,
   InstallSnapshotRequest,
   ConfigurationChangePayload,
+  AppendEntriesResponse,
   AppendEntriesRequest,
 } from "../types";
 import { RaftState, RaftEventType } from "../constants";
@@ -265,6 +266,10 @@ export class RaftNode extends EventEmitter {
 
   public getCommitIndex(): number {
     return this.commitIndex;
+  }
+
+  public getLastApplied(): number {
+    return this.lastApplied;
   }
 
   public getMetrics(): RaftMetrics | undefined {
@@ -2065,5 +2070,182 @@ export class RaftNode extends EventEmitter {
       candidateTerm: request.term,
     });
     return { term: this.currentTerm, voteGranted: true };
+  }
+
+  public async handleVoteRequest(request: VoteRequest): Promise<VoteResponse> {
+    this.logger.debug("Handling VoteRequest", {
+      nodeId: this.config.nodeId,
+      request,
+    });
+
+    // Calculate voter weight for this node
+    const voterWeight = this.weightCalculator.calculateWeight(
+      this.config.nodeId,
+    );
+
+    // If candidate's term < currentTerm, reply false
+    if (request.term < this.currentTerm) {
+      this.logger.info(
+        "Rejecting vote: Candidate term lower than current term",
+        {
+          candidateTerm: request.term,
+          currentTerm: this.currentTerm,
+        },
+      );
+      return { term: this.currentTerm, voteGranted: false, voterWeight };
+    }
+
+    // If candidate's term > currentTerm, update currentTerm and become follower
+    if (request.term > this.currentTerm) {
+      this.logger.info(
+        "Received vote request from higher term, becoming follower",
+        {
+          newTerm: request.term,
+          oldTerm: this.currentTerm,
+        },
+      );
+      await this.becomeFollower(request.term);
+    }
+
+    // Check if we already voted for someone else in this term
+    if (this.votedFor !== null && this.votedFor !== request.candidateId) {
+      this.logger.info("Rejecting vote: Already voted for another candidate", {
+        votedFor: this.votedFor,
+        candidateId: request.candidateId,
+      });
+      return { term: this.currentTerm, voteGranted: false, voterWeight };
+    }
+
+    // Check if candidate's log is at least as up-to-date as receiver's log
+    const localLastLogTerm = this.log.getLastTerm();
+    const localLastLogIndex = this.log.getLastIndex();
+
+    const logIsOk =
+      request.lastLogTerm > localLastLogTerm ||
+      (request.lastLogTerm === localLastLogTerm &&
+        request.lastLogIndex >= localLastLogIndex);
+
+    if (!logIsOk) {
+      this.logger.info("Rejecting vote: Candidate log is not as up-to-date", {
+        candidateLastLogTerm: request.lastLogTerm,
+        candidateLastLogIndex: request.lastLogIndex,
+        localLastLogTerm,
+        localLastLogIndex,
+      });
+      return { term: this.currentTerm, voteGranted: false, voterWeight };
+    }
+
+    // Grant vote
+    this.votedFor = request.candidateId;
+    await this.persistState();
+    this.startElectionTimer(); // Reset election timer when granting vote
+
+    this.logger.info("Granting vote", {
+      candidateId: request.candidateId,
+      term: this.currentTerm,
+    });
+
+    return { term: this.currentTerm, voteGranted: true, voterWeight };
+  }
+
+  public async handleAppendEntries(
+    request: AppendEntriesRequest,
+  ): Promise<AppendEntriesResponse> {
+    this.logger.debug("Handling AppendEntriesRequest", {
+      nodeId: this.config.nodeId,
+      request: {
+        term: request.term,
+        leaderId: request.leaderId,
+        prevLogIndex: request.prevLogIndex,
+        prevLogTerm: request.prevLogTerm,
+        entriesCount: request.entries.length,
+        leaderCommit: request.leaderCommit,
+      },
+    });
+
+    // If leader's term < currentTerm, reply false
+    if (request.term < this.currentTerm) {
+      this.logger.info(
+        "Rejecting AppendEntries: Leader term lower than current term",
+        {
+          leaderTerm: request.term,
+          currentTerm: this.currentTerm,
+        },
+      );
+      return {
+        term: this.currentTerm,
+        success: false,
+        lastLogIndex: this.log.getLastIndex(),
+      };
+    }
+
+    // If leader's term >= currentTerm, recognize leader and become follower
+    if (request.term >= this.currentTerm) {
+      if (
+        request.term > this.currentTerm ||
+        this.state !== RaftState.FOLLOWER
+      ) {
+        this.logger.info(
+          "Received AppendEntries from valid leader, becoming follower",
+          {
+            newTerm: request.term,
+            leaderId: request.leaderId,
+          },
+        );
+        await this.becomeFollower(request.term);
+      }
+      // Reset election timer as we heard from the leader
+      this.startElectionTimer();
+    }
+
+    // Check if log contains an entry at prevLogIndex with prevLogTerm
+    if (request.prevLogIndex > 0) {
+      const prevEntry = this.log.getEntry(request.prevLogIndex);
+      if (!prevEntry || prevEntry.term !== request.prevLogTerm) {
+        this.logger.info("Rejecting AppendEntries: Log inconsistency", {
+          prevLogIndex: request.prevLogIndex,
+          prevLogTerm: request.prevLogTerm,
+          actualEntry: prevEntry,
+        });
+        return {
+          term: this.currentTerm,
+          success: false,
+          lastLogIndex: this.log.getLastIndex(),
+        };
+      }
+    }
+
+    // Append new entries - the appendEntries method handles conflicts internally
+    if (request.entries.length > 0) {
+      await this.log.appendEntries(
+        request.entries,
+        request.prevLogIndex,
+        request.prevLogTerm,
+      );
+      this.logger.info("Appended new entries to log", {
+        count: request.entries.length,
+        lastIndex: this.log.getLastIndex(),
+      });
+    }
+
+    // Update commit index
+    if (request.leaderCommit > this.commitIndex) {
+      const newCommitIndex = Math.min(
+        request.leaderCommit,
+        this.log.getLastIndex(),
+      );
+      this.logger.info("Updating commit index", {
+        oldCommitIndex: this.commitIndex,
+        newCommitIndex,
+      });
+      this.commitIndex = newCommitIndex;
+      await this.applyCommittedEntries();
+    }
+
+    return {
+      term: this.currentTerm,
+      success: true,
+      lastLogIndex: this.log.getLastIndex(),
+    };
   }
 }

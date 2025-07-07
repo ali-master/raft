@@ -10,9 +10,6 @@ export class KVStoreHealthIndicator extends BaseHealthIndicator {
   }
 
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
-    return this.checkHealth(
-      key,
-      () => this.kvStoreService.isHealthy(),
-    );
+    return this.checkHealth(key, () => this.kvStoreService.isHealthy());
   }
 }

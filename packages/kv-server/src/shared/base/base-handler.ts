@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import type { IQuery, ICommand } from '@nestjs/cqrs';
+import { Injectable } from "@nestjs/common";
+import type { IQuery, ICommand } from "@nestjs/cqrs";
 
 export abstract class BaseCommand implements ICommand {
   abstract readonly type: string;

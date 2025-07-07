@@ -1,5 +1,11 @@
 // Constants
-export { LogLevel, MessageType, RaftEventType, RaftState } from "./constants";
+export {
+  LogLevel,
+  MessageType,
+  RaftCommandType,
+  RaftEventType,
+  RaftState,
+} from "./constants";
 export { RaftNode } from "./core/raft-node";
 
 // Exceptions
@@ -23,12 +29,17 @@ export { RaftEngine as RaftConsensusLibrary } from "./raft-engine";
 export type {
   AppendEntriesRequest,
   AppendEntriesResponse,
+  InstallSnapshotRequest,
+  InstallSnapshotResponse,
   LogEntry,
   PeerInfo,
+  PreVoteRequest,
+  PreVoteResponse,
   RaftConfiguration,
   RaftMetrics,
   StateMachine,
   SystemMetricsSnapshot,
+  TimeoutNowRequest,
   VoteRequest,
   VoteResponse,
 } from "./types";
