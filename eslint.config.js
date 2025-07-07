@@ -32,6 +32,7 @@ export default antfu({
   rules: {
     "no-console": "off",
     "ts/ban-ts-comment": "off",
+    "no-restricted-globals": "off",
     "no-new": "off",
     "unicorn/prefer-node-protocol": "off",
     "antfu/if-newline": "off",

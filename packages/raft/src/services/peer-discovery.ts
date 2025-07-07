@@ -47,7 +47,7 @@ export class PeerDiscoveryService extends EventEmitter {
           nodeId: this.config.nodeId,
         }),
       );
-    }, this.config.peerDiscovery.registrationInterval);
+    }, this.config.peerDiscovery?.registrationInterval ?? 5000);
 
     this.healthCheckTimer = setInterval(() => {
       Promise.all([
@@ -60,7 +60,7 @@ export class PeerDiscoveryService extends EventEmitter {
           nodeId: this.config.nodeId,
         }),
       );
-    }, this.config.peerDiscovery.healthCheckInterval);
+    }, this.config.peerDiscovery?.healthCheckInterval ?? 10000);
 
     this.logger.info("Peer discovery service started", {
       nodeId: this.config.nodeId,
@@ -211,7 +211,7 @@ export class PeerDiscoveryService extends EventEmitter {
 
   private async cleanupStaleNodes(): Promise<void> {
     const now = new Date();
-    const staleThreshold = this.config.peerDiscovery.peerTimeout;
+    const staleThreshold = this.config.peerDiscovery?.peerTimeout ?? 30000;
 
     for (const [nodeId, peerInfo] of this.peers) {
       const timeSinceLastSeen = now.getTime() - peerInfo.lastSeen.getTime();

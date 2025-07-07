@@ -27,8 +27,20 @@ const baseConfig: Partial<RaftConfiguration> = {
   electionTimeout: [250, 400],
   heartbeatInterval: 100,
   logging: { level: LogLevel.ERROR },
-  persistence: { walEnabled: false },
-  network: { requestTimeout: 300, maxRetries: 3, retryDelay: 50 }, // Faster network settings for tests
+  persistence: {
+    walEnabled: false,
+    enableSnapshots: false,
+    snapshotInterval: 1000,
+    dataDir: "/tmp/test",
+    walSizeLimit: 1024 * 1024,
+  },
+  network: {
+    requestTimeout: 300,
+    maxRetries: 3,
+    retryDelay: 50,
+    circuitBreakerThreshold: 5,
+    circuitBreakerTimeout: 5000,
+  }, // Faster network settings for tests
 };
 
 async function createTestNode(
@@ -46,15 +58,22 @@ async function createTestNode(
     httpHost: "localhost",
     httpPort: port,
     snapshotThreshold: 10000,
-    persistence: { ...baseConfig.persistence, dataDir },
+    persistence: {
+      enableSnapshots: false,
+      snapshotInterval: 1000,
+      dataDir,
+      walEnabled: false,
+      walSizeLimit: 1024 * 1024,
+    },
     peers,
   });
 
   const stateMachine = new MockStateMachine();
   const engine = new RaftEngine();
   const node = await engine.createNode(config, stateMachine);
-  NODES[nodeId] = { node, engine, stateMachine, dataDir, config };
-  return NODES[nodeId];
+  const testNode = { node, engine, stateMachine, dataDir, config };
+  NODES[nodeId] = testNode;
+  return testNode;
 }
 
 async function cleanupAllNodes(): Promise<void> {
@@ -136,7 +155,7 @@ describe("Leadership Transfer", () => {
     await leader1!.appendLog({ command: "entry1" });
     await waitForLogSync(n2.node, leader1!.getLog().getLastIndex());
 
-    const n2StartElectionSpy = vi.spyOn(n2.node, "startElection");
+    const n2StartElectionSpy = vi.spyOn(n2.node as any, "startElection");
 
     await leader1!.transferLeadership("node2");
 
@@ -187,7 +206,7 @@ describe("Leadership Transfer", () => {
     await delay(n1.config.heartbeatInterval * 3); // Allow n2 to receive some heartbeats, but it's behind
 
     // @ts-ignore - spy on private method
-    const replicateSpy = vi.spyOn(leader1!, "replicateLogToPeer");
+    const replicateSpy = vi.spyOn(leader1! as any, "replicateLogToPeer");
 
     await leader1!.transferLeadership("node2");
 
@@ -221,10 +240,10 @@ describe("Leadership Transfer", () => {
 
     // Mock n2's network or log to prevent catchup
     // @ts-ignore
-    vi.spyOn(n2.node.log, "appendEntries").mockResolvedValue(false); // Simulate log append failure
+    vi.spyOn((n2.node as any).log, "appendEntries").mockResolvedValue(false); // Simulate log append failure
     // Or, mock network calls to n2 to fail from leader1's perspective
     // @ts-ignore
-    const leader1Network = leader1.network as RaftNetwork;
+    const leader1Network = (leader1 as any).network as RaftNetwork;
     vi.spyOn(leader1Network, "sendAppendEntries").mockImplementation(
       async (peerId, request) => {
         if (peerId === "node2") {

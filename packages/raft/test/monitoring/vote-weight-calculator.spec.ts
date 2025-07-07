@@ -3,7 +3,7 @@ import { VoteWeightCalculator } from "../../src/monitoring/vote-weight-calculato
 import { RaftMetricsCollector } from "../../src/monitoring/metrics-collector";
 import { PeerDiscoveryService } from "../../src/services";
 import { RaftState } from "../../src/constants";
-import type { PeerInfo } from "../../src/types";
+import type { RaftConfiguration, PeerInfo } from "../../src/types";
 import {
   createTestConfig,
   createMockRedis,
@@ -12,10 +12,10 @@ import {
 
 describe("voteWeightCalculator", () => {
   let calculator: VoteWeightCalculator;
-  let config: any;
+  let config: RaftConfiguration;
   let metricsCollector: RaftMetricsCollector;
   let peerDiscovery: PeerDiscoveryService;
-  let mockRedis: any;
+  let mockRedis: ReturnType<typeof createMockRedis>;
 
   beforeEach(() => {
     config = createTestConfig();

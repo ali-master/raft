@@ -2,10 +2,12 @@ import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
 import { createTestConfig } from "../shared/test-utils";
 import { clearRedisData } from "../shared/test-setup";
 import { RaftState, RaftNode } from "../../src";
+import { MockStateMachine } from "../shared/mocks/state-machine.mock";
+import type { RaftConfiguration } from "../../src/types";
 
 describe("raftStateMachine", () => {
   let nodes: RaftNode[];
-  let configs: any[];
+  let configs: RaftConfiguration[];
 
   beforeEach(async () => {
     await clearRedisData();
@@ -30,7 +32,9 @@ describe("raftStateMachine", () => {
         electionTimeout: [100000, 200000],
       }),
     ];
-    nodes = configs.map((config) => new RaftNode(config));
+    nodes = configs.map(
+      (config) => new RaftNode(config, new MockStateMachine()),
+    );
   });
 
   afterEach(async () => {

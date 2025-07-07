@@ -4,6 +4,7 @@ import { RaftEngine } from "../src/raft-engine";
 import { MockStateMachine } from "./shared/mocks/state-machine.mock";
 import type {
   RaftConfiguration,
+  PersistenceConfig,
   ConfigurationChangePayload,
 } from "../src/types";
 import { RaftState, RaftCommandType, LogLevel } from "../src/constants";
@@ -30,9 +31,19 @@ const baseConfig: Partial<RaftConfiguration> = {
   heartbeatInterval: 100,
   logging: { level: LogLevel.ERROR }, // Keep logs quiet for tests
   persistence: {
+    enableSnapshots: false,
+    snapshotInterval: 1000,
+    dataDir: "/tmp/test",
     walEnabled: false,
+    walSizeLimit: 1024 * 1024,
   },
-  network: { requestTimeout: 1000 },
+  network: {
+    requestTimeout: 1000,
+    maxRetries: 3,
+    retryDelay: 100,
+    circuitBreakerThreshold: 5,
+    circuitBreakerTimeout: 5000,
+  },
 };
 
 async function createTestNode(
@@ -55,7 +66,7 @@ async function createTestNode(
     persistence: {
       ...baseConfig.persistence,
       dataDir,
-    },
+    } as PersistenceConfig,
     peers:
       initialPeersInConfig.length > 0
         ? initialPeersInConfig.map(
@@ -74,7 +85,7 @@ async function createTestNode(
 async function cleanupAllNodes(): Promise<void> {
   for (const nodeId in NODES) {
     try {
-      await NODES[nodeId].node.stop();
+      await NODES[nodeId]!.node.stop();
     } catch {
       /* ignore */
     }
@@ -137,8 +148,7 @@ async function waitForActiveConfiguration(
 ): Promise<void> {
   const startTime = Date.now();
   while (Date.now() - startTime < timeoutMs) {
-    //@ts-ignore - access private member for test
-    const currentConfig = node.activeConfiguration;
+    const currentConfig = node.getActiveConfiguration();
     const oldPeersMatch =
       (!expectedConfig.oldPeers && !currentConfig.oldPeers) ||
       (expectedConfig.oldPeers &&
@@ -154,9 +164,9 @@ async function waitForActiveConfiguration(
     if (oldPeersMatch && newPeersMatch) return;
     await delay(100);
   }
-  //@ts-ignore
+
   throw new Error(
-    `Timeout waiting for active configuration ${JSON.stringify(expectedConfig)} on node ${node.getNodeId()}. Current: ${JSON.stringify(node.activeConfiguration)}`,
+    `Timeout waiting for active configuration ${JSON.stringify(expectedConfig)} on node ${node.getNodeId()}. Current: ${JSON.stringify(node.getActiveConfiguration())}`,
   );
 }
 
@@ -198,7 +208,7 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
     const initialNodes = [node1.node, node2.node, node3.node];
     const leader = await waitForLeader(initialNodes);
     expect(leader).not.toBeNull();
-    const leaderNode = NODES[leader!.getNodeId()].node;
+    const leaderNode = NODES[leader!.getNodeId()]!.node;
     const initialLeaderId = leaderNode.getNodeId();
 
     const initialConfig = {
@@ -208,12 +218,10 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
         node3.config.nodeId,
       ].sort(),
     };
-    // @ts-ignore
-    expect(leaderNode.activeConfiguration.newPeers.sort()).toEqual(
+    expect(leaderNode.getActiveConfiguration().newPeers.sort()).toEqual(
       initialConfig.newPeers,
     );
-    // @ts-ignore
-    expect(leaderNode.activeConfiguration.oldPeers).toBeUndefined();
+    expect(leaderNode.getActiveConfiguration().oldPeers).toBeUndefined();
 
     // Append a few entries to stabilize
     for (let i = 0; i < 3; i++) {
@@ -224,8 +232,7 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
       (n) => n.getNodeId() !== initialLeaderId,
     )) {
       await waitForLogCommit(n, leaderNode.getCommitIndex());
-      //@ts-ignore
-      expect(n.activeConfiguration.newPeers.sort()).toEqual(
+      expect(n.getActiveConfiguration().newPeers.sort()).toEqual(
         initialConfig.newPeers,
       );
     }
@@ -280,12 +287,10 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
     await waitForActiveConfiguration(leaderNode, {
       newPeers: newClusterPeerIds,
     });
-    // @ts-ignore
-    expect(leaderNode.activeConfiguration.newPeers.sort()).toEqual(
+    expect(leaderNode.getActiveConfiguration().newPeers.sort()).toEqual(
       newClusterPeerIds,
     );
-    // @ts-ignore
-    expect(leaderNode.activeConfiguration.oldPeers).toBeUndefined();
+    expect(leaderNode.getActiveConfiguration().oldPeers).toBeUndefined();
 
     // Follower assertions (node2, node3)
     for (const follower of [node2.node, node3.node]) {
@@ -293,12 +298,10 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
       await waitForActiveConfiguration(follower, {
         newPeers: newClusterPeerIds,
       });
-      // @ts-ignore
-      expect(follower.activeConfiguration.newPeers.sort()).toEqual(
+      expect(follower.getActiveConfiguration().newPeers.sort()).toEqual(
         newClusterPeerIds,
       );
-      // @ts-ignore
-      expect(follower.activeConfiguration.oldPeers).toBeUndefined();
+      expect(follower.getActiveConfiguration().oldPeers).toBeUndefined();
       expect(follower.getLog().getEntry(cJointEntryIndex)?.commandType).toBe(
         RaftCommandType.CHANGE_CONFIG,
       );
@@ -312,12 +315,10 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
     await waitForActiveConfiguration(node4.node, {
       newPeers: newClusterPeerIds,
     });
-    // @ts-ignore
-    expect(node4.node.activeConfiguration.newPeers.sort()).toEqual(
+    expect(node4.node.getActiveConfiguration().newPeers.sort()).toEqual(
       newClusterPeerIds,
     );
-    // @ts-ignore
-    expect(node4.node.activeConfiguration.oldPeers).toBeUndefined();
+    expect(node4.node.getActiveConfiguration().oldPeers).toBeUndefined();
     expect(node4.node.getLog().getEntry(cJointEntryIndex)?.commandType).toBe(
       RaftCommandType.CHANGE_CONFIG,
     );
@@ -376,7 +377,7 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
 
     const leader = await waitForLeader(allNodes, 10000); // Increased timeout for 4 nodes
     expect(leader).not.toBeNull();
-    const leaderNode = NODES[leader!.getNodeId()].node;
+    const leaderNode = NODES[leader!.getNodeId()]!.node;
     const initialLeaderId = leaderNode.getNodeId();
 
     const initialPeerIds = [
@@ -386,12 +387,10 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
       n4.config.nodeId,
     ].sort();
     const initialConfig = { newPeers: initialPeerIds };
-    // @ts-ignore
-    expect(leaderNode.activeConfiguration.newPeers.sort()).toEqual(
+    expect(leaderNode.getActiveConfiguration().newPeers.sort()).toEqual(
       initialConfig.newPeers,
     );
-    // @ts-ignore
-    expect(leaderNode.activeConfiguration.oldPeers).toBeUndefined();
+    expect(leaderNode.getActiveConfiguration().oldPeers).toBeUndefined();
 
     // Append a few entries to stabilize
     for (let i = 0; i < 3; i++) {
@@ -403,8 +402,7 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
       (n) => n.getNodeId() !== initialLeaderId,
     )) {
       await waitForLogCommit(nodeInstance, leaderNode.getCommitIndex());
-      // @ts-ignore
-      expect(nodeInstance.activeConfiguration.newPeers.sort()).toEqual(
+      expect(nodeInstance.getActiveConfiguration().newPeers.sort()).toEqual(
         initialConfig.newPeers,
       );
     }
@@ -456,12 +454,10 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
       { newPeers: finalPeerIds },
       10000,
     );
-    // @ts-ignore
-    expect(leaderNode.activeConfiguration.newPeers.sort()).toEqual(
+    expect(leaderNode.getActiveConfiguration().newPeers.sort()).toEqual(
       finalPeerIds,
     );
-    // @ts-ignore
-    expect(leaderNode.activeConfiguration.oldPeers).toBeUndefined();
+    expect(leaderNode.getActiveConfiguration().oldPeers).toBeUndefined();
     console.log("Leader configuration updated to 3 nodes.");
 
     // Assertions for remaining followers (node2, node3)
@@ -475,12 +471,10 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
         { newPeers: finalPeerIds },
         10000,
       );
-      // @ts-ignore
-      expect(follower.activeConfiguration.newPeers.sort()).toEqual(
+      expect(follower.getActiveConfiguration().newPeers.sort()).toEqual(
         finalPeerIds,
       );
-      // @ts-ignore
-      expect(follower.activeConfiguration.oldPeers).toBeUndefined();
+      expect(follower.getActiveConfiguration().oldPeers).toBeUndefined();
       expect(follower.getLog().getEntry(cJointEntryIndex)?.commandType).toBe(
         RaftCommandType.CHANGE_CONFIG,
       );
@@ -498,10 +492,10 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
       { newPeers: finalPeerIds },
       15000,
     );
-    // @ts-ignore
-    expect(n4.node.activeConfiguration.newPeers.sort()).toEqual(finalPeerIds);
-    // @ts-ignore
-    expect(n4.node.activeConfiguration.oldPeers).toBeUndefined(); // It applies C_new
+    expect(n4.node.getActiveConfiguration().newPeers.sort()).toEqual(
+      finalPeerIds,
+    );
+    expect(n4.node.getActiveConfiguration().oldPeers).toBeUndefined(); // It applies C_new
     console.log("Removed node4 configuration updated.");
 
     // Cluster Stability (3 Nodes)
@@ -543,8 +537,7 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
     expect(finalPeerIds).toContain(newLeader!.getNodeId());
     console.log(`New leader elected: ${newLeader!.getNodeId()}.`);
 
-    // @ts-ignore Access activeConfiguration for verification
-    const newLeaderActiveConfig = newLeader!.activeConfiguration;
+    const newLeaderActiveConfig = newLeader!.getActiveConfiguration();
     expect(newLeaderActiveConfig.newPeers.sort()).toEqual(finalPeerIds);
     expect(newLeaderActiveConfig.oldPeers).toBeUndefined();
 

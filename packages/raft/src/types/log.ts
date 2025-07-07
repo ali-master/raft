@@ -3,11 +3,11 @@ export enum RaftCommandType {
   CHANGE_CONFIG = "CHANGE_CONFIG",
 }
 
-export interface LogEntry {
+export interface LogEntry<TCommand = unknown> {
   term: number;
   index: number;
   commandType: RaftCommandType;
-  commandPayload: any; // Can be application-specific command or ConfigurationChangePayload
+  commandPayload: TCommand | ConfigurationChangePayload; // Can be application-specific command or ConfigurationChangePayload
   timestamp: Date;
   checksum: string;
 }

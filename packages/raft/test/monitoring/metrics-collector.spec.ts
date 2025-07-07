@@ -1,11 +1,12 @@
 import { it, expect, describe, beforeEach } from "vitest";
 import { RaftMetricsCollector } from "../../src/monitoring/metrics-collector";
 import { RaftState } from "../../src/constants";
+import type { RaftConfiguration } from "../../src/types";
 import { createTestConfig } from "../shared/test-utils";
 
 describe("raftMetricsCollector", () => {
   let metricsCollector: RaftMetricsCollector;
-  let config: any;
+  let config: RaftConfiguration;
 
   beforeEach(() => {
     config = createTestConfig();

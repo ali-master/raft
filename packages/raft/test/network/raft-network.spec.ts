@@ -1,7 +1,7 @@
 import { vi, it, expect, describe, beforeEach } from "vitest";
 import { RaftNetwork } from "../../src/network/raft-network";
 import { RetryStrategy } from "../../src/utils/retry-strategy";
-import type { VoteRequest } from "../../src/types";
+import type { VoteRequest, RaftConfiguration } from "../../src/types";
 import {
   createTestConfig,
   createMockPeerDiscovery,
@@ -11,10 +11,10 @@ import {
 
 describe("raftNetwork", () => {
   let network: RaftNetwork;
-  let config: any;
-  let mockLogger: any;
-  let mockPeerDiscovery: any;
-  let mockMetrics: any;
+  let config: RaftConfiguration;
+  let mockLogger: ReturnType<typeof createMockLogger>;
+  let mockPeerDiscovery: ReturnType<typeof createMockPeerDiscovery>;
+  let mockMetrics: ReturnType<typeof createMockMetricsCollector>;
   let mockRetry: RetryStrategy;
 
   beforeEach(() => {

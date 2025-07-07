@@ -10,7 +10,7 @@ import {
 } from "vitest";
 import { PeerDiscoveryService } from "../../src/services/peer-discovery";
 import { RaftState } from "../../src/constants";
-import type { PeerInfo } from "../../src/types";
+import type { RaftConfiguration, PeerInfo } from "../../src/types";
 import type Redis from "ioredis";
 import { createTestConfig, createMockLogger } from "../shared/test-utils";
 import {
@@ -23,8 +23,8 @@ describe("peerDiscoveryService", { timeout: 60000 }, () => {
   let peerDiscovery: PeerDiscoveryService;
   let redisContext: RedisTestContext;
   let redis: Redis;
-  let mockLogger: any;
-  let config: any;
+  let mockLogger: ReturnType<typeof createMockLogger>;
+  let config: RaftConfiguration;
 
   // Setup single Redis container for all tests
   beforeAll(async () => {

@@ -15,7 +15,7 @@ import { WALSegmentStatus, WALEntryType } from "./wal-types";
 import type { RaftLogger } from "../services";
 import { calculateChecksum } from "../utils";
 
-export class WALEngine extends EventEmitter {
+export class WALEngine<TCommand = unknown> extends EventEmitter {
   private readonly options: WALOptions;
   private readonly logger: RaftLogger;
   private segments: Map<string, WALSegment> = new Map();
@@ -56,7 +56,7 @@ export class WALEngine extends EventEmitter {
     this.startSyncTimer();
   }
 
-  public async appendLogEntry(entry: LogEntry): Promise<void> {
+  public async appendLogEntry(entry: LogEntry<TCommand>): Promise<void> {
     const walEntry: WALEntry = {
       sequence: ++this.sequence,
       timestamp: Date.now(),
@@ -119,13 +119,10 @@ export class WALEngine extends EventEmitter {
       }
     }
 
-    const segmentsToRemove: string[] = [];
-
-    for (const [id, segment] of this.segments) {
-      if (segment.endSequence < beforeSequence) {
-        segmentsToRemove.push(id);
-      }
-    }
+    // Use getSegmentsInRange to find segments that need to be removed
+    const segmentsToRemove = this.getSegmentsInRange(0, beforeSequence - 1)
+      .filter((segment) => segment.endSequence < beforeSequence)
+      .map((segment) => segment.id);
 
     for (const id of segmentsToRemove) {
       await this.removeSegment(id);
@@ -502,17 +499,19 @@ export class WALEngine extends EventEmitter {
     }
   }
 
-  private serializeData(data: LogEntry | WALSnapshot | WALMetadata): any {
+  private serializeData(
+    data: LogEntry | WALSnapshot | WALMetadata,
+  ): Record<string, unknown> {
     if ("timestamp" in data && data.timestamp instanceof Date) {
       return {
         ...data,
         timestamp: data.timestamp.toISOString(),
       };
     }
-    return data;
+    return data as unknown as Record<string, unknown>;
   }
 
-  private deserializeData(data: any): LogEntry | WALSnapshot | WALMetadata {
+  private deserializeData(data: unknown): LogEntry | WALSnapshot | WALMetadata {
     if (
       data &&
       typeof data === "object" &&
@@ -522,8 +521,8 @@ export class WALEngine extends EventEmitter {
       return {
         ...data,
         timestamp: new Date(data.timestamp),
-      };
+      } as LogEntry | WALSnapshot | WALMetadata;
     }
-    return data;
+    return data as LogEntry | WALSnapshot | WALMetadata;
   }
 }

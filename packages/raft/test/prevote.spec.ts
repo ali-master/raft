@@ -2,7 +2,11 @@ import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
 import type { RaftNode } from "../src/core/raft-node";
 import { RaftEngine } from "../src/raft-engine";
 import { MockStateMachine } from "./shared/mocks/state-machine.mock";
-import type { RaftConfiguration } from "../src/types";
+import type {
+  RaftConfiguration,
+  PersistenceConfig,
+  NetworkConfig,
+} from "../src/types";
 import { RaftState, LogLevel } from "../src/constants";
 import { createTempDataDir, cleanupDataDir } from "./shared/utils/temp-dir";
 import type { RaftNetwork } from "../src/network/raft-network";
@@ -27,8 +31,20 @@ const baseConfig: Partial<RaftConfiguration> = {
   electionTimeout: [150, 300], // Keep election timeouts relatively short for tests
   heartbeatInterval: 50,
   logging: { level: LogLevel.ERROR },
-  persistence: { walEnabled: false },
-  network: { requestTimeout: 200 }, // Faster network timeout for tests
+  persistence: {
+    enableSnapshots: false,
+    snapshotInterval: 1000,
+    dataDir: "/tmp/test",
+    walEnabled: false,
+    walSizeLimit: 1024 * 1024,
+  } as PersistenceConfig,
+  network: {
+    requestTimeout: 200,
+    maxRetries: 3,
+    retryDelay: 50,
+    circuitBreakerThreshold: 5,
+    circuitBreakerTimeout: 5000,
+  } as NetworkConfig, // Faster network timeout for tests
 };
 
 async function createTestNode(
@@ -103,7 +119,7 @@ async function waitForLeader(
 // Helper to manually trigger election logic for a node (bypassing actual timer)
 async function _triggerElection(node: RaftNode) {
   // @ts-ignore: Access private method for testing
-  await node.startElection();
+  await (node as any).startElection();
 }
 
 describe("Pre-Vote Protocol", () => {

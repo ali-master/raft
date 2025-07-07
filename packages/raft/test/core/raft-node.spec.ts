@@ -4,16 +4,20 @@ import { clearRedisData } from "../shared/test-setup";
 import { RaftNode } from "../../src/core/raft-node";
 import { RaftState } from "../../src/constants";
 import { RaftValidationException } from "../../src/exceptions";
+import { MockStateMachine } from "../shared/mocks/state-machine.mock";
+import type { RaftConfiguration } from "../../src/types";
 
 describe("raftNode", () => {
   let node: RaftNode;
-  let config: any;
+  let config: RaftConfiguration;
+  let stateMachine: MockStateMachine;
 
   beforeEach(async () => {
     await clearRedisData();
     vi.useFakeTimers();
     config = createTestConfig();
-    node = new RaftNode(config);
+    stateMachine = new MockStateMachine();
+    node = new RaftNode(config, stateMachine);
   });
 
   afterEach(async () => {

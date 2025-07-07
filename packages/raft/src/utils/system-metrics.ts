@@ -66,6 +66,10 @@ export class SystemMetrics {
     return process.uptime();
   }
 
+  public static getNetworkInterfaces(): NodeJS.Dict<os.NetworkInterfaceInfo[]> {
+    return this.networkInterfaces;
+  }
+
   public static getNetworkStats(): {
     bytesSent: number;
     bytesReceived: number;

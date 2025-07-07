@@ -125,7 +125,7 @@ export class RaftNetwork {
   private async sendRequestWithRetry<T>(
     targetNodeId: string,
     messageType: MessageType,
-    request: any,
+    request: object,
   ): Promise<T> {
     let breaker = this.circuitBreakers.get(targetNodeId);
     if (!breaker) {
@@ -148,8 +148,8 @@ export class RaftNetwork {
   private async sendMessage(
     targetNodeId: string,
     messageType: MessageType,
-    payload: any,
-  ): Promise<any> {
+    payload: object,
+  ): Promise<unknown> {
     const startTime = performance.now();
 
     try {
@@ -201,8 +201,8 @@ export class RaftNetwork {
   private async sendHttpRequest(
     peerInfo: PeerInfo,
     messageType: MessageType,
-    payload: any,
-  ): Promise<any> {
+    payload: object,
+  ): Promise<unknown> {
     const url = `http://${peerInfo.httpHost}:${peerInfo.httpPort}/raft/${messageType}`;
 
     return new Promise((resolve, reject) => {

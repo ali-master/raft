@@ -1,7 +1,7 @@
 import { it, expect, describe, beforeEach } from "vitest";
 import { RaftLog } from "../../src/core/raft-log";
 import { RaftValidationException } from "../../src/exceptions";
-import type { LogEntry } from "../../src/types";
+import type { RaftConfiguration, LogEntry } from "../../src/types";
 import { RaftCommandType } from "../../src/types";
 import { createTestConfig, createMockRedis } from "../shared/test-utils";
 import { RaftLogger } from "../../src/services/logger";
@@ -9,9 +9,9 @@ import { LogLevel } from "../../src/constants";
 
 describe("raftLog", () => {
   let raftLog: RaftLog;
-  let mockRedis: any;
+  let mockRedis: ReturnType<typeof createMockRedis>;
   let logger: RaftLogger;
-  let config: any;
+  let config: RaftConfiguration;
 
   beforeEach(() => {
     mockRedis = createMockRedis();

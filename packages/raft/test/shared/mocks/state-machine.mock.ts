@@ -1,12 +1,14 @@
 import type { StateMachine } from "../../../src/types";
 
-export class MockStateMachine implements StateMachine {
-  public commands: any[] = [];
+export class MockStateMachine<TCommand = unknown>
+  implements StateMachine<TCommand>
+{
+  public commands: TCommand[] = [];
   public snapshotApplied: boolean = false;
   public appliedSnapshotData: Buffer | null = null;
   private snapshotDataToReturn: Buffer = Buffer.from("default_snapshot_data");
 
-  async apply(command: any): Promise<void> {
+  async apply(command: TCommand): Promise<void> {
     this.commands.push(command);
   }
 
@@ -26,7 +28,7 @@ export class MockStateMachine implements StateMachine {
 
   // Test utility to reset mock state
   reset(): void {
-    this.commands = [];
+    this.commands = [] as TCommand[];
     this.snapshotApplied = false;
     this.appliedSnapshotData = null;
     this.snapshotDataToReturn = Buffer.from("default_snapshot_data");

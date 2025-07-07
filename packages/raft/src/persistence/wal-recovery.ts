@@ -4,16 +4,16 @@ import { WALEntryType } from "./wal-types";
 import type { WALEngine } from "./wal-engine";
 import type { RaftLogger } from "../services/logger";
 
-export interface RecoveryState {
+export interface RecoveryState<TCommand = unknown> {
   term: number;
   votedFor: string | null;
   commitIndex: number;
   lastApplied: number;
-  logs: LogEntry[];
+  logs: LogEntry<TCommand>[];
   lastSnapshot?: WALSnapshot;
 }
 
-export class WALRecovery {
+export class WALRecovery<TCommand = unknown> {
   private readonly walEngine: WALEngine;
   private readonly logger: RaftLogger;
 
@@ -22,10 +22,10 @@ export class WALRecovery {
     this.logger = logger;
   }
 
-  public async recover(): Promise<RecoveryState> {
+  public async recover(): Promise<RecoveryState<TCommand>> {
     this.logger.info("Starting WAL recovery");
 
-    const state: RecoveryState = {
+    const state: RecoveryState<TCommand> = {
       term: 0,
       votedFor: null,
       commitIndex: 0,
@@ -58,11 +58,11 @@ export class WALRecovery {
 
   private async processEntry(
     entry: WALEntry,
-    state: RecoveryState,
+    state: RecoveryState<TCommand>,
   ): Promise<void> {
     switch (entry.type) {
       case WALEntryType.LOG_ENTRY:
-        this.processLogEntry(entry.data as LogEntry, state);
+        this.processLogEntry(entry.data as LogEntry<TCommand>, state);
         break;
       case WALEntryType.SNAPSHOT:
         this.processSnapshot(entry.data as WALSnapshot, state);
@@ -75,7 +75,10 @@ export class WALRecovery {
     }
   }
 
-  private processLogEntry(logEntry: LogEntry, state: RecoveryState): void {
+  private processLogEntry(
+    logEntry: LogEntry<TCommand>,
+    state: RecoveryState<TCommand>,
+  ): void {
     // Remove any logs that conflict with the new entry
     const conflictIndex = state.logs.findIndex(
       (log) => log.index === logEntry.index && log.term !== logEntry.term,
@@ -96,7 +99,10 @@ export class WALRecovery {
     }
   }
 
-  private processSnapshot(snapshot: WALSnapshot, state: RecoveryState): void {
+  private processSnapshot(
+    snapshot: WALSnapshot,
+    state: RecoveryState<TCommand>,
+  ): void {
     state.lastSnapshot = snapshot;
 
     // Remove all logs up to and including the snapshot's last included index
@@ -122,7 +128,10 @@ export class WALRecovery {
     }
   }
 
-  private processMetadata(metadata: WALMetadata, state: RecoveryState): void {
+  private processMetadata(
+    metadata: WALMetadata,
+    state: RecoveryState<TCommand>,
+  ): void {
     // Metadata updates should only increase values, never decrease
     if (metadata.term > state.term) {
       state.term = metadata.term;
@@ -136,7 +145,7 @@ export class WALRecovery {
     }
   }
 
-  private validateRecoveredState(state: RecoveryState): void {
+  private validateRecoveredState(state: RecoveryState<TCommand>): void {
     // Ensure logs are contiguous
     if (state.logs.length > 0) {
       const startIndex = state.lastSnapshot
@@ -174,7 +183,7 @@ export class WALRecovery {
     }
   }
 
-  private getLastLogIndex(state: RecoveryState): number {
+  private getLastLogIndex(state: RecoveryState<TCommand>): number {
     if (state.logs.length > 0) {
       return state.logs[state.logs.length - 1]?.index || 0;
     }

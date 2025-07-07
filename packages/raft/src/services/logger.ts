@@ -13,19 +13,19 @@ export class RaftLogger {
     );
   }
 
-  private redact(data: any): any {
+  private redact<T>(data: T): T {
     if (typeof data === "string") {
-      return data.replace(this.redactPattern, "[REDACTED]");
+      return data.replace(this.redactPattern, "[REDACTED]") as T;
     }
 
     if (typeof data === "object" && data !== null) {
-      const redacted = { ...data };
+      const redacted = { ...data } as Record<string, unknown>;
       for (const field of this.config.redactedFields || []) {
         if (field in redacted) {
           redacted[field] = "[REDACTED]";
         }
       }
-      return redacted;
+      return redacted as T;
     }
 
     return data;
@@ -45,7 +45,7 @@ export class RaftLogger {
   private formatMessage(
     level: LogLevel,
     message: string,
-    context?: any,
+    context?: Record<string, unknown>,
   ): string {
     const timestamp = new Date().toISOString();
     const redactedContext = context ? this.redact(context) : undefined;
@@ -64,31 +64,31 @@ export class RaftLogger {
     }`;
   }
 
-  public debug(message: string, context?: any): void {
+  public debug(message: string, context?: Record<string, unknown>): void {
     if (this.shouldLog(LogLevel.DEBUG)) {
       console.log(this.formatMessage(LogLevel.DEBUG, message, context));
     }
   }
 
-  public info(message: string, context?: any): void {
+  public info(message: string, context?: Record<string, unknown>): void {
     if (this.shouldLog(LogLevel.INFO)) {
       console.log(this.formatMessage(LogLevel.INFO, message, context));
     }
   }
 
-  public warn(message: string, context?: any): void {
+  public warn(message: string, context?: Record<string, unknown>): void {
     if (this.shouldLog(LogLevel.WARN)) {
       console.warn(this.formatMessage(LogLevel.WARN, message, context));
     }
   }
 
-  public error(message: string, context?: any): void {
+  public error(message: string, context?: Record<string, unknown>): void {
     if (this.shouldLog(LogLevel.ERROR)) {
       console.error(this.formatMessage(LogLevel.ERROR, message, context));
     }
   }
 
-  public fatal(message: string, context?: any): void {
+  public fatal(message: string, context?: Record<string, unknown>): void {
     if (this.shouldLog(LogLevel.FATAL)) {
       console.error(this.formatMessage(LogLevel.FATAL, message, context));
     }

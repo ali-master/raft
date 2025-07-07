@@ -11,6 +11,7 @@ import type {
   PreVoteResponse,
   PreVoteRequest,
   PeerInfo,
+  LogEntry,
   InstallSnapshotResponse,
   InstallSnapshotRequest,
   ConfigurationChangePayload,
@@ -32,10 +33,10 @@ import { RaftLog } from "./raft-log";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
-export class RaftNode extends EventEmitter {
+export class RaftNode<TCommand = unknown> extends EventEmitter {
   private readonly config: RaftConfiguration;
   private readonly storage: Redis;
-  private readonly log: RaftLog;
+  private readonly log: RaftLog<TCommand>;
   private readonly network: RaftNetwork;
   private readonly metrics: RaftMetricsCollector;
   private readonly weightCalculator: VoteWeightCalculator;
@@ -43,7 +44,7 @@ export class RaftNode extends EventEmitter {
   private readonly logger: RaftLogger;
   private readonly retry: RetryStrategy;
   private readonly peerDiscovery: PeerDiscoveryService;
-  private readonly stateMachine: StateMachine;
+  private readonly stateMachine: StateMachine<TCommand>;
 
   // Raft state
   private state: RaftState = RaftState.FOLLOWER;
@@ -72,7 +73,7 @@ export class RaftNode extends EventEmitter {
   // Represents the currently active configuration. Can be C_old (simple array), C_joint (oldPeers/newPeers), or C_new (simple array).
   private activeConfiguration: { oldPeers?: string[]; newPeers: string[] };
 
-  constructor(config: RaftConfiguration, stateMachine: StateMachine) {
+  constructor(config: RaftConfiguration, stateMachine: StateMachine<TCommand>) {
     super();
     this.config = config;
     this.stateMachine = stateMachine;
@@ -81,14 +82,29 @@ export class RaftNode extends EventEmitter {
     this.metrics = new RaftMetricsCollector(config.metrics);
     this.eventBus = new RaftEventBus();
 
-    this.storage = new Redis({
+    const redisOptions: {
+      host: string;
+      port: number;
+      db: number;
+      password?: string;
+    } = {
       host: config.redis.host,
       port: config.redis.port,
-      password: config.redis.password,
       db: config.redis.db || 0,
-    });
+    };
 
-    this.log = new RaftLog(this.storage, config.nodeId, this.logger, config);
+    if (config.redis.password) {
+      redisOptions.password = config.redis.password;
+    }
+
+    this.storage = new Redis(redisOptions);
+
+    this.log = new RaftLog<TCommand>(
+      this.storage,
+      config.nodeId,
+      this.logger,
+      config,
+    );
     this.peerDiscovery = new PeerDiscoveryService(
       this.storage,
       config,
@@ -207,7 +223,9 @@ export class RaftNode extends EventEmitter {
 
   // This is a simplified appendLog for application data.
   // For config changes, changeClusterConfiguration will call a more specific log append.
-  public async appendLog(applicationCommandPayload: any): Promise<boolean> {
+  public async appendLog(
+    applicationCommandPayload: TCommand,
+  ): Promise<boolean> {
     if (this.state !== RaftState.LEADER) {
       throw new RaftValidationException("Only leader can append logs");
     }
@@ -280,6 +298,10 @@ export class RaftNode extends EventEmitter {
     return await this.metrics.getPrometheusMetrics();
   }
 
+  public getActiveConfiguration(): { oldPeers?: string[]; newPeers: string[] } {
+    return this.activeConfiguration;
+  }
+
   public getPeers(): string[] {
     // Returns the list of voting members based on the current phase of configuration change.
     if (
@@ -346,7 +368,10 @@ export class RaftNode extends EventEmitter {
     });
   }
 
-  private publishEvent(type: RaftEventType, data: any): void {
+  private publishEvent(
+    type: RaftEventType,
+    data: Record<string, unknown> = {},
+  ): void {
     const event = new RaftEvent(type, this.config.nodeId, data);
     this.eventBus.publish(event);
   }
@@ -764,9 +789,13 @@ export class RaftNode extends EventEmitter {
       } else {
         // Simple Consensus: C_old or C_new
         const currentPeers = this.getNewConfigPeers(); // This is the single active configuration
-        // The existing calculateTotalWeight and calculateReceivedWeight might implicitly work if
-        // peerDiscovery.getPeers() aligns with activeConfiguration.newPeers or if VoteWeightCalculator uses getPeers().
-        // For simplicity, let's assume unweighted votes for now and directly count.
+
+        // Use weighted voting calculations
+        const totalWeight = this.calculateTotalWeight(votes);
+        const receivedWeight = this.calculateReceivedWeight(votes);
+        const majorityWeight = Math.floor(totalWeight / 2) + 1;
+
+        // Fallback to simple vote counting if weights are not being used
         let receivedVotes = 0;
         if (this.votedFor === this.config.nodeId) receivedVotes++; // Self-vote
         for (const voteResponse of votes.values()) {
@@ -777,9 +806,18 @@ export class RaftNode extends EventEmitter {
           receivedVotes,
           currentConfigSize: currentPeers.length,
           majorityCount,
+          receivedWeight,
+          totalWeight,
+          majorityWeight,
         });
 
-        if (receivedVotes >= majorityCount) {
+        // Use weighted voting if weights are meaningful, otherwise fall back to simple counting
+        const useWeightedVoting = totalWeight > currentPeers.length;
+        if (
+          useWeightedVoting
+            ? receivedWeight >= majorityWeight
+            : receivedVotes >= majorityCount
+        ) {
           await this.becomeLeader();
         } else {
           void this.becomeFollower();
@@ -1549,7 +1587,7 @@ export class RaftNode extends EventEmitter {
           entry.commandPayload as ConfigurationChangePayload,
         );
       } else if (entry.commandType === RaftCommandType.APPLICATION) {
-        await this.stateMachine.apply(entry.commandPayload);
+        await this.stateMachine.apply(entry.commandPayload as TCommand);
       }
 
       this.lastApplied = entry.index;
@@ -2218,7 +2256,7 @@ export class RaftNode extends EventEmitter {
     // Append new entries - the appendEntries method handles conflicts internally
     if (request.entries.length > 0) {
       await this.log.appendEntries(
-        request.entries,
+        request.entries as LogEntry<TCommand>[],
         request.prevLogIndex,
         request.prevLogTerm,
       );

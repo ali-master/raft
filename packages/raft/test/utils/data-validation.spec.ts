@@ -268,11 +268,13 @@ describe("dataValidation", () => {
         { path: "../../../etc/passwd" },
         { overflow: "A".repeat(10000) },
         { unicode: "\u0000\u0001\u0002\u0003" },
-        { circular: null as any }, // Will be handled by JSON.stringify
+        { circular: null as unknown }, // Will be handled by JSON.stringify
       ];
 
       // Create circular reference
-      const circularObj: any = { name: "circular" };
+      const circularObj: { name: string; circular?: unknown } = {
+        name: "circular",
+      };
       circularObj.circular = circularObj;
       maliciousInputs[maliciousInputs.length - 1] = { circular: circularObj };
 

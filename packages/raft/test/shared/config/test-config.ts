@@ -84,6 +84,9 @@ export function createClusterConfigs(
 
   for (let i = 0; i < nodeIds.length; i++) {
     const nodeId = nodeIds[i];
+    if (!nodeId) {
+      throw new Error(`Node ID at index ${i} is undefined`);
+    }
     const port = basePort + i;
     const peers = nodeIds
       .filter((id) => id !== nodeId)

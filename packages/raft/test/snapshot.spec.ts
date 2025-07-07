@@ -3,7 +3,11 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { RaftEngine } from "../src/raft-engine";
 import { MockStateMachine } from "./shared/mocks/state-machine.mock";
-import type { RaftConfiguration } from "../src/types";
+import type {
+  RaftConfiguration,
+  PersistenceConfig,
+  NetworkConfig,
+} from "../src/types";
 import { RaftState, LogLevel } from "../src/constants";
 import { createTempDataDir, cleanupDataDir } from "./shared/utils/temp-dir";
 import type { RaftNetwork } from "../src/network/raft-network";
@@ -22,8 +26,12 @@ describe("Snapshot Functionality", () => {
     heartbeatInterval: 50,
     logging: { level: LogLevel.ERROR }, // Keep logs quiet for tests
     persistence: {
+      enableSnapshots: true,
+      snapshotInterval: 1000,
+      dataDir: "/tmp/test",
       walEnabled: false, // For simplicity in these tests, focus on snapshot files
-    },
+      walSizeLimit: 1024 * 1024,
+    } as PersistenceConfig,
   };
 
   beforeEach(async () => {
@@ -54,7 +62,7 @@ describe("Snapshot Functionality", () => {
       persistence: {
         ...baseConfig.persistence,
         dataDir,
-      },
+      } as PersistenceConfig,
     });
 
     const mockStateMachine1 = new MockStateMachine();
@@ -132,28 +140,32 @@ describe("Snapshot Functionality", () => {
     const leaderPort = 8002;
     const followerPort = 8003;
 
-    const leaderConfig: RaftConfiguration = {
+    const leaderConfig = createTestConfig("leader", {
       ...baseConfig,
-      nodeId: "leader",
       clusterId: "test-cluster-2",
       httpHost: "localhost",
       httpPort: leaderPort,
       snapshotThreshold,
-      persistence: { ...baseConfig.persistence, dataDir: leaderDataDir },
-      network: { ...(baseConfig.network || {}), requestTimeout: 500 }, // Faster timeout for test
-    } as RaftConfiguration;
+      persistence: {
+        ...baseConfig.persistence,
+        dataDir: leaderDataDir,
+      } as PersistenceConfig,
+      network: { ...baseConfig.network, requestTimeout: 500 } as NetworkConfig, // Faster timeout for test
+    });
 
-    const followerConfig: RaftConfiguration = {
+    const followerConfig = createTestConfig("follower", {
       ...baseConfig,
-      nodeId: "follower",
       clusterId: "test-cluster-2",
       httpHost: "localhost",
       httpPort: followerPort,
       snapshotThreshold: 100, // Follower doesn't create snapshot in this test
-      persistence: { ...baseConfig.persistence, dataDir: followerDataDir },
+      persistence: {
+        ...baseConfig.persistence,
+        dataDir: followerDataDir,
+      } as PersistenceConfig,
       peers: [`localhost:${leaderPort}`],
-      network: { ...(baseConfig.network || {}), requestTimeout: 500 },
-    } as RaftConfiguration;
+      network: { ...baseConfig.network, requestTimeout: 500 } as NetworkConfig,
+    });
 
     const leaderSM = new MockStateMachine();
     leaderSM.setSnapshotDataToReturn(Buffer.from("leader_snapshot_data"));
@@ -188,15 +200,15 @@ describe("Snapshot Functionality", () => {
 
     //@ts-ignore
     expect(leaderNode.latestSnapshotMeta).not.toBeNull();
-    const leaderSnapshotIndex =
-      leaderNode.latestSnapshotMeta!.lastIncludedIndex;
+    const leaderSnapshotMeta = (leaderNode as any).latestSnapshotMeta;
+    const leaderSnapshotIndex = leaderSnapshotMeta?.lastIncludedIndex;
 
     // Trigger replication - a heartbeat or another append should do.
     // Sending another entry will ensure replication attempt.
     await leaderNode.appendLog({ command: "trigger-replication" });
     await delay(
       leaderConfig.heartbeatInterval * 3 +
-        leaderConfig.network!.requestTimeout * 2,
+        leaderConfig.network.requestTimeout * 2,
     ); // Wait for heartbeats and potential snapshot transfer
 
     expect(sendInstallSnapshotSpy).toHaveBeenCalledWith(

@@ -1,24 +1,29 @@
 import type Redis from "ioredis";
-import type { RaftConfiguration, RaftCommandType, LogEntry } from "../types";
+import type {
+  RaftConfiguration,
+  RaftCommandType,
+  LogEntry,
+  ConfigurationChangePayload,
+} from "../types";
 import {
   RaftValidationException,
   RaftReplicationException,
 } from "../exceptions";
 import type { RaftLogger } from "../services";
 import { WALRecovery, WALEngine } from "../persistence";
-import type { WALOptions } from "../persistence";
+import type { WALSnapshot, WALOptions } from "../persistence";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { calculateChecksum } from "../utils";
 
-export class RaftLog {
-  private entries: LogEntry[] = [];
+export class RaftLog<TCommand = unknown> {
+  private entries: LogEntry<TCommand>[] = [];
   private logStartIndex: number = 0; // Represents the index of entries[0] in the overall log
   private readonly storage: Redis;
   private readonly nodeId: string;
   private readonly logger: RaftLogger;
-  private walEngine?: WALEngine;
-  private walRecovery?: WALRecovery;
+  private walEngine?: WALEngine<TCommand>;
+  private walRecovery?: WALRecovery<TCommand>;
   private readonly config: RaftConfiguration;
 
   constructor(
@@ -40,11 +45,11 @@ export class RaftLog {
   public async appendEntry(
     term: number,
     commandType: RaftCommandType,
-    commandPayload: any,
+    commandPayload: TCommand | ConfigurationChangePayload,
   ): Promise<number> {
     console.log(commandPayload);
     const index = this.logStartIndex + this.entries.length;
-    const entry: LogEntry = {
+    const entry: LogEntry<TCommand> = {
       term,
       index,
       commandType,
@@ -72,7 +77,7 @@ export class RaftLog {
   }
 
   public async appendEntries(
-    entries: LogEntry[],
+    entries: LogEntry<TCommand>[],
     prevLogIndex: number,
     prevLogTerm?: number,
   ): Promise<boolean> {
@@ -276,7 +281,7 @@ export class RaftLog {
       // Try to recover from WAL first if enabled
       if (this.walRecovery) {
         const recoveryState = await this.walRecovery.recover();
-        this.entries = recoveryState.logs;
+        this.entries = recoveryState.logs as LogEntry<TCommand>[];
         this.logger.info("Log recovered from WAL", {
           entryCount: this.entries.length,
           nodeId: this.nodeId,
@@ -296,7 +301,9 @@ export class RaftLog {
         }
       }
 
-      this.entries = entries.sort((a, b) => a.index - b.index);
+      this.entries = entries.sort(
+        (a, b) => a.index - b.index,
+      ) as LogEntry<TCommand>[];
       this.logger.info("Log loaded from storage", {
         entryCount: this.entries.length,
         nodeId: this.nodeId,
@@ -321,8 +328,8 @@ export class RaftLog {
       checksumEnabled: true,
     };
 
-    this.walEngine = new WALEngine(walOptions, this.logger);
-    this.walRecovery = new WALRecovery(this.walEngine, this.logger);
+    this.walEngine = new WALEngine<TCommand>(walOptions, this.logger);
+    this.walRecovery = new WALRecovery<TCommand>(this.walEngine, this.logger);
   }
 
   public async initializeWALEngine(): Promise<void> {
@@ -509,13 +516,15 @@ export class RaftLog {
 
     if (this.walEngine) {
       // WAL stores metadata about the snapshot event, not the full data.
-      await this.walEngine.appendSnapshot({
+      const walSnapshot: WALSnapshot = {
         lastIncludedIndex,
         lastIncludedTerm,
-        filePath, // Store path or identifier in WAL.
         data, // Use the provided snapshot data or empty buffer
-        stateData, // Include state data if provided
-      });
+        ...(filePath && { filePath }), // Store path or identifier in WAL if provided
+        ...(stateData && { stateData }), // Include state data if provided
+      };
+
+      await this.walEngine.appendSnapshot(walSnapshot);
 
       // Compacting the WAL after a snapshot metadata entry is crucial.
       // It allows old log segments, now covered by the snapshot, to be cleaned up.
