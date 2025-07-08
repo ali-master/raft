@@ -1,9 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import {
-  OnRaftLogReplicated,
-  OnRaftLogCommitted,
-  OnRaftStateChange,
-  OnRaftLeaderElected,
+  OnLogReplicated,
+  OnLogCommitted,
+  OnStateChange,
+  OnLeaderElected,
 } from "@usex/raft-nestjs";
 import {
   DistributedCacheService,
@@ -20,7 +20,7 @@ export class CacheEventHandler {
     private readonly metrics: MetricsService,
   ) {}
 
-  @OnRaftLogReplicated()
+  @OnLogReplicated()
   handleLogReplicated(entry: any) {
     // Apply cache operations when log entries are replicated
     if (this.isCacheOperation(entry.data)) {
@@ -36,7 +36,7 @@ export class CacheEventHandler {
     }
   }
 
-  @OnRaftLogCommitted()
+  @OnLogCommitted()
   handleLogCommitted(entry: any) {
     // Log when cache operations are committed
     if (this.isCacheOperation(entry.data)) {
@@ -51,7 +51,7 @@ export class CacheEventHandler {
     }
   }
 
-  @OnRaftStateChange()
+  @OnStateChange()
   handleStateChange(data: { from: string; to: string }) {
     this.logger.warn(
       `Cache node state changed from ${data.from} to ${data.to}`,
@@ -69,7 +69,7 @@ export class CacheEventHandler {
     }
   }
 
-  @OnRaftLeaderElected()
+  @OnLeaderElected()
   handleLeaderElected(data: { leaderId: string }) {
     this.logger.log(
       `New cache cluster leader: ${data.leaderId}`,

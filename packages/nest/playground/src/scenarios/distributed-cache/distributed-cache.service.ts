@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  BadRequestException,
-  NotFoundException,
-} from "@nestjs/common";
+import { Injectable, BadRequestException } from "@nestjs/common";
 import { RaftService } from "@usex/raft-nestjs";
 import { EventBusService } from "@/shared/services/event-bus.service";
 import { MetricsService } from "@/shared/services/metrics.service";

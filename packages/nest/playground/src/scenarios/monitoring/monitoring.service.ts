@@ -244,7 +244,7 @@ export class MonitoringService {
     return 100 - ~~((100 * totalIdle) / totalTick);
   }
 
-  private getMetricValue(metricName: string): number {
+  private getMetricValue(_metricName: string): number {
     // In a real implementation, this would query the metrics registry
     return Math.floor(Math.random() * 1000); // Placeholder
   }

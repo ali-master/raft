@@ -28,7 +28,7 @@ export class ClusterController {
   @ApiResponse({ status: 200, description: "List of nodes" })
   getNodes() {
     const nodes = this.raftService.getClusterNodes();
-    return nodes.map((nodeId) => this.clusterService.getNodeInfo(nodeId));
+    return nodes.map((node) => this.clusterService.getNodeInfo(node.nodeId));
   }
 
   @Get("nodes/:id")
@@ -37,7 +37,7 @@ export class ClusterController {
   @ApiResponse({ status: 404, description: "Node not found" })
   getNode(@Param("id") id: string) {
     const nodes = this.raftService.getClusterNodes();
-    if (!nodes.includes(id)) {
+    if (!nodes.find((node) => node.nodeId === id)) {
       return { found: false, node: null };
     }
 

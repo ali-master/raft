@@ -13,6 +13,12 @@ export * from "./modules";
 // Services
 export * from "./services";
 
+// Re-export types from services for external use
+export type {
+  AdaptiveConsensusEvents,
+  AdaptiveConsensusServiceConfig,
+} from "./services/adaptive-consensus.service";
+
 // Utils
 export * from "./utils";
 

@@ -1,9 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import {
-  OnRaftLogReplicated,
-  OnRaftLogCommitted,
-  OnRaftStateChange,
-  OnRaftLeaderElected,
+  OnLogReplicated,
+  OnLogCommitted,
+  OnStateChange,
+  OnLeaderElected,
 } from "@usex/raft-nestjs";
 import { LockService, LockOperation } from "./lock-service.service";
 import { LoggerService } from "@/shared/services/logger.service";
@@ -17,7 +17,7 @@ export class LockEventHandler {
     private readonly metrics: MetricsService,
   ) {}
 
-  @OnRaftLogReplicated()
+  @OnLogReplicated()
   handleLogReplicated(entry: any) {
     if (this.isLockOperation(entry.data)) {
       this.logger.debug(
@@ -34,7 +34,7 @@ export class LockEventHandler {
     }
   }
 
-  @OnRaftLogCommitted()
+  @OnLogCommitted()
   handleLogCommitted(entry: any) {
     if (this.isLockOperation(entry.data)) {
       this.logger.log(
@@ -49,7 +49,7 @@ export class LockEventHandler {
     }
   }
 
-  @OnRaftStateChange()
+  @OnStateChange()
   handleStateChange(data: { from: string; to: string }) {
     this.logger.warn(
       `Lock service node state changed from ${data.from} to ${data.to}`,
@@ -66,7 +66,7 @@ export class LockEventHandler {
     }
   }
 
-  @OnRaftLeaderElected()
+  @OnLeaderElected()
   handleLeaderElected(data: { leaderId: string }) {
     this.logger.log(
       `New lock service leader: ${data.leaderId}`,

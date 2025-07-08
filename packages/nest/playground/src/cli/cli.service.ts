@@ -11,7 +11,7 @@ export class CliService implements OnApplicationBootstrap {
 
   constructor(
     private readonly raftService: RaftService,
-    private readonly logger: LoggerService,
+    private readonly _logger: LoggerService,
   ) {
     this.isInteractive = process.env.INTERACTIVE_MODE === "true";
   }
@@ -145,15 +145,13 @@ export class CliService implements OnApplicationBootstrap {
 
   private async showNodes() {
     const nodes = this.raftService.getClusterNodes();
-    const leaderId = this.raftService.getLeaderId();
 
     console.log(chalk.yellow("\nCluster Nodes:"));
     nodes.forEach((node) => {
-      const isLeader = node === leaderId;
-      const isSelf = node === (process.env.NODE_ID || "unknown");
+      const isSelf = node.nodeId === (process.env.NODE_ID || "unknown");
 
-      let nodeStr = `  ${chalk.cyan(node)}`;
-      if (isLeader) nodeStr += chalk.green(" (Leader)");
+      let nodeStr = `  ${chalk.cyan(node.nodeId)} - ${chalk.white(node.state)} (Term: ${node.term})`;
+      if (node.isLeader) nodeStr += chalk.green(" (Leader)");
       if (isSelf) nodeStr += chalk.magenta(" (Self)");
 
       console.log(nodeStr);

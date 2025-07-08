@@ -320,6 +320,18 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     return [...this.activeConfiguration.newPeers];
   }
 
+  public getConfiguration(): RaftConfiguration {
+    return this.config;
+  }
+
+  public getLogger(): RaftLogger {
+    return this.logger;
+  }
+
+  public getMetricsCollector(): RaftMetricsCollector {
+    return this.metrics;
+  }
+
   /**
    * Returns the set of peers that constitute the C_old configuration during joint consensus,
    * or the current set of peers if not in joint consensus.

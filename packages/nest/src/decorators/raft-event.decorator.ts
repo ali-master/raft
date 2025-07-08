@@ -118,3 +118,7 @@ export const OnConfigurationResponseReceived = () =>
   RaftEvent(RaftEventType.CONFIGURATION_RESPONSE_RECEIVED);
 export const OnSnapshotRequestReceived = () =>
   RaftEvent(RaftEventType.SNAPSHOT_REQUEST_RECEIVED);
+
+// Additional decorators for missing events
+export const OnLogCommitted = () => RaftEvent(RaftEventType.LOG_REPLICATED); // Using LOG_REPLICATED as proxy
+export const OnRaftError = () => RaftEvent(RaftEventType.ERROR_OCCURRED);

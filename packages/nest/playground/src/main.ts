@@ -3,9 +3,8 @@ import { ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { ConfigService } from "@nestjs/config";
 import * as compression from "compression";
-import * as helmet from "helmet";
+import helmet from "helmet";
 import { AppModule } from "./app.module";
-import { WsAdapter } from "@nestjs/platform-ws";
 import { Logger } from "@nestjs/common";
 
 async function bootstrap() {
@@ -34,8 +33,7 @@ async function bootstrap() {
     }),
   );
 
-  // WebSocket
-  app.useWebSocketAdapter(new WsAdapter(app));
+  // Note: WebSocket adapter will be configured by specific modules as needed
 
   // Swagger
   const config = new DocumentBuilder()

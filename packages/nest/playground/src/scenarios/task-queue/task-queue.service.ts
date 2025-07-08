@@ -329,7 +329,7 @@ export class TaskQueueService {
   }
 
   private applyCreate(operation: TaskOperation) {
-    const task = operation.task!;
+    const task = operation.task! as Task;
     this.tasks.set(task.id, task);
     this.tasksByStatus.get(TaskStatus.PENDING)?.add(task.id);
 

@@ -5,7 +5,6 @@ import {
 } from "@nestjs/common";
 import { RaftService } from "@usex/raft-nestjs";
 import { EventBusService } from "@/shared/services/event-bus.service";
-import { MetricsService } from "@/shared/services/metrics.service";
 import { LoggerService } from "@/shared/services/logger.service";
 
 export enum GameState {
@@ -69,7 +68,6 @@ export class GameServerService {
   constructor(
     private readonly raftService: RaftService,
     private readonly eventBus: EventBusService,
-    private readonly metrics: MetricsService,
     private readonly logger: LoggerService,
   ) {
     this.nodeId = process.env.NODE_ID || "unknown";

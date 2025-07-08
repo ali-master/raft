@@ -21,7 +21,7 @@
 
 ---
 
-> ⚠️ **Note**: This library is under active development and not yet released. Star the repo to get notified!
+> ⚠️ **Note**: This library is under active development and therefore full backward compatibility is not guaranteed before reaching v1.0.0. **Star the repo to get notified!**
 
 ## 🎯 What is RAFT?
 

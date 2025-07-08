@@ -19,6 +19,7 @@ export interface RaftConfiguration {
   logging: LoggingConfig;
   network: NetworkConfig;
   persistence: PersistenceConfig;
+  adaptiveConsensus?: AdaptiveConsensusConfig;
 }
 
 export interface RedisConfig {
@@ -84,4 +85,19 @@ export interface LoggingConfig {
   enableConsole?: boolean;
   enableFile?: boolean;
   filePath?: string;
+}
+
+export interface AdaptiveConsensusConfig {
+  enabled: boolean;
+  adaptationInterval: number; // How often to adapt (ms)
+  latencyThreshold: number; // Network latency threshold (ms)
+  throughputThreshold: number; // Operations per second threshold
+  learningRate: number; // How aggressively to adapt (0-1)
+  minElectionTimeout: number; // Minimum election timeout (ms)
+  maxElectionTimeout: number; // Maximum election timeout (ms)
+  minHeartbeatInterval: number; // Minimum heartbeat interval (ms)
+  maxHeartbeatInterval: number; // Maximum heartbeat interval (ms)
+  networkQualityWeight: number; // Weight for network quality factor (0-1)
+  throughputWeight: number; // Weight for throughput factor (0-1)
+  stabilityWeight: number; // Weight for cluster stability factor (0-1)
 }

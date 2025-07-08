@@ -68,8 +68,29 @@ export class RaftService {
   /**
    * Get all nodes in the cluster
    */
-  getAllNodes(): Map<string, RaftNode> {
-    return this.engine.getAllNodes();
+  getAllNodes(): RaftNode[] {
+    const nodesMap = this.engine.getAllNodes();
+    return Array.from(nodesMap.values());
+  }
+
+  /**
+   * Get cluster nodes information
+   */
+  getClusterNodes(): Array<{
+    nodeId: string;
+    state: string;
+    term: number;
+    isLeader: boolean;
+    peers: string[];
+  }> {
+    const nodes = this.getAllNodes();
+    return nodes.map((node) => ({
+      nodeId: node.getNodeId(),
+      state: node.getState().toString(),
+      term: node.getCurrentTerm(),
+      isLeader: this.isLeader(node.getNodeId()),
+      peers: node.getPeers(),
+    }));
   }
 
   /**

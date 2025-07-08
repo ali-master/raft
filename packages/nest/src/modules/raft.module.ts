@@ -6,6 +6,8 @@ import type {
 } from "@nestjs/common";
 import { Module, Inject } from "@nestjs/common";
 import { DiscoveryModule } from "@nestjs/core";
+import { ConfigModule } from "@nestjs/config";
+import { EventEmitterModule } from "@nestjs/event-emitter";
 import type { RaftNode, RaftEngine } from "@usex/raft";
 import {
   RAFT_NODE,
@@ -19,7 +21,7 @@ import {
   raftEventBusProvider,
   raftEngineProvider,
 } from "../providers";
-import { RaftService } from "../services";
+import { RaftService, AdaptiveConsensusService } from "../services";
 import type {
   RaftOptionsFactory,
   RaftModuleOptions,
@@ -46,11 +48,12 @@ export class RaftModule
       raftEventBusProvider,
       raftEventHandlerProvider,
       RaftService,
+      AdaptiveConsensusService,
     ];
 
     const dynamicModule: DynamicModule = {
       module: RaftModule,
-      imports: [DiscoveryModule],
+      imports: [DiscoveryModule, ConfigModule, EventEmitterModule.forRoot()],
       providers,
       exports: [
         RAFT_ENGINE,
@@ -58,6 +61,7 @@ export class RaftModule
         RAFT_EVENT_BUS,
         RAFT_MODULE_OPTIONS,
         RaftService,
+        AdaptiveConsensusService,
       ],
     };
 
@@ -76,11 +80,17 @@ export class RaftModule
       raftEventBusProvider,
       raftEventHandlerProvider,
       RaftService,
+      AdaptiveConsensusService,
     ];
 
     const dynamicModule: DynamicModule = {
       module: RaftModule,
-      imports: [DiscoveryModule, ...(options.imports || [])],
+      imports: [
+        DiscoveryModule,
+        ConfigModule,
+        EventEmitterModule.forRoot(),
+        ...(options.imports || []),
+      ],
       providers,
       exports: [
         RAFT_ENGINE,
@@ -88,6 +98,7 @@ export class RaftModule
         RAFT_EVENT_BUS,
         RAFT_MODULE_OPTIONS,
         RaftService,
+        AdaptiveConsensusService,
       ],
     };
 

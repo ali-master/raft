@@ -1,8 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import {
-  OnRaftLogReplicated,
-  OnRaftLogCommitted,
-  OnRaftStateChange,
+  OnLogReplicated,
+  OnLogCommitted,
+  OnStateChange,
 } from "@usex/raft-nestjs";
 import { GameServerService, GameOperation } from "./game-server.service";
 import { LoggerService } from "@/shared/services/logger.service";
@@ -16,7 +16,7 @@ export class GameEventHandler {
     private readonly metrics: MetricsService,
   ) {}
 
-  @OnRaftLogReplicated()
+  @OnLogReplicated()
   handleLogReplicated(entry: any) {
     if (this.isGameOperation(entry.data)) {
       this.logger.debug(
@@ -38,7 +38,7 @@ export class GameEventHandler {
     }
   }
 
-  @OnRaftLogCommitted()
+  @OnLogCommitted()
   handleLogCommitted(entry: any) {
     if (this.isGameOperation(entry.data)) {
       this.logger.log(
@@ -53,7 +53,7 @@ export class GameEventHandler {
     }
   }
 
-  @OnRaftStateChange()
+  @OnStateChange()
   handleStateChange(data: { from: string; to: string }) {
     this.logger.warn(
       `Game server node state changed from ${data.from} to ${data.to}`,

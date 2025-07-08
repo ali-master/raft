@@ -38,9 +38,9 @@ export class ClusterService {
   private initializeNodeEndpoints() {
     // Initialize from environment or configuration
     const nodes = this.raftService.getClusterNodes();
-    nodes.forEach((nodeId, index) => {
+    nodes.forEach((node, index) => {
       const port = 3000 + index;
-      this.nodeEndpoints.set(nodeId, `http://localhost:${port}`);
+      this.nodeEndpoints.set(node.nodeId, `http://localhost:${port}`);
     });
   }
 
@@ -50,7 +50,7 @@ export class ClusterService {
 
     return {
       clusterId: process.env.CLUSTER_ID || "playground-cluster",
-      nodes: nodes.map((nodeId) => this.getNodeInfo(nodeId)),
+      nodes: nodes.map((node) => this.getNodeInfo(node.nodeId)),
       leaderId,
       term: 0, // Would come from Raft implementation
       commitIndex: 0, // Would come from Raft implementation

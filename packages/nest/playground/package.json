@@ -27,6 +27,8 @@
     "@nestjs/swagger": "^7.0.0",
     "@nestjs/terminus": "^11.0.0",
     "@nestjs/config": "^3.0.0",
+    "@nestjs/event-emitter": "^2.0.0",
+    "@nestjs/schedule": "^4.0.0",
     "@nestjs/bull": "^10.0.0",
     "@usex/raft-nestjs": "workspace:*",
     "@usex/raft": "workspace:*",

@@ -1,16 +1,16 @@
 import { Injectable } from "@nestjs/common";
 import {
-  OnRaftStateChange,
-  OnRaftLeaderElected,
+  OnStateChange,
+  OnLeaderElected,
   OnRaftError,
-  OnRaftHeartbeat,
-  OnRaftElectionTimeout,
-  OnRaftVoteGranted,
-  OnRaftVoteDenied,
-  OnRaftLogReplicated,
-  OnRaftLogCommitted,
-  OnRaftPeerDiscovered,
-  OnRaftPeerLost,
+  OnHeartbeat,
+  OnElectionTimeout,
+  OnVoteGranted,
+  OnVoteDenied,
+  OnLogReplicated,
+  OnLogCommitted,
+  OnPeerDiscovered,
+  OnPeerLost,
 } from "@usex/raft-nestjs";
 import { LoggerService } from "@/shared/services/logger.service";
 import { MetricsService } from "@/shared/services/metrics.service";
@@ -26,7 +26,7 @@ export class MonitoringEventHandler {
     this.nodeId = process.env.NODE_ID || "unknown";
   }
 
-  @OnRaftStateChange()
+  @OnStateChange()
   handleStateChange(data: { from: string; to: string }) {
     this.logger.logRaftEvent("state_change", this.nodeId, data);
     this.metrics.incrementCounter("raft_state_changes_total", {
@@ -36,7 +36,7 @@ export class MonitoringEventHandler {
     });
   }
 
-  @OnRaftLeaderElected()
+  @OnLeaderElected()
   handleLeaderElected(data: { leaderId: string; term: number }) {
     this.logger.logRaftEvent("leader_elected", this.nodeId, data);
     this.metrics.incrementCounter("raft_elections_total", {
@@ -54,7 +54,7 @@ export class MonitoringEventHandler {
     });
   }
 
-  @OnRaftHeartbeat()
+  @OnHeartbeat()
   handleHeartbeat(data: { from: string; term: number }) {
     this.logger.verbose(
       `Heartbeat from ${data.from} (term: ${data.term})`,
@@ -66,7 +66,7 @@ export class MonitoringEventHandler {
     });
   }
 
-  @OnRaftElectionTimeout()
+  @OnElectionTimeout()
   handleElectionTimeout() {
     this.logger.logRaftEvent("election_timeout", this.nodeId);
     this.metrics.incrementCounter("raft_election_timeouts_total", {
@@ -74,7 +74,7 @@ export class MonitoringEventHandler {
     });
   }
 
-  @OnRaftVoteGranted()
+  @OnVoteGranted()
   handleVoteGranted(data: { to: string; term: number }) {
     this.logger.logRaftEvent("vote_granted", this.nodeId, data);
     this.metrics.incrementCounter("raft_votes_total", {
@@ -84,7 +84,7 @@ export class MonitoringEventHandler {
     });
   }
 
-  @OnRaftVoteDenied()
+  @OnVoteDenied()
   handleVoteDenied(data: { to: string; term: number; reason: string }) {
     this.logger.logRaftEvent("vote_denied", this.nodeId, data);
     this.metrics.incrementCounter("raft_votes_total", {
@@ -94,21 +94,21 @@ export class MonitoringEventHandler {
     });
   }
 
-  @OnRaftLogReplicated()
-  handleLogReplicated(entry: any) {
+  @OnLogReplicated()
+  handleLogReplicated(_entry: any) {
     this.metrics.incrementCounter("raft_log_entries_total", {
       node: this.nodeId,
     });
   }
 
-  @OnRaftLogCommitted()
-  handleLogCommitted(entry: any) {
+  @OnLogCommitted()
+  handleLogCommitted(_entry: any) {
     this.metrics.incrementCounter("raft_log_commits_total", {
       node: this.nodeId,
     });
   }
 
-  @OnRaftPeerDiscovered()
+  @OnPeerDiscovered()
   handlePeerDiscovered(data: { peerId: string }) {
     this.logger.logRaftEvent("peer_discovered", this.nodeId, data);
     this.metrics.incrementCounter("raft_peer_discoveries_total", {
@@ -116,7 +116,7 @@ export class MonitoringEventHandler {
     });
   }
 
-  @OnRaftPeerLost()
+  @OnPeerLost()
   handlePeerLost(data: { peerId: string; reason: string }) {
     this.logger.logRaftEvent("peer_lost", this.nodeId, data);
     this.metrics.incrementCounter("raft_peer_losses_total", {
