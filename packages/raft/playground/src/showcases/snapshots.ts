@@ -3,9 +3,9 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
-export class SnapshotDemo {
+export class SnapshotShowcase {
   private logger = new PlaygroundLogger();
-  private clusterManager = new ClusterManager("snapshot-demo");
+  private clusterManager = new ClusterManager("snapshot-showcase");
 
   async run(): Promise<void> {
     this.logger.section("Snapshot and Log Compaction");
@@ -31,7 +31,7 @@ export class SnapshotDemo {
         "All snapshot scenarios completed successfully!",
       );
     } catch (_error) {
-      this.logger.error("Snapshot demo failed", undefined, _error);
+      this.logger.error("Snapshot showcase failed", undefined, _error);
       this.logger.result(false, "Snapshot demonstration failed");
     } finally {
       await this.cleanup();
@@ -41,7 +41,7 @@ export class SnapshotDemo {
   private async setupCluster(): Promise<void> {
     this.logger.step(1, "Setting up cluster with snapshot configuration");
 
-    // Create cluster with lower snapshot threshold for demo
+    // Create cluster with lower snapshot threshold for showcase
     await this.clusterManager.createCluster(3, "counter");
 
     await this.displayClusterStatus();
@@ -53,7 +53,7 @@ export class SnapshotDemo {
       "Submitting many operations to fill the log and trigger snapshot...",
     );
 
-    const stateMachine = new CounterStateMachine("demo");
+    const stateMachine = new CounterStateMachine("showcase");
     const operationCount = 120; // Should exceed snapshot threshold
 
     this.logger.info(`Submitting ${operationCount} operations...`);
@@ -148,7 +148,9 @@ export class SnapshotDemo {
     // Get current cluster state
     const leader = this.clusterManager.getLeader();
     if (!leader) {
-      this.logger.error("No leader available for snapshot installation demo");
+      this.logger.error(
+        "No leader available for snapshot installation showcase",
+      );
       return;
     }
 
@@ -196,7 +198,7 @@ export class SnapshotDemo {
 
     // Test that new node can participate in consensus
     this.logger.info("Testing new node participation in consensus...");
-    const stateMachine = new CounterStateMachine("demo");
+    const stateMachine = new CounterStateMachine("showcase");
     await this.clusterManager.appendToLeader(
       stateMachine.createIncrementCommand(100, "new-node-test"),
     );
@@ -236,7 +238,7 @@ export class SnapshotDemo {
 
     // Submit some operations while node is recovering
     this.logger.info("Submitting operations during node recovery...");
-    const stateMachine = new CounterStateMachine("demo");
+    const stateMachine = new CounterStateMachine("showcase");
     const recoveryCommands = [
       stateMachine.createIncrementCommand(50, "recovery-1"),
       stateMachine.createDecrementCommand(20, "recovery-2"),
@@ -371,7 +373,7 @@ export class SnapshotDemo {
   }
 
   private async cleanup(): Promise<void> {
-    this.logger.info("Cleaning up snapshot demo...");
+    this.logger.info("Cleaning up snapshot showcase...");
     await this.clusterManager.cleanup();
   }
 }

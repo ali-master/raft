@@ -4,9 +4,9 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
-export class NetworkPartitionDemo {
+export class NetworkPartitionShowcase {
   private logger = new PlaygroundLogger();
-  private clusterManager = new ClusterManager("network-partition-demo");
+  private clusterManager = new ClusterManager("network-partition-showcase");
 
   async run(): Promise<void> {
     this.logger.section("Network Partition Scenarios");
@@ -32,7 +32,7 @@ export class NetworkPartitionDemo {
         "All network partition scenarios completed successfully!",
       );
     } catch (_error) {
-      this.logger.error("Network partition demo failed", undefined, _error);
+      this.logger.error("Network partition showcase failed", undefined, _error);
       this.logger.result(false, "Network partition demonstration failed");
     } finally {
       await this.cleanup();
@@ -509,7 +509,7 @@ export class NetworkPartitionDemo {
   }
 
   private async cleanup(): Promise<void> {
-    this.logger.info("Cleaning up network partition demo...");
+    this.logger.info("Cleaning up network partition showcase...");
     await this.clusterManager.cleanup();
   }
 }

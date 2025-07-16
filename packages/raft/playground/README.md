@@ -155,7 +155,7 @@ Each example includes:
 ```
 playground/
 ├── src/
-│   ├── examples/          # All use case examples
+│   ├── showcases/         # All use case showcases
 │   ├── interactive/       # CLI interface
 │   ├── visualization/     # Real-time visualizers
 │   ├── utils/            # Common utilities

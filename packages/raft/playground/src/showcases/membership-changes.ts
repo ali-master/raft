@@ -3,9 +3,9 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
-export class MembershipChangesDemo {
+export class MembershipChangesShowcase {
   private logger = new PlaygroundLogger();
-  private clusterManager = new ClusterManager("membership-demo");
+  private clusterManager = new ClusterManager("membership-showcase");
 
   async run(): Promise<void> {
     this.logger.section("Cluster Membership Changes");
@@ -31,7 +31,11 @@ export class MembershipChangesDemo {
         "All membership change scenarios completed successfully!",
       );
     } catch (_error) {
-      this.logger.error("Membership changes demo failed", undefined, _error);
+      this.logger.error(
+        "Membership changes showcase failed",
+        undefined,
+        _error,
+      );
       this.logger.result(false, "Membership changes demonstration failed");
     } finally {
       await this.cleanup();
@@ -49,7 +53,7 @@ export class MembershipChangesDemo {
   private async submitInitialData(): Promise<void> {
     this.logger.info("Submitting initial data to establish baseline...");
 
-    const stateMachine = new CounterStateMachine("demo");
+    const stateMachine = new CounterStateMachine("showcase");
     const commands = [
       stateMachine.createSetCommand(0, "baseline-init"),
       stateMachine.createIncrementCommand(10, "baseline-1"),
@@ -83,7 +87,7 @@ export class MembershipChangesDemo {
 
     // Test cluster functionality with new member
     this.logger.info("Testing cluster functionality after adding node...");
-    const stateMachine = new CounterStateMachine("demo");
+    const stateMachine = new CounterStateMachine("showcase");
     await this.clusterManager.appendToLeader(
       stateMachine.createIncrementCommand(7, "after-add-1"),
     );
@@ -127,7 +131,7 @@ export class MembershipChangesDemo {
       this.logger.info(`Removing follower ${nodeToRemove.nodeId}...`);
 
       // Submit data before removal
-      const stateMachine = new CounterStateMachine("demo");
+      const stateMachine = new CounterStateMachine("showcase");
       await this.clusterManager.appendToLeader(
         stateMachine.createIncrementCommand(3, "before-removal"),
       );
@@ -192,7 +196,7 @@ export class MembershipChangesDemo {
 
     // Step 4: Verify cluster health
     this.logger.info("Step 3: Verifying cluster health after replacement...");
-    const stateMachine = new CounterStateMachine("demo");
+    const stateMachine = new CounterStateMachine("showcase");
     await this.clusterManager.appendToLeader(
       stateMachine.createIncrementCommand(8, "rolling-replacement-test"),
     );
@@ -240,7 +244,7 @@ export class MembershipChangesDemo {
 
     // Verify cluster health at minimum size
     this.logger.info("Verifying cluster health at reduced size...");
-    const stateMachine = new CounterStateMachine("demo");
+    const stateMachine = new CounterStateMachine("showcase");
     await this.clusterManager.appendToLeader(
       stateMachine.createIncrementCommand(12, "bulk-scale-down-test"),
     );
@@ -388,7 +392,7 @@ export class MembershipChangesDemo {
   }
 
   private async cleanup(): Promise<void> {
-    this.logger.info("Cleaning up membership changes demo...");
+    this.logger.info("Cleaning up membership changes showcase...");
     await this.clusterManager.cleanup();
   }
 }

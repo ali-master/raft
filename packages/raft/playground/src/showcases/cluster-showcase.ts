@@ -3,9 +3,9 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
-export class ClusterDemo {
+export class ClusterShowcase {
   private logger = new PlaygroundLogger();
-  private clusterManager = new ClusterManager("cluster-demo");
+  private clusterManager = new ClusterManager("cluster-showcase");
 
   async run(): Promise<void> {
     this.logger.section("Basic Raft Cluster Demonstration");
@@ -34,7 +34,7 @@ export class ClusterDemo {
         "Basic cluster demonstration completed successfully!",
       );
     } catch (_error) {
-      this.logger.error("Cluster demo failed", undefined, _error);
+      this.logger.error("Cluster showcase failed", undefined, _error);
       this.logger.result(false, "Cluster demonstration failed");
     } finally {
       await this.cleanup();
@@ -62,7 +62,7 @@ export class ClusterDemo {
     this.logger.info("Performing counter operations...");
 
     // Create some commands
-    const stateMachine = new CounterStateMachine("demo");
+    const stateMachine = new CounterStateMachine("showcase");
     const commands = [
       stateMachine.createIncrementCommand(5, "client-1"),
       stateMachine.createIncrementCommand(3, "client-2"),
@@ -145,7 +145,7 @@ export class ClusterDemo {
     const newLeader = this.clusterManager.getLeader();
     if (newLeader) {
       this.logger.info("Testing new leader with a command...");
-      const stateMachine = new CounterStateMachine("demo");
+      const stateMachine = new CounterStateMachine("showcase");
       const command = stateMachine.createIncrementCommand(1, "recovery-test");
 
       try {
@@ -174,7 +174,7 @@ export class ClusterDemo {
   }
 
   private async cleanup(): Promise<void> {
-    this.logger.info("Cleaning up cluster demo...");
+    this.logger.info("Cleaning up cluster showcase...");
     await this.clusterManager.cleanup();
   }
 }

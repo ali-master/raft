@@ -3,20 +3,20 @@
 import chalk from "chalk";
 import { Command } from "commander";
 import inquirer from "inquirer";
-import { ClusterDemo } from "./examples/cluster-demo";
-import { LeaderElectionDemo } from "./examples/leader-election";
-import { LogReplicationDemo } from "./examples/log-replication";
-import { MembershipChangesDemo } from "./examples/membership-changes";
-import { SnapshotDemo } from "./examples/snapshots";
-import { FailuresScenariosDemo } from "./examples/failure-scenarios";
-import { PerformanceTestsDemo } from "./examples/performance-tests";
-import { MonitoringDemo } from "./examples/monitoring";
-import { WeightedVotingDemo } from "./examples/weighted-voting";
-import { NetworkPartitionDemo } from "./examples/network-partition";
-import { LeadershipTransferDemo } from "./examples/leadership-transfer";
-import { ConcurrentWritesDemo } from "./examples/concurrent-writes";
-import { RecoveryDemo } from "./examples/recovery-scenarios";
-import { StressTestDemo } from "./examples/stress-test";
+import { ClusterShowcase } from "./showcases/cluster-showcase";
+import { LeaderElectionShowcase } from "./showcases/leader-election";
+import { LogReplicationShowcase } from "./showcases/log-replication";
+import { MembershipChangesShowcase } from "./showcases/membership-changes";
+import { SnapshotShowcase } from "./showcases/snapshots";
+import { FailuresScenariosShowcase } from "./showcases/failure-scenarios";
+import { PerformanceTestsShowcase } from "./showcases/performance-tests";
+import { MonitoringShowcase } from "./showcases/monitoring";
+import { WeightedVotingShowcase } from "./showcases/weighted-voting";
+import { NetworkPartitionShowcase } from "./showcases/network-partition";
+import { LeadershipTransferShowcase } from "./showcases/leadership-transfer";
+import { ConcurrentWritesShowcase } from "./showcases/concurrent-writes";
+import { RecoveryShowcase } from "./showcases/recovery-scenarios";
+import { StressTestShowcase } from "./showcases/stress-test";
 import { InteractiveCLI } from "./interactive/cli";
 import { ClusterVisualizer } from "./visualization/cluster-visualizer";
 import { version as RaftVersion } from "../../package.json";
@@ -44,7 +44,7 @@ async function showMainMenu() {
   console.log(chalk.yellow("\n🎯 Welcome to the Raft Consensus Playground!\n"));
 
   const choices = [
-    { name: "Basic Cluster Demo", value: "cluster" },
+    { name: "Basic Cluster Showcase", value: "cluster" },
     { name: "Leader Election", value: "election" },
     { name: "Log Replication", value: "replication" },
     { name: "Membership Changes", value: "membership" },
@@ -79,46 +79,46 @@ async function showMainMenu() {
 
   switch (answer.demo) {
     case "cluster":
-      await new ClusterDemo().run();
+      await new ClusterShowcase().run();
       break;
     case "election":
-      await new LeaderElectionDemo().run();
+      await new LeaderElectionShowcase().run();
       break;
     case "replication":
-      await new LogReplicationDemo().run();
+      await new LogReplicationShowcase().run();
       break;
     case "membership":
-      await new MembershipChangesDemo().run();
+      await new MembershipChangesShowcase().run();
       break;
     case "snapshot":
-      await new SnapshotDemo().run();
+      await new SnapshotShowcase().run();
       break;
     case "failures":
-      await new FailuresScenariosDemo().run();
+      await new FailuresScenariosShowcase().run();
       break;
     case "performance":
-      await new PerformanceTestsDemo().run();
+      await new PerformanceTestsShowcase().run();
       break;
     case "monitoring":
-      await new MonitoringDemo().run();
+      await new MonitoringShowcase().run();
       break;
     case "weighted":
-      await new WeightedVotingDemo().run();
+      await new WeightedVotingShowcase().run();
       break;
     case "partition":
-      await new NetworkPartitionDemo().run();
+      await new NetworkPartitionShowcase().run();
       break;
     case "transfer":
-      await new LeadershipTransferDemo().run();
+      await new LeadershipTransferShowcase().run();
       break;
     case "concurrent":
-      await new ConcurrentWritesDemo().run();
+      await new ConcurrentWritesShowcase().run();
       break;
     case "recovery":
-      await new RecoveryDemo().run();
+      await new RecoveryShowcase().run();
       break;
     case "stress":
-      await new StressTestDemo().run();
+      await new StressTestShowcase().run();
       break;
     case "interactive":
       await new InteractiveCLI().run();
@@ -175,72 +175,72 @@ program
 program
   .command("cluster")
   .description("Basic cluster demonstration")
-  .action(() => new ClusterDemo().run());
+  .action(() => new ClusterShowcase().run());
 
 program
   .command("election")
   .description("Leader election scenarios")
-  .action(() => new LeaderElectionDemo().run());
+  .action(() => new LeaderElectionShowcase().run());
 
 program
   .command("replication")
   .description("Log replication examples")
-  .action(() => new LogReplicationDemo().run());
+  .action(() => new LogReplicationShowcase().run());
 
 program
   .command("membership")
   .description("Cluster membership changes")
-  .action(() => new MembershipChangesDemo().run());
+  .action(() => new MembershipChangesShowcase().run());
 
 program
   .command("snapshot")
   .description("Snapshot and compaction demo")
-  .action(() => new SnapshotDemo().run());
+  .action(() => new SnapshotShowcase().run());
 
 program
   .command("failures")
   .description("Failure scenarios and recovery")
-  .action(() => new FailuresScenariosDemo().run());
+  .action(() => new FailuresScenariosShowcase().run());
 
 program
   .command("performance")
   .description("Performance testing and benchmarks")
-  .action(() => new PerformanceTestsDemo().run());
+  .action(() => new PerformanceTestsShowcase().run());
 
 program
   .command("monitoring")
   .description("Monitoring and metrics collection")
-  .action(() => new MonitoringDemo().run());
+  .action(() => new MonitoringShowcase().run());
 
 program
   .command("weighted")
   .description("Weighted voting demonstration")
-  .action(() => new WeightedVotingDemo().run());
+  .action(() => new WeightedVotingShowcase().run());
 
 program
   .command("partition")
   .description("Network partition scenarios")
-  .action(() => new NetworkPartitionDemo().run());
+  .action(() => new NetworkPartitionShowcase().run());
 
 program
   .command("transfer")
   .description("Leadership transfer scenarios")
-  .action(() => new LeadershipTransferDemo().run());
+  .action(() => new LeadershipTransferShowcase().run());
 
 program
   .command("concurrent")
   .description("Concurrent writes and conflicts")
-  .action(() => new ConcurrentWritesDemo().run());
+  .action(() => new ConcurrentWritesShowcase().run());
 
 program
   .command("recovery")
   .description("Recovery and disaster scenarios")
-  .action(() => new RecoveryDemo().run());
+  .action(() => new RecoveryShowcase().run());
 
 program
   .command("stress")
   .description("Stress testing scenarios")
-  .action(() => new StressTestDemo().run());
+  .action(() => new StressTestShowcase().run());
 
 program
   .command("interactive")

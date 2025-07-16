@@ -3,9 +3,9 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
-export class LogReplicationDemo {
+export class LogReplicationShowcase {
   private logger = new PlaygroundLogger();
-  private clusterManager = new ClusterManager("replication-demo");
+  private clusterManager = new ClusterManager("replication-showcase");
 
   async run(): Promise<void> {
     this.logger.section("Log Replication Demonstration");
@@ -31,7 +31,7 @@ export class LogReplicationDemo {
         "All log replication scenarios completed successfully!",
       );
     } catch (_error) {
-      this.logger.error("Log replication demo failed", undefined, _error);
+      this.logger.error("Log replication showcase failed", undefined, _error);
       this.logger.result(false, "Log replication demonstration failed");
     } finally {
       await this.cleanup();
@@ -39,7 +39,7 @@ export class LogReplicationDemo {
   }
 
   private async setupCluster(): Promise<void> {
-    this.logger.step(1, "Setting up 5-node cluster for replication demo");
+    this.logger.step(1, "Setting up 5-node cluster for replication showcase");
     await this.clusterManager.createCluster(5, "counter");
 
     await this.displayClusterStatus();
@@ -51,7 +51,7 @@ export class LogReplicationDemo {
       "Submitting sequential commands and tracking replication...",
     );
 
-    const stateMachine = new CounterStateMachine("demo");
+    const stateMachine = new CounterStateMachine("showcase");
     const commands = [
       stateMachine.createSetCommand(0, "init"),
       stateMachine.createIncrementCommand(5, "client-1"),
@@ -93,7 +93,7 @@ export class LogReplicationDemo {
     this.logger.step(3, "Concurrent Operations and Serialization");
     this.logger.info("Submitting multiple concurrent commands...");
 
-    const stateMachine = new CounterStateMachine("demo");
+    const stateMachine = new CounterStateMachine("showcase");
     const concurrentCommands = [
       stateMachine.createIncrementCommand(10, "concurrent-1"),
       stateMachine.createIncrementCommand(20, "concurrent-2"),
@@ -151,7 +151,7 @@ export class LogReplicationDemo {
 
     // Submit commands with reduced cluster
     this.logger.info("Submitting commands with reduced cluster size...");
-    const stateMachine = new CounterStateMachine("demo");
+    const stateMachine = new CounterStateMachine("showcase");
     const commands = [
       stateMachine.createIncrementCommand(25, "failure-test-1"),
       stateMachine.createIncrementCommand(15, "failure-test-2"),
@@ -366,7 +366,7 @@ export class LogReplicationDemo {
   }
 
   private async cleanup(): Promise<void> {
-    this.logger.info("Cleaning up log replication demo...");
+    this.logger.info("Cleaning up log replication showcase...");
     await this.clusterManager.cleanup();
   }
 }

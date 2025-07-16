@@ -4,9 +4,9 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
-export class WeightedVotingDemo {
+export class WeightedVotingShowcase {
   private logger = new PlaygroundLogger();
-  private clusterManager = new ClusterManager("weighted-voting-demo");
+  private clusterManager = new ClusterManager("weighted-voting-showcase");
 
   async run(): Promise<void> {
     this.logger.section("Weighted Voting Demonstration");
@@ -29,7 +29,7 @@ export class WeightedVotingDemo {
         "All weighted voting scenarios completed successfully!",
       );
     } catch (_error) {
-      this.logger.error("Weighted voting demo failed", undefined, _error);
+      this.logger.error("Weighted voting showcase failed", undefined, _error);
       this.logger.result(false, "Weighted voting demonstration failed");
     } finally {
       await this.cleanup();
@@ -420,7 +420,7 @@ export class WeightedVotingDemo {
   }
 
   private async cleanup(): Promise<void> {
-    this.logger.info("Cleaning up weighted voting demo...");
+    this.logger.info("Cleaning up weighted voting showcase...");
     await this.clusterManager.cleanup();
   }
 }

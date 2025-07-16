@@ -3,9 +3,9 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
-export class ConcurrentWritesDemo {
+export class ConcurrentWritesShowcase {
   private logger = new PlaygroundLogger();
-  private clusterManager = new ClusterManager("concurrent-writes-demo");
+  private clusterManager = new ClusterManager("concurrent-writes-showcase");
 
   async run(): Promise<void> {
     this.logger.section("Concurrent Writes and Conflict Resolution");
@@ -34,7 +34,7 @@ export class ConcurrentWritesDemo {
         "All concurrent writes scenarios completed successfully!",
       );
     } catch (_error) {
-      this.logger.error("Concurrent writes demo failed", undefined, _error);
+      this.logger.error("Concurrent writes showcase failed", undefined, _error);
       this.logger.result(false, "Concurrent writes demonstration failed");
     } finally {
       await this.cleanup();
@@ -674,7 +674,7 @@ export class ConcurrentWritesDemo {
   }
 
   private async cleanup(): Promise<void> {
-    this.logger.info("Cleaning up concurrent writes demo...");
+    this.logger.info("Cleaning up concurrent writes showcase...");
     await this.clusterManager.cleanup();
   }
 }

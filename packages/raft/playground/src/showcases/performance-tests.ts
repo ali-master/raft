@@ -3,9 +3,9 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
-export class PerformanceTestsDemo {
+export class PerformanceTestsShowcase {
   private logger = new PlaygroundLogger();
-  private clusterManager = new ClusterManager("performance-demo");
+  private clusterManager = new ClusterManager("performance-showcase");
 
   async run(): Promise<void> {
     this.logger.section("Performance Testing and Benchmarks");

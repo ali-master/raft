@@ -4,9 +4,9 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
-export class RecoveryDemo {
+export class RecoveryShowcase {
   private logger = new PlaygroundLogger();
-  private clusterManager = new ClusterManager("recovery-demo");
+  private clusterManager = new ClusterManager("recovery-showcase");
 
   async run(): Promise<void> {
     this.logger.section("Recovery and Disaster Scenarios");
@@ -35,7 +35,7 @@ export class RecoveryDemo {
         "All recovery scenarios completed successfully!",
       );
     } catch (_error) {
-      this.logger.error("Recovery demo failed", undefined, _error);
+      this.logger.error("Recovery showcase failed", undefined, _error);
       this.logger.result(false, "Recovery demonstration failed");
     } finally {
       await this.cleanup();
@@ -651,7 +651,7 @@ export class RecoveryDemo {
   }
 
   private async cleanup(): Promise<void> {
-    this.logger.info("Cleaning up recovery scenarios demo...");
+    this.logger.info("Cleaning up recovery scenarios showcase...");
     await this.clusterManager.cleanup();
   }
 }

@@ -3,9 +3,9 @@ import { RaftState } from "@usex/raft";
 import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 
-export class LeaderElectionDemo {
+export class LeaderElectionShowcase {
   private logger = new PlaygroundLogger();
-  private clusterManager = new ClusterManager("election-demo");
+  private clusterManager = new ClusterManager("election-showcase");
 
   async run(): Promise<void> {
     this.logger.section("Leader Election Scenarios");
@@ -28,7 +28,7 @@ export class LeaderElectionDemo {
         "All leader election scenarios completed successfully!",
       );
     } catch (_error) {
-      this.logger.error("Leader election demo failed", undefined, _error);
+      this.logger.error("Leader election showcase failed", undefined, _error);
       this.logger.result(false, "Leader election demonstration failed");
     } finally {
       await this.cleanup();
@@ -63,7 +63,7 @@ export class LeaderElectionDemo {
 
     const leader = this.clusterManager.getLeader();
     if (!leader) {
-      this.logger.error("No leader available for failure demo");
+      this.logger.error("No leader available for failure showcase");
       return;
     }
 
@@ -282,7 +282,7 @@ export class LeaderElectionDemo {
   }
 
   private async cleanup(): Promise<void> {
-    this.logger.info("Cleaning up leader election demo...");
+    this.logger.info("Cleaning up leader election showcase...");
     await this.clusterManager.cleanup();
   }
 }

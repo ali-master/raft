@@ -4,9 +4,9 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
-export class StressTestDemo {
+export class StressTestShowcase {
   private logger = new PlaygroundLogger();
-  private clusterManager = new ClusterManager("stress-test-demo");
+  private clusterManager = new ClusterManager("stress-test-showcase");
   private isStressing = false;
   private stressResults: any = {};
 
@@ -40,7 +40,7 @@ export class StressTestDemo {
         "All stress test scenarios completed successfully!",
       );
     } catch (_error) {
-      this.logger.error("Stress test demo failed", undefined, _error);
+      this.logger.error("Stress test showcase failed", undefined, _error);
       this.logger.result(false, "Stress testing failed");
     } finally {
       this.isStressing = false;
@@ -783,7 +783,7 @@ export class StressTestDemo {
 
   private async cleanup(): Promise<void> {
     this.isStressing = false;
-    this.logger.info("Cleaning up stress test demo...");
+    this.logger.info("Cleaning up stress test showcase...");
     await this.clusterManager.cleanup();
   }
 }

@@ -4,9 +4,9 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
-export class LeadershipTransferDemo {
+export class LeadershipTransferShowcase {
   private logger = new PlaygroundLogger();
-  private clusterManager = new ClusterManager("leadership-transfer-demo");
+  private clusterManager = new ClusterManager("leadership-transfer-showcase");
 
   async run(): Promise<void> {
     this.logger.section("Leadership Transfer Scenarios");
@@ -35,7 +35,11 @@ export class LeadershipTransferDemo {
         "All leadership transfer scenarios completed successfully!",
       );
     } catch (_error) {
-      this.logger.error("Leadership transfer demo failed", undefined, _error);
+      this.logger.error(
+        "Leadership transfer showcase failed",
+        undefined,
+        _error,
+      );
       this.logger.result(false, "Leadership transfer demonstration failed");
     } finally {
       await this.cleanup();
@@ -220,7 +224,7 @@ export class LeadershipTransferDemo {
       .filter((n) => n.node.getState() === RaftState.FOLLOWER);
 
     if (followers.length < 2) {
-      this.logger.error("Not enough followers for targeted transfer demo");
+      this.logger.error("Not enough followers for targeted transfer showcase");
       return;
     }
 
@@ -288,7 +292,7 @@ export class LeadershipTransferDemo {
 
     const currentLeader = this.clusterManager.getLeader();
     if (!currentLeader) {
-      this.logger.error("No leader available for failure demo");
+      this.logger.error("No leader available for failure showcase");
       return;
     }
 
@@ -299,7 +303,7 @@ export class LeadershipTransferDemo {
     );
 
     if (followers.length < 3) {
-      this.logger.error("Not enough followers for failure demo");
+      this.logger.error("Not enough followers for failure showcase");
       return;
     }
 
@@ -567,7 +571,7 @@ export class LeadershipTransferDemo {
   }
 
   private async cleanup(): Promise<void> {
-    this.logger.info("Cleaning up leadership transfer demo...");
+    this.logger.info("Cleaning up leadership transfer showcase...");
     await this.clusterManager.cleanup();
   }
 }

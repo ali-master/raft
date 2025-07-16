@@ -4,9 +4,9 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
-export class MonitoringDemo {
+export class MonitoringShowcase {
   private logger = new PlaygroundLogger();
-  private clusterManager = new ClusterManager("monitoring-demo");
+  private clusterManager = new ClusterManager("monitoring-showcase");
   private monitoringInterval?: NodeJS.Timeout;
 
   async run(): Promise<void> {
@@ -33,7 +33,7 @@ export class MonitoringDemo {
         "Monitoring and metrics demonstration completed successfully!",
       );
     } catch (_error) {
-      this.logger.error("Monitoring demo failed", undefined, _error);
+      this.logger.error("Monitoring showcase failed", undefined, _error);
       this.logger.result(false, "Monitoring demonstration failed");
     } finally {
       await this.cleanup();
@@ -388,7 +388,7 @@ export class MonitoringDemo {
       clearInterval(this.monitoringInterval);
     }
 
-    this.logger.info("Cleaning up monitoring demo...");
+    this.logger.info("Cleaning up monitoring showcase...");
     await this.clusterManager.cleanup();
   }
 }

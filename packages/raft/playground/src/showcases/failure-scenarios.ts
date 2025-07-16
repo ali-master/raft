@@ -3,9 +3,9 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
-export class FailuresScenariosDemo {
+export class FailuresScenariosShowcase {
   private logger = new PlaygroundLogger();
-  private clusterManager = new ClusterManager("failures-demo");
+  private clusterManager = new ClusterManager("failures-showcase");
 
   async run(): Promise<void> {
     this.logger.section("Failure Scenarios and Recovery");
@@ -34,7 +34,7 @@ export class FailuresScenariosDemo {
 
       this.logger.result(true, "All failure scenarios completed successfully!");
     } catch (_error) {
-      this.logger.error("Failure scenarios demo failed", undefined, _error);
+      this.logger.error("Failure scenarios showcase failed", undefined, _error);
       this.logger.result(false, "Failure scenarios demonstration failed");
     } finally {
       await this.cleanup();
@@ -53,7 +53,7 @@ export class FailuresScenariosDemo {
   private async establishBaseline(): Promise<void> {
     this.logger.info("Establishing baseline data...");
 
-    const stateMachine = new CounterStateMachine("demo");
+    const stateMachine = new CounterStateMachine("showcase");
     const commands = [
       stateMachine.createSetCommand(100, "baseline"),
       stateMachine.createIncrementCommand(25, "baseline-1"),
@@ -86,7 +86,7 @@ export class FailuresScenariosDemo {
 
     // Verify cluster continues to function
     this.logger.info("Testing cluster functionality with failed node...");
-    const stateMachine = new CounterStateMachine("demo");
+    const stateMachine = new CounterStateMachine("showcase");
     const testCommands = [
       stateMachine.createIncrementCommand(10, "single-failure-1"),
       stateMachine.createDecrementCommand(5, "single-failure-2"),
@@ -173,7 +173,7 @@ export class FailuresScenariosDemo {
 
     // Test new leader functionality
     this.logger.info("Testing new leader functionality...");
-    const stateMachine = new CounterStateMachine("demo");
+    const stateMachine = new CounterStateMachine("showcase");
     await this.clusterManager.appendToLeader(
       stateMachine.createIncrementCommand(20, "new-leader-test"),
     );
@@ -236,7 +236,7 @@ export class FailuresScenariosDemo {
 
     // Try to submit command (should fail)
     try {
-      const stateMachine = new CounterStateMachine("demo");
+      const stateMachine = new CounterStateMachine("showcase");
       await this.clusterManager.appendToLeader(
         stateMachine.createIncrementCommand(1, "majority-failure-test"),
       );
@@ -268,7 +268,7 @@ export class FailuresScenariosDemo {
       );
 
       // Test functionality
-      const stateMachine = new CounterStateMachine("demo");
+      const stateMachine = new CounterStateMachine("showcase");
       await this.clusterManager.appendToLeader(
         stateMachine.createIncrementCommand(50, "majority-restored-test"),
       );
@@ -305,7 +305,7 @@ export class FailuresScenariosDemo {
       );
 
       // Test that majority partition can process commands
-      const stateMachine = new CounterStateMachine("demo");
+      const stateMachine = new CounterStateMachine("showcase");
       try {
         await this.clusterManager.appendToLeader(
           stateMachine.createIncrementCommand(30, "partition-test"),
@@ -382,7 +382,7 @@ export class FailuresScenariosDemo {
     // Test remaining cluster functionality
     this.logger.info("Testing remaining cluster functionality...");
     try {
-      const stateMachine = new CounterStateMachine("demo");
+      const stateMachine = new CounterStateMachine("showcase");
       await this.clusterManager.appendToLeader(
         stateMachine.createIncrementCommand(40, "cascading-test"),
       );
@@ -533,7 +533,7 @@ export class FailuresScenariosDemo {
   }
 
   private async cleanup(): Promise<void> {
-    this.logger.info("Cleaning up failure scenarios demo...");
+    this.logger.info("Cleaning up failure scenarios showcase...");
     await this.clusterManager.cleanup();
   }
 }
