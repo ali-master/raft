@@ -1,6 +1,5 @@
 import { EventEmitter } from "node:events";
 import type Redis from "ioredis";
-import * as os from "node:os";
 import type {
   SystemMetricsSnapshot,
   RaftConfiguration,
@@ -8,7 +7,7 @@ import type {
 } from "../types";
 import { RaftState, RaftEventType } from "../constants";
 import { RaftPeerDiscoveryException } from "../exceptions";
-import { SystemMetrics } from "../utils";
+import { SystemMetrics, getLocalIpAddress } from "../utils";
 import type { RaftLogger } from "./logger";
 
 export class PeerDiscoveryService extends EventEmitter {
@@ -124,7 +123,7 @@ export class PeerDiscoveryService extends EventEmitter {
     const selfInfo: PeerInfo = {
       nodeId: this.config.nodeId,
       clusterId: this.config.clusterId,
-      httpHost: this.getLocalIpAddress(),
+      httpHost: this.config.httpHost || getLocalIpAddress(),
       httpPort: this.config.httpPort,
       state: RaftState.FOLLOWER, // Initial state
       term: 0,
@@ -227,24 +226,12 @@ export class PeerDiscoveryService extends EventEmitter {
       }
     }
   }
-
-  private getLocalIpAddress(): string {
-    const interfaces = os.networkInterfaces();
-
-    for (const interfaceName of Object.keys(interfaces)) {
-      const networkInterface = interfaces[interfaceName];
-      if (networkInterface) {
-        for (const alias of networkInterface) {
-          if (alias.family === "IPv4" && !alias.internal) {
-            return alias.address;
-          }
-        }
-      }
-    }
-
-    return "127.0.0.1"; // Fallback to localhost
-  }
-
+  /**
+   * Updates the state and term of a peer.
+   * @param nodeId The ID of the peer to update.
+   * @param state The new state of the peer.
+   * @param term The current term of the peer.
+   */
   public async updatePeerState(
     nodeId: string,
     state: RaftState,
