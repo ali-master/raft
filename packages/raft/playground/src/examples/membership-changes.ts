@@ -1,7 +1,7 @@
 import chalk from "chalk";
-import { ClusterManager } from "../utils/cluster-manager.js";
-import { PlaygroundLogger } from "../utils/logger.js";
-import { CounterStateMachine } from "../state-machines/counter-state-machine.js";
+import { ClusterManager } from "../utils/cluster-manager";
+import { PlaygroundLogger } from "../utils/logger";
+import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
 export class MembershipChangesDemo {
   private logger = new PlaygroundLogger();

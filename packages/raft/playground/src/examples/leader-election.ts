@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { RaftState } from "@usex/raft";
-import { ClusterManager } from "../utils/cluster-manager.js";
-import { PlaygroundLogger } from "../utils/logger.js";
+import { ClusterManager } from "../utils/cluster-manager";
+import { PlaygroundLogger } from "../utils/logger";
 
 export class LeaderElectionDemo {
   private logger = new PlaygroundLogger();

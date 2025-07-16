@@ -1,5 +1,5 @@
 import type { StateMachine } from "@usex/raft";
-import { PlaygroundLogger } from "../utils/logger.js";
+import { PlaygroundLogger } from "../utils/logger";
 
 export interface CounterCommand {
   type: "increment" | "decrement" | "set" | "reset";

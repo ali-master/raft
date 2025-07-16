@@ -1,9 +1,9 @@
 import chalk from "chalk";
 import inquirer from "inquirer";
 import { RaftState } from "@usex/raft";
-import { ClusterManager } from "../utils/cluster-manager.js";
-import { PlaygroundLogger } from "../utils/logger.js";
-import { CounterStateMachine } from "../state-machines/counter-state-machine.js";
+import { ClusterManager } from "../utils/cluster-manager";
+import { PlaygroundLogger } from "../utils/logger";
+import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
 export class InteractiveCLI {
   private logger = new PlaygroundLogger();

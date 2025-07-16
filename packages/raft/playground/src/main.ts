@@ -3,24 +3,25 @@
 import chalk from "chalk";
 import { Command } from "commander";
 import inquirer from "inquirer";
-import { ClusterDemo } from "./examples/cluster-demo.js";
-import { LeaderElectionDemo } from "./examples/leader-election.js";
-import { LogReplicationDemo } from "./examples/log-replication.js";
-import { MembershipChangesDemo } from "./examples/membership-changes.js";
-import { SnapshotDemo } from "./examples/snapshots.js";
-import { FailuresScenariosDemo } from "./examples/failure-scenarios.js";
-import { PerformanceTestsDemo } from "./examples/performance-tests.js";
-import { MonitoringDemo } from "./examples/monitoring.js";
-import { WeightedVotingDemo } from "./examples/weighted-voting.js";
-import { NetworkPartitionDemo } from "./examples/network-partition.js";
-import { LeadershipTransferDemo } from "./examples/leadership-transfer.js";
-import { ConcurrentWritesDemo } from "./examples/concurrent-writes.js";
-import { RecoveryDemo } from "./examples/recovery-scenarios.js";
-import { StressTestDemo } from "./examples/stress-test.js";
-import { InteractiveCLI } from "./interactive/cli.js";
-import { ClusterVisualizer } from "./visualization/cluster-visualizer.js";
+import { ClusterDemo } from "./examples/cluster-demo";
+import { LeaderElectionDemo } from "./examples/leader-election";
+import { LogReplicationDemo } from "./examples/log-replication";
+import { MembershipChangesDemo } from "./examples/membership-changes";
+import { SnapshotDemo } from "./examples/snapshots";
+import { FailuresScenariosDemo } from "./examples/failure-scenarios";
+import { PerformanceTestsDemo } from "./examples/performance-tests";
+import { MonitoringDemo } from "./examples/monitoring";
+import { WeightedVotingDemo } from "./examples/weighted-voting";
+import { NetworkPartitionDemo } from "./examples/network-partition";
+import { LeadershipTransferDemo } from "./examples/leadership-transfer";
+import { ConcurrentWritesDemo } from "./examples/concurrent-writes";
+import { RecoveryDemo } from "./examples/recovery-scenarios";
+import { StressTestDemo } from "./examples/stress-test";
+import { InteractiveCLI } from "./interactive/cli";
+import { ClusterVisualizer } from "./visualization/cluster-visualizer";
+import { version as RaftVersion } from "../../package.json";
 
-const program = new Command();
+const program = new Command("Raft");
 
 console.log(
   chalk.cyan.bold(`
@@ -37,30 +38,30 @@ console.log(
 program
   .name("raft-playground")
   .description("Complete Raft consensus algorithm playground")
-  .version("1.0.0");
+  .version(RaftVersion);
 
 async function showMainMenu() {
   console.log(chalk.yellow("\n🎯 Welcome to the Raft Consensus Playground!\n"));
 
   const choices = [
-    { name: "🏛️ Basic Cluster Demo", value: "cluster" },
-    { name: "🗳️ Leader Election", value: "election" },
-    { name: "📝 Log Replication", value: "replication" },
-    { name: "👥 Membership Changes", value: "membership" },
-    { name: "📸 Snapshots & Compaction", value: "snapshot" },
-    { name: "💥 Failure Scenarios", value: "failures" },
-    { name: "🏃 Performance Testing", value: "performance" },
-    { name: "📊 Monitoring & Metrics", value: "monitoring" },
-    { name: "⚖️ Weighted Voting", value: "weighted" },
-    { name: "🌐 Network Partitions", value: "partition" },
-    { name: "👑 Leadership Transfer", value: "transfer" },
-    { name: "🔄 Concurrent Writes", value: "concurrent" },
-    { name: "🔧 Recovery Scenarios", value: "recovery" },
-    { name: "🧨 Stress Testing", value: "stress" },
-    { name: "💻 Interactive CLI", value: "interactive" },
-    { name: "👁️ Real-time Visualizer", value: "visualizer" },
-    { name: "🎲 Random Demo", value: "random" },
-    { name: "🚪 Exit", value: "exit" },
+    { name: "Basic Cluster Demo", value: "cluster" },
+    { name: "Leader Election", value: "election" },
+    { name: "Log Replication", value: "replication" },
+    { name: "Membership Changes", value: "membership" },
+    { name: "Snapshots & Compaction", value: "snapshot" },
+    { name: "Failure Scenarios", value: "failures" },
+    { name: "Performance Testing", value: "performance" },
+    { name: "Monitoring & Metrics", value: "monitoring" },
+    { name: "️Weighted Voting", value: "weighted" },
+    { name: "Network Partitions", value: "partition" },
+    { name: "Leadership Transfer", value: "transfer" },
+    { name: "Concurrent Writes", value: "concurrent" },
+    { name: "Recovery Scenarios", value: "recovery" },
+    { name: "Stress Testing", value: "stress" },
+    { name: "Interactive CLI", value: "interactive" },
+    { name: "Real-time Visualizer", value: "visualizer" },
+    { name: "Random Demo", value: "random" },
+    { name: "Exit", value: "exit" },
   ];
 
   const answer = await inquirer.prompt([
@@ -70,6 +71,7 @@ async function showMainMenu() {
       message: "Choose a Raft demonstration:",
       choices,
       pageSize: 20,
+      loop: true,
     },
   ]);
 
@@ -128,6 +130,7 @@ async function showMainMenu() {
       const randomChoice =
         choices[Math.floor(Math.random() * (choices.length - 2))]!;
       console.log(chalk.magenta(`🎲 Randomly selected: ${randomChoice.name}`));
+
       await showMainMenu();
       break;
     }
@@ -153,6 +156,15 @@ async function showMainMenu() {
     process.exit(0);
   }
 }
+
+process.on("uncaughtException", (error) => {
+  if (error instanceof Error && error.name === "ExitPromptError") {
+    console.log("\n");
+    console.log(chalk.green("👋 Thanks for exploring Raft! Goodbye!"));
+    console.log("\n");
+    process.exit(0);
+  }
+});
 
 // CLI commands
 program

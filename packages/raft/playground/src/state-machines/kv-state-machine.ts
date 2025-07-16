@@ -1,6 +1,6 @@
 import type { StateMachine } from "@usex/raft";
 import Redis from "ioredis";
-import { PlaygroundLogger } from "../utils/logger.js";
+import { PlaygroundLogger } from "../utils/logger";
 
 export interface KVCommand {
   type: "set" | "delete" | "clear";

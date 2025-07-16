@@ -1,10 +1,10 @@
 import { RaftState, RaftEngine } from "@usex/raft";
 import type { RaftNode } from "@usex/raft";
-import type { PlaygroundConfig } from "./config.js";
-import { DEFAULT_PLAYGROUND_CONFIG, createRaftConfig } from "./config.js";
-import { PlaygroundLogger } from "./logger.js";
-import { CounterStateMachine } from "../state-machines/counter-state-machine.js";
-import { KVStateMachine } from "../state-machines/kv-state-machine.js";
+import type { PlaygroundConfig } from "./config";
+import { DEFAULT_PLAYGROUND_CONFIG, createRaftConfig } from "./config";
+import { PlaygroundLogger } from "./logger";
+import { CounterStateMachine } from "../state-machines/counter-state-machine";
+import { KVStateMachine } from "../state-machines/kv-state-machine";
 import Redis from "ioredis";
 
 export type StateMachineType = "counter" | "kv";
@@ -32,8 +32,8 @@ export class ClusterManager {
   private raftEngine: RaftEngine;
   private logger: PlaygroundLogger;
   private redis: Redis;
-  private clusterId: string;
-  private config: PlaygroundConfig;
+  private readonly clusterId: string;
+  private readonly config: PlaygroundConfig;
 
   constructor(
     clusterId: string = "playground-cluster",
