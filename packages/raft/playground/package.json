@@ -42,7 +42,7 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
-    "@types/node": "^24.0.10",
+    "@types/node": "^24.0.14",
     "@types/blessed": "^0.1.25",
     "@types/inquirer": "^9.0.8",
     "@types/express": "^5.0.3",

@@ -58,20 +58,20 @@
     "eventemitter3": "^5.0.1"
   },
   "devDependencies": {
-    "@nestjs/common": "11.1.3",
-    "@nestjs/core": "11.1.3",
-    "@nestjs/config": "^3.2.3",
-    "@nestjs/event-emitter": "^2.1.0",
-    "@nestjs/testing": "11.1.3",
-    "@swc/core": "^1.12.9",
-    "@testcontainers/redis": "^11.2.0",
+    "@nestjs/common": "11.1.4",
+    "@nestjs/core": "11.1.4",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/event-emitter": "^3.0.1",
+    "@nestjs/testing": "11.1.4",
+    "@swc/core": "^1.12.14",
+    "@testcontainers/redis": "^11.2.1",
     "@types/express": "^5.0.3",
     "@types/jest": "^30.0.0",
-    "@types/node": "24.0.10",
+    "@types/node": "24.0.14",
     "ioredis": "^5.6.1",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
-    "testcontainers": "^11.2.0",
+    "testcontainers": "^11.2.1",
     "unplugin-swc": "^1.5.5"
   },
   "peerDependencies": {
@@ -94,5 +94,5 @@
       "breaking change": "Breaking changes"
     }
   },
-  "packageManager": "pnpm@10.12.4"
+  "packageManager": "pnpm@10.13.1"
 }
