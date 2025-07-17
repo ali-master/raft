@@ -117,10 +117,14 @@ export function createRaftConfig(
     logging: {
       level: playgroundConfig.logging.level,
       redactedFields: ["password", "token"],
-      enableStructured: true,
+      enableStructured: false,
       enableConsole: true,
       enableFile: false,
       filePath: `/tmp/raft-${nodeId}.log`,
+      enableColors: true,
+      showTimestamps: true,
+      showNodeIds: true,
+      pretty: false,
     },
     network: {
       requestTimeout: 5000,

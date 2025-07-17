@@ -411,6 +411,9 @@ importers:
 
   packages/raft:
     dependencies:
+      chalk:
+        specifier: ^5.4.1
+        version: 5.4.1
       ioredis:
         specifier: ^5.6.1
         version: 5.6.1

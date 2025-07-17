@@ -2186,7 +2186,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     this.preVoteGrantedFor.set(request.term, request.candidateId);
 
     // Clean up old pre-vote tracking (keep only recent terms)
-    for (const [term, candidateId] of this.preVoteGrantedFor.entries()) {
+    for (const [term, _candidateId] of this.preVoteGrantedFor.entries()) {
       if (term < request.term - 5) {
         // Keep last 5 terms
         this.preVoteGrantedFor.delete(term);

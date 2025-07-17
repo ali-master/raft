@@ -1,159 +1,90 @@
-import chalk from "chalk";
+import { RaftLogger, LogLevel } from "@usex/raft";
 
-export interface LogEntry {
-  timestamp: Date;
-  level: LogLevel;
-  nodeId?: string;
-  message: string;
-  data?: any;
-}
+// Create a logger instance with playground-specific configuration
+const createPlaygroundLogger = (minLevel: LogLevel = LogLevel.INFO) => {
+  return new RaftLogger({
+    level: minLevel,
+    enableColors: true,
+    showTimestamps: true,
+    showNodeIds: true,
+    enableStructured: false,
+    enableConsole: true,
+    enableFile: false,
+    pretty: false,
+  });
+};
 
-export enum LogLevel {
-  DEBUG = "debug",
-  INFO = "info",
-  WARN = "warn",
-  ERROR = "error",
-  SUCCESS = "success",
-}
+// Export the logger class and a factory function
+export { LogLevel };
+export const PlaygroundLogger = class {
+  private logger: RaftLogger;
 
-export class PlaygroundLogger {
-  private entries: LogEntry[] = [];
-  private showTimestamps = true;
-  private showNodeIds = true;
-  private maxEntries = 1000;
-
-  constructor(private minLevel: LogLevel = LogLevel.INFO) {}
+  constructor(minLevel: LogLevel = LogLevel.INFO) {
+    this.logger = createPlaygroundLogger(minLevel);
+  }
 
   debug(message: string, nodeId?: string, data?: any) {
-    this.log(LogLevel.DEBUG, message, nodeId, data);
+    const context = { nodeId };
+    if (data instanceof Error) {
+      this.logger.debug(message, context, data);
+    } else {
+      this.logger.debug(message, { ...context, ...data });
+    }
   }
 
   info(message: string, nodeId?: string, data?: any) {
-    this.log(LogLevel.INFO, message, nodeId, data);
+    const context = { nodeId };
+    if (data instanceof Error) {
+      this.logger.info(message, context, data);
+    } else {
+      this.logger.info(message, { ...context, ...data });
+    }
   }
 
   warn(message: string, nodeId?: string, data?: any) {
-    this.log(LogLevel.WARN, message, nodeId, data);
+    const context = { nodeId };
+    if (data instanceof Error) {
+      this.logger.warn(message, context, data);
+    } else {
+      this.logger.warn(message, { ...context, ...data });
+    }
   }
 
   error(message: string, nodeId?: string, data?: any) {
-    this.log(LogLevel.ERROR, message, nodeId, data);
+    const context = { nodeId };
+    if (data instanceof Error) {
+      this.logger.error(message, context, data);
+    } else {
+      this.logger.error(message, { ...context, ...data });
+    }
   }
 
   success(message: string, nodeId?: string, data?: any) {
-    this.log(LogLevel.SUCCESS, message, nodeId, data);
-  }
-
-  private log(level: LogLevel, message: string, nodeId?: string, data?: any) {
-    const entry: LogEntry = {
-      timestamp: new Date(),
-      level,
-      nodeId: nodeId!,
-      message,
-      data,
-    };
-
-    this.entries.push(entry);
-
-    // Keep only recent entries
-    if (this.entries.length > this.maxEntries) {
-      this.entries = this.entries.slice(-this.maxEntries);
-    }
-
-    // Only display if level is >= minLevel
-    if (this.shouldLog(level)) {
-      this.display(entry);
-    }
-  }
-
-  private shouldLog(level: LogLevel): boolean {
-    const levels = [
-      LogLevel.DEBUG,
-      LogLevel.INFO,
-      LogLevel.WARN,
-      LogLevel.ERROR,
-      LogLevel.SUCCESS,
-    ];
-    const minIndex = levels.indexOf(this.minLevel);
-    const levelIndex = levels.indexOf(level);
-    return levelIndex >= minIndex;
-  }
-
-  private display(entry: LogEntry) {
-    let output = "";
-
-    // Timestamp
-    if (this.showTimestamps) {
-      output += chalk.gray(`[${entry.timestamp.toISOString().slice(11, 23)}] `);
-    }
-
-    // Level
-    output += this.formatLevel(entry.level);
-
-    // Node ID
-    if (entry.nodeId && this.showNodeIds) {
-      output += chalk.cyan(`[${entry.nodeId}] `);
-    }
-
-    // Message
-    output += entry.message;
-
-    // Data
-    if (entry.data) {
-      output += chalk.gray(` ${JSON.stringify(entry.data)}`);
-    }
-
-    console.log(output);
-  }
-
-  private formatLevel(level: LogLevel): string {
-    switch (level) {
-      case LogLevel.DEBUG:
-        return chalk.blue("[DEBUG] ");
-      case LogLevel.INFO:
-        return chalk.white("[INFO]  ");
-      case LogLevel.WARN:
-        return chalk.yellow("[WARN]  ");
-      case LogLevel.ERROR:
-        return chalk.red("[ERROR] ");
-      case LogLevel.SUCCESS:
-        return chalk.green("[SUCCESS] ");
-      default:
-        return chalk.white("[INFO]  ");
+    const context = { nodeId };
+    if (data instanceof Error) {
+      this.logger.success(message, context, data);
+    } else {
+      this.logger.success(message, { ...context, ...data });
     }
   }
 
   section(title: string) {
-    console.log();
-    console.log(chalk.bold.cyan(`🔍 ${title}`));
-    console.log(chalk.gray("─".repeat(title.length + 4)));
+    this.logger.section(title);
   }
 
   step(stepNumber: number, description: string) {
-    console.log(chalk.bold.yellow(`\n📋 Step ${stepNumber}: ${description}`));
+    this.logger.step(stepNumber, description);
   }
 
   result(success: boolean, message: string) {
-    if (success) {
-      console.log(chalk.green(`✅ ${message}`));
-    } else {
-      console.log(chalk.red(`❌ ${message}`));
-    }
+    this.logger.result(success, message);
   }
 
   metric(name: string, value: string | number, unit?: string) {
-    const displayValue = unit ? `${value} ${unit}` : value.toString();
-    console.log(chalk.blue(`📊 ${name}: ${chalk.bold(displayValue)}`));
+    this.logger.metric(name, value, unit);
   }
 
   progress(current: number, total: number, description?: string) {
-    const percentage = Math.round((current / total) * 100);
-    const progressBar =
-      "█".repeat(Math.floor(percentage / 5)) +
-      "░".repeat(20 - Math.floor(percentage / 5));
-    const display = description ? `${description} ` : "";
-    console.log(
-      `${display}[${progressBar}] ${percentage}% (${current}/${total})`,
-    );
+    this.logger.progress(current, total, description);
   }
-}
+};

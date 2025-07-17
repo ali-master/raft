@@ -4,8 +4,8 @@ import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
 interface SnapshotCapableNode {
-  createSnapshot?(): Promise<void>;
-  getSnapshotMetadata?(): any;
+  createSnapshot?: () => Promise<void>;
+  getSnapshotMetadata?: () => any;
 }
 
 export class SnapshotShowcase {

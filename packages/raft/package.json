@@ -72,6 +72,7 @@
     "prom-client": "^15"
   },
   "dependencies": {
+    "chalk": "^5.4.1",
     "ioredis": "^5.6.1",
     "opossum": "^9.0.0",
     "prom-client": "^15.1.3"

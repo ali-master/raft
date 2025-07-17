@@ -10,17 +10,17 @@ import Redis from "ioredis";
 export type StateMachineType = "counter" | "kv";
 
 export interface CleanupableStateMachine {
-  cleanup(): Promise<void>;
+  cleanup: () => Promise<void>;
 }
 
 export interface ExtendedRaftNode {
-  clearTimers(): void;
+  clearTimers: () => void;
   redisListenerActive: boolean;
   peerDiscovery: {
-    stop(): Promise<void>;
+    stop: () => Promise<void>;
   };
   network: {
-    resetCircuitBreakers(): void;
+    resetCircuitBreakers: () => void;
   };
 }
 
@@ -551,7 +551,7 @@ export class ClusterManager {
           "Circuit breakers recovered and cluster stabilized",
         );
         return;
-      } catch (_error) {
+      } catch {
         this.logger.debug("Circuit breakers still recovering...");
       }
     }

@@ -85,6 +85,21 @@ export interface LoggingConfig {
   enableConsole?: boolean;
   enableFile?: boolean;
   filePath?: string;
+  enableColors?: boolean;
+  showTimestamps?: boolean;
+  showNodeIds?: boolean;
+  pretty?: PrettyLogConfig | boolean;
+}
+
+export interface PrettyLogConfig {
+  enabled: boolean;
+  indent: number;
+  showTypes?: boolean;
+  maxObjectDepth?: number;
+  maxArrayLength?: number;
+  sortKeys?: boolean;
+  showFunctions?: boolean;
+  colorizeJson?: boolean;
 }
 
 export interface AdaptiveConsensusConfig {
