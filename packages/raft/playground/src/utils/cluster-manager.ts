@@ -326,13 +326,52 @@ export class ClusterManager {
     this.logger.info("Waiting for cluster stability...");
 
     const start = Date.now();
+    let stableCount = 0;
+    const requiredStableChecks = 5; // Must be stable for 5 consecutive checks
+
     while (Date.now() - start < timeoutMs) {
       const leader = this.getLeader();
-      if (leader) {
-        this.logger.success(`Cluster stable with leader: ${leader.nodeId}`);
-        return;
+      const followers = this.getFollowers();
+      const candidates = this.getCandidates();
+      const allNodes = this.getAllNodes();
+
+      // Check if cluster is stable
+      const isStable =
+        leader &&
+        candidates.length === 0 &&
+        followers.length === allNodes.length - 1 &&
+        allNodes.every((node) => {
+          const term = node.node.getCurrentTerm();
+          return leader.node.getCurrentTerm() === term;
+        });
+
+      if (isStable) {
+        stableCount++;
+        this.logger.debug(
+          `Stability check ${stableCount}/${requiredStableChecks}`,
+          {
+            leader: leader.nodeId,
+            followers: followers.length,
+            candidates: candidates.length,
+            term: leader.node.getCurrentTerm(),
+          },
+        );
+
+        if (stableCount >= requiredStableChecks) {
+          this.logger.success(`Cluster stable with leader: ${leader.nodeId}`);
+          return;
+        }
+      } else {
+        stableCount = 0; // Reset counter if not stable
+        this.logger.debug("Cluster not stable yet", {
+          hasLeader: !!leader,
+          followers: followers.length,
+          candidates: candidates.length,
+          totalNodes: allNodes.length,
+        });
       }
-      await this.delay(100);
+
+      await this.delay(200);
     }
 
     throw new Error("Cluster failed to stabilize within timeout");
@@ -373,76 +412,39 @@ export class ClusterManager {
   async cleanup(): Promise<void> {
     this.logger.info("Cleaning up cluster");
 
-    // Step 1: Stop all timers and prevent new operations
-    for (const nodeInfo of this.nodes.values()) {
-      try {
-        // Clear all timers first to prevent new elections/messages
-        const extendedNode = nodeInfo.node as unknown as ExtendedRaftNode;
-        extendedNode.clearTimers();
-        extendedNode.redisListenerActive = false;
-      } catch (_error) {
-        this.logger.warn(
-          `Failed to stop timers for ${nodeInfo.nodeId}`,
-          undefined,
-          _error,
-        );
-      }
-    }
+    // Step 1: Reset circuit breakers to prevent cascading failures
+    this.resetAllCircuitBreakers();
 
-    // Step 2: Stop peer discovery to prevent new peer announcements
-    for (const nodeInfo of this.nodes.values()) {
-      try {
-        const extendedNode = nodeInfo.node as unknown as ExtendedRaftNode;
-        await extendedNode.peerDiscovery.stop();
-      } catch (_error) {
-        this.logger.warn(
-          `Failed to stop peer discovery for ${nodeInfo.nodeId}`,
-          undefined,
-          _error,
-        );
-      }
-    }
-
-    // Step 3: Wait longer for in-flight Redis operations to complete or timeout
-    // Circuit breaker timeout is typically 5 seconds, so wait 6 seconds to be safe
-    await this.delay(6000);
-
-    // Step 4: Clear ALL Redis data for this cluster after operations complete
+    // Step 2: Signal cluster shutdown to all nodes by clearing Redis peer data first
+    // This allows remaining nodes to detect they're in single-node state
     try {
-      const patterns = [
-        `raft:cluster:${this.clusterId}:node:*`,
-        `raft:cluster:${this.clusterId}:queue:*`,
-        `raft:cluster:${this.clusterId}:responses:*`,
-      ];
-
-      for (const pattern of patterns) {
-        const keys = await this.redis.keys(pattern);
-        if (keys.length > 0) {
-          await this.redis.del(...keys);
-        }
+      const peerPattern = `raft:cluster:${this.clusterId}:node:*`;
+      const keys = await this.redis.keys(peerPattern);
+      if (keys.length > 0) {
+        await this.redis.del(...keys);
       }
-
-      this.logger.debug(`Cleared all Redis data for cluster ${this.clusterId}`);
+      this.logger.debug(
+        `Cleared peer discovery data for cluster ${this.clusterId}`,
+      );
     } catch (_error) {
-      this.logger.warn("Failed to clear Redis cluster data", undefined, _error);
+      this.logger.warn(
+        "Failed to clear peer discovery data",
+        undefined,
+        _error,
+      );
     }
 
-    // Step 5: Stop all nodes after Redis is cleared
+    // Step 3: Wait for nodes to detect single-node state and stabilize
+    await this.delay(2000);
+
+    // Step 4: Gracefully stop all nodes after they've had time to adapt
     const stopPromises = Array.from(this.nodes.values()).map(
       async (nodeInfo) => {
         try {
-          // Stop the node (Redis operations will fail gracefully)
+          this.logger.debug(`Stopping node ${nodeInfo.nodeId}`);
           await nodeInfo.node.stop();
-
-          // Remove from RaftEngine tracking
-          this.raftEngine.removeNode(nodeInfo.nodeId);
-
-          // Clean up state machine if it has a cleanup method
-          if ("cleanup" in nodeInfo.stateMachine) {
-            await (nodeInfo.stateMachine as CleanupableStateMachine).cleanup();
-          }
         } catch (_error) {
-          this.logger.error(
+          this.logger.warn(
             `Error stopping node ${nodeInfo.nodeId}`,
             undefined,
             _error,
@@ -454,7 +456,55 @@ export class ClusterManager {
     // Wait for all nodes to stop gracefully
     await Promise.allSettled(stopPromises);
 
-    // Step 6: Final cleanup
+    // Step 5: Wait for circuit breakers to reset and operations to complete
+    // Circuit breaker timeout is typically 5 seconds, so wait 6 seconds to be safe
+    await this.delay(6000);
+
+    // Step 6: Clear remaining Redis data for this cluster
+    try {
+      const patterns = [
+        `raft:cluster:${this.clusterId}:queue:*`,
+        `raft:cluster:${this.clusterId}:responses:*`,
+      ];
+
+      for (const pattern of patterns) {
+        const keys = await this.redis.keys(pattern);
+        if (keys.length > 0) {
+          await this.redis.del(...keys);
+        }
+      }
+
+      this.logger.debug(
+        `Cleared remaining Redis data for cluster ${this.clusterId}`,
+      );
+    } catch (_error) {
+      this.logger.warn(
+        "Failed to clear remaining Redis data",
+        undefined,
+        _error,
+      );
+    }
+
+    // Step 7: Final cleanup - remove from RaftEngine and clean up state machines
+    for (const nodeInfo of this.nodes.values()) {
+      try {
+        // Remove from RaftEngine tracking
+        this.raftEngine.removeNode(nodeInfo.nodeId);
+
+        // Clean up state machine if it has a cleanup method
+        if ("cleanup" in nodeInfo.stateMachine) {
+          await (nodeInfo.stateMachine as CleanupableStateMachine).cleanup();
+        }
+      } catch (_error) {
+        this.logger.error(
+          `Error cleaning up node ${nodeInfo.nodeId}`,
+          undefined,
+          _error,
+        );
+      }
+    }
+
+    // Step 8: Final cleanup
     this.nodes.clear();
     this.logger.success("Cluster cleanup completed");
   }
@@ -479,5 +529,48 @@ export class ClusterManager {
         );
       }
     }
+  }
+
+  public async waitForCircuitBreakerRecovery(
+    timeoutMs: number = 15000,
+  ): Promise<void> {
+    this.logger.info("Waiting for circuit breakers to recover...");
+
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      // Reset circuit breakers to speed up recovery
+      this.resetAllCircuitBreakers();
+
+      // Wait for circuit breakers to fully reset
+      await this.delay(1000);
+
+      // Check if cluster can stabilize after circuit breaker reset
+      try {
+        await this.waitForStability(5000);
+        this.logger.success(
+          "Circuit breakers recovered and cluster stabilized",
+        );
+        return;
+      } catch (_error) {
+        this.logger.debug("Circuit breakers still recovering...");
+      }
+    }
+
+    throw new Error("Circuit breakers failed to recover within timeout");
+  }
+
+  public async waitForClusterSync(timeoutMs: number = 15000): Promise<void> {
+    this.logger.info("Waiting for cluster to synchronize...");
+
+    // First reset circuit breakers
+    this.resetAllCircuitBreakers();
+
+    // Wait for circuit breakers to recover
+    await this.waitForCircuitBreakerRecovery(timeoutMs);
+
+    // Then wait for stability
+    await this.waitForStability(timeoutMs);
+
+    this.logger.success("Cluster synchronized successfully");
   }
 }

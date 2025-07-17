@@ -76,6 +76,9 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   // Redis message listener control
   private redisListenerActive = false;
 
+  // Pre-vote tracking to prevent multiple simultaneous pre-votes
+  private preVoteGrantedFor: Map<number, string> = new Map(); // term -> candidateId
+
   constructor(config: RaftConfiguration, stateMachine: StateMachine<TCommand>) {
     super();
     this.config = config;
@@ -490,15 +493,16 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       );
 
       // Check if this is truly a single node cluster based on actual discovered peers
-      // Also ensure we're not in the middle of a cleanup process (redisListenerActive check)
-      if (
-        otherPeers.length === 0 &&
-        discoveredPeers.length === 0 &&
-        this.redisListenerActive
-      ) {
+      // Allow single-node election even during cleanup if no peers are discovered
+      if (otherPeers.length === 0 && discoveredPeers.length === 0) {
         this.logger.info(
-          "Single node cluster, proceeding directly to election (no Pre-Vote needed).",
-          { nodeId: this.config.nodeId },
+          "Single node cluster detected, proceeding directly to election (no Pre-Vote needed).",
+          {
+            nodeId: this.config.nodeId,
+            redisListenerActive: this.redisListenerActive,
+            discoveredPeers: discoveredPeers.length,
+            otherPeers: otherPeers.length,
+          },
         );
       } else if (otherPeers.length > 0) {
         const preVotePromises = otherPeers.map((peerId) =>
@@ -608,15 +612,16 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     const otherPeers = discoveredPeers.filter((p) => p !== this.config.nodeId);
 
     // Check if this is truly a single node cluster based on actual discovered peers
-    // Also ensure we're not in the middle of a cleanup process (redisListenerActive check)
-    if (
-      otherPeers.length === 0 &&
-      discoveredPeers.length === 0 &&
-      this.redisListenerActive
-    ) {
+    // Allow single-node election even during cleanup if no peers are discovered
+    if (otherPeers.length === 0 && discoveredPeers.length === 0) {
       this.logger.info(
-        "Single node cluster, proceeding directly to election (no Pre-Vote needed).",
-        { nodeId: this.config.nodeId },
+        "Single node cluster detected, proceeding directly to election (no Pre-Vote needed).",
+        {
+          nodeId: this.config.nodeId,
+          redisListenerActive: this.redisListenerActive,
+          discoveredPeers: discoveredPeers.length,
+          otherPeers: otherPeers.length,
+        },
       );
       // Fall through to actual election phase for single node cluster
     } else if (otherPeers.length > 0) {
@@ -985,8 +990,15 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     this.state = RaftState.FOLLOWER;
 
     if (term && term > this.currentTerm) {
+      this.logger.info("Updating term and becoming follower", {
+        oldTerm: this.currentTerm,
+        newTerm: term,
+        nodeId: this.config.nodeId,
+      });
       this.currentTerm = term;
       this.votedFor = null;
+      // Persist the updated term and cleared votedFor to ensure consistency
+      await this.persistState();
     }
 
     this.clearHeartbeatTimer();
@@ -2125,6 +2137,29 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       return { term: this.currentTerm, voteGranted: false };
     }
 
+    // Check if we already granted a pre-vote for this term
+    const existingPreVote = this.preVoteGrantedFor.get(request.term);
+    if (existingPreVote && existingPreVote !== request.candidateId) {
+      this.logger.info(
+        "Rejecting PreVote: Already granted pre-vote for this term",
+        {
+          candidateId: request.candidateId,
+          existingCandidate: existingPreVote,
+          term: request.term,
+        },
+      );
+      return { term: this.currentTerm, voteGranted: false };
+    }
+
+    // If we already granted pre-vote to this candidate, return granted
+    if (existingPreVote === request.candidateId) {
+      this.logger.debug("Already granted pre-vote to this candidate", {
+        candidateId: request.candidateId,
+        term: request.term,
+      });
+      return { term: this.currentTerm, voteGranted: true };
+    }
+
     // Check if candidate's log is at least as up-to-date as receiver's log.
     const localLastLogTerm = this.log.getLastTerm();
     const localLastLogIndex = this.log.getLastIndex();
@@ -2147,7 +2182,17 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       return { term: this.currentTerm, voteGranted: false };
     }
 
-    // If all checks pass, grant pre-vote.
+    // Grant pre-vote and track it
+    this.preVoteGrantedFor.set(request.term, request.candidateId);
+
+    // Clean up old pre-vote tracking (keep only recent terms)
+    for (const [term, candidateId] of this.preVoteGrantedFor.entries()) {
+      if (term < request.term - 5) {
+        // Keep last 5 terms
+        this.preVoteGrantedFor.delete(term);
+      }
+    }
+
     // Importantly, DO NOT change this.currentTerm or this.votedFor.
     this.logger.info("Granting PreVote.", {
       candidateId: request.candidateId,
@@ -2295,6 +2340,18 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         candidateId: request.candidateId,
       });
       return { term: this.currentTerm, voteGranted: false, voterWeight };
+    }
+
+    // Check if we already voted for this candidate in this term (prevent duplicate votes)
+    if (this.votedFor === request.candidateId) {
+      this.logger.debug(
+        "Already voted for this candidate, returning granted vote",
+        {
+          candidateId: request.candidateId,
+          term: this.currentTerm,
+        },
+      );
+      return { term: this.currentTerm, voteGranted: true, voterWeight };
     }
 
     // Check if candidate's log is at least as up-to-date as receiver's log

@@ -40,7 +40,7 @@ export const DEFAULT_PLAYGROUND_CONFIG: PlaygroundConfig = {
   },
   timing: {
     electionTimeoutMin: 150,
-    electionTimeoutMax: 300,
+    electionTimeoutMax: 500, // Increased from 300 to provide better randomization for multi-node clusters
     heartbeatInterval: 50,
     demoDelay: 1000,
   },
