@@ -2,6 +2,7 @@ import { vi, it, expect, describe, beforeEach } from "vitest";
 import { RaftNetwork } from "../../src/network/raft-network";
 import { RetryStrategy } from "../../src/utils/retry-strategy";
 import type { VoteRequest, RaftConfiguration } from "../../src/types";
+import type Redis from "ioredis";
 import {
   createTestConfig,
   createMockPeerDiscovery,
@@ -16,6 +17,7 @@ describe("raftNetwork", () => {
   let mockPeerDiscovery: ReturnType<typeof createMockPeerDiscovery>;
   let mockMetrics: ReturnType<typeof createMockMetricsCollector>;
   let mockRetry: RetryStrategy;
+  let mockRedis: Redis;
 
   beforeEach(() => {
     config = createTestConfig();
@@ -24,12 +26,21 @@ describe("raftNetwork", () => {
     mockMetrics = createMockMetricsCollector();
     mockRetry = new RetryStrategy(config.retry);
 
+    mockRedis = {
+      lpush: vi.fn(),
+      brpop: vi.fn(),
+      quit: vi.fn(),
+      status: "ready",
+    } as any;
+
     network = new RaftNetwork(
       config,
       mockRetry,
       mockLogger,
+      // @ts-ignore
       mockPeerDiscovery,
       mockMetrics,
+      mockRedis,
     );
   });
 

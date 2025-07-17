@@ -91,7 +91,7 @@ export function createRaftConfig(
     peerDiscovery: {
       registrationInterval: 5000,
       healthCheckInterval: 2000,
-      peerTimeout: 10000,
+      peerTimeout: 30000,
     },
     voting: {
       enableWeighting: false,
@@ -105,8 +105,8 @@ export function createRaftConfig(
     },
     circuitBreaker: {
       timeout: 5000,
-      errorThresholdPercentage: 50,
-      resetTimeout: 30000,
+      errorThresholdPercentage: 70, // More tolerant threshold
+      resetTimeout: 10000, // Faster reset for playground scenarios
     },
     metrics: {
       enablePrometheus: false,

@@ -183,7 +183,9 @@ export class ClusterManager {
       await (nodeInfo.stateMachine as any).cleanup();
     }
 
+    // Remove from both ClusterManager and RaftEngine
     this.nodes.delete(nodeId);
+    this.raftEngine.removeNode(nodeId);
     this.logger.success(`Removed node ${nodeId}`);
   }
 
@@ -208,9 +210,27 @@ export class ClusterManager {
   }
 
   async restartNode(nodeId: string): Promise<void> {
+    const nodeInfo = this.nodes.get(nodeId);
+    if (!nodeInfo) {
+      throw new Error(`Node ${nodeId} not found`);
+    }
+
+    // Stop the node
     await this.stopNode(nodeId);
+
+    // Remove the node from the RaftEngine to allow recreation
+    this.raftEngine.removeNode(nodeId);
     await this.delay(1000);
-    await this.startNode(nodeId);
+
+    // Recreate the node with fresh connections
+    const newNodeInfo = await this.createNode(
+      nodeId,
+      nodeInfo.stateMachine instanceof CounterStateMachine ? "counter" : "kv",
+    );
+
+    // Start the new node
+    await newNodeInfo.node.start();
+    this.logger.success(`Restarted node ${nodeId}`);
   }
 
   getNode(nodeId: string): NodeInfo | undefined {
@@ -337,11 +357,17 @@ export class ClusterManager {
   async cleanup(): Promise<void> {
     this.logger.info("Cleaning up cluster");
 
-    // Stop all nodes
+    // First, stop all timers and mark nodes as stopping to prevent new operations
     const stopPromises = Array.from(this.nodes.values()).map(
       async (nodeInfo) => {
         try {
+          // Stop the node and wait for graceful shutdown
           await nodeInfo.node.stop();
+
+          // Remove from RaftEngine tracking
+          this.raftEngine.removeNode(nodeInfo.nodeId);
+
+          // Clean up state machine if it has a cleanup method
           if ("cleanup" in nodeInfo.stateMachine) {
             await (nodeInfo.stateMachine as any).cleanup();
           }
@@ -355,9 +381,13 @@ export class ClusterManager {
       },
     );
 
+    // Wait for all nodes to stop gracefully
     await Promise.allSettled(stopPromises);
 
-    // Clear Redis data
+    // Add a small delay to ensure all Redis operations complete
+    await this.delay(500);
+
+    // Clear Redis data after all nodes are stopped
     try {
       await this.redis.flushall();
     } catch (_error) {
@@ -366,5 +396,24 @@ export class ClusterManager {
 
     this.nodes.clear();
     this.logger.success("Cluster cleanup completed");
+  }
+
+  public resetAllCircuitBreakers(): void {
+    this.logger.info("Resetting circuit breakers for all nodes");
+    for (const nodeInfo of this.nodes.values()) {
+      try {
+        // Access the network property to reset circuit breakers
+        const network = (nodeInfo.node as any).network;
+        if (network && typeof network.resetCircuitBreakers === "function") {
+          network.resetCircuitBreakers();
+        }
+      } catch (_error) {
+        this.logger.warn(
+          `Failed to reset circuit breakers for ${nodeInfo.nodeId}`,
+          undefined,
+          _error,
+        );
+      }
+    }
   }
 }

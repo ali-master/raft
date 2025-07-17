@@ -51,7 +51,10 @@ export class WALRecovery<TCommand = unknown> {
 
       return state;
     } catch (error) {
-      this.logger.error("WAL recovery failed", { error });
+      this.logger.error("WAL recovery failed", {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       throw error;
     }
   }
@@ -117,7 +120,7 @@ export class WALRecovery<TCommand = unknown> {
         state.term = term;
       }
       if (typeof votedFor === "string" || votedFor === null) {
-        state.votedFor = votedFor;
+        state.votedFor = votedFor as string | null;
       }
       if (typeof commitIndex === "number") {
         state.commitIndex = commitIndex;

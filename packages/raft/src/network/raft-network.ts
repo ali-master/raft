@@ -1,4 +1,4 @@
-import * as http from "node:http";
+import type Redis from "ioredis";
 import { performance } from "node:perf_hooks";
 import CircuitBreaker from "opossum";
 import type {
@@ -8,7 +8,6 @@ import type {
   RaftConfiguration,
   PreVoteResponse,
   PreVoteRequest,
-  PeerInfo,
   InstallSnapshotResponse,
   InstallSnapshotRequest,
   AppendEntriesResponse,
@@ -27,6 +26,7 @@ export class RaftNetwork {
   private readonly logger: RaftLogger;
   private readonly peerDiscovery: PeerDiscoveryService;
   private readonly metrics: RaftMetricsCollector;
+  private readonly redis: Redis;
 
   constructor(
     config: RaftConfiguration,
@@ -34,12 +34,14 @@ export class RaftNetwork {
     logger: RaftLogger,
     peerDiscovery: PeerDiscoveryService,
     metrics: RaftMetricsCollector,
+    redis: Redis,
   ) {
     this.config = config;
     this.retry = retry;
     this.logger = logger;
     this.peerDiscovery = peerDiscovery;
     this.metrics = metrics;
+    this.redis = redis;
   }
 
   public initializeCircuitBreakers(): void {
@@ -158,8 +160,8 @@ export class RaftNetwork {
         throw new RaftNetworkException(`Peer not found: ${targetNodeId}`);
       }
 
-      const response = await this.sendHttpRequest(
-        peerInfo,
+      const response = await this.sendRedisRequest(
+        targetNodeId,
         messageType,
         payload,
       );
@@ -190,7 +192,8 @@ export class RaftNetwork {
       this.logger.error("Failed to send message", {
         targetNodeId,
         messageType,
-        error,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
         latency,
         nodeId: this.config.nodeId,
       });
@@ -198,46 +201,48 @@ export class RaftNetwork {
     }
   }
 
-  private async sendHttpRequest(
-    peerInfo: PeerInfo,
+  private async sendRedisRequest(
+    targetNodeId: string,
     messageType: MessageType,
     payload: object,
   ): Promise<unknown> {
-    const url = `http://${peerInfo.httpHost}:${peerInfo.httpPort}/raft/${messageType}`;
+    const requestId = `${this.config.nodeId}-${Date.now()}-${Math.random()}`;
+    // Commenting out requestKey for now as it's not used in current implementation
+    // const requestKey = `raft:cluster:${this.config.clusterId}:messages:${targetNodeId}:${requestId}`;
+    const responseKey = `raft:cluster:${this.config.clusterId}:responses:${this.config.nodeId}:${requestId}`;
 
-    return new Promise((resolve, reject) => {
-      const postData = JSON.stringify(payload);
-      const options = {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(postData),
-        },
-        timeout: this.config.circuitBreaker?.timeout ?? 5000, // Default timeout if not configured
-      };
+    const message = {
+      from: this.config.nodeId,
+      to: targetNodeId,
+      type: messageType,
+      payload,
+      requestId,
+      timestamp: Date.now(),
+    };
 
-      const req = http.request(url, options, (res) => {
-        let data = "";
-        res.on("data", (chunk) => (data += chunk));
-        res.on("end", () => {
-          try {
-            const response = JSON.parse(data);
-            resolve(response);
-          } catch (error) {
-            reject(
-              new Error(`Invalid JSON response: ${data}`, {
-                cause: error,
-              }),
-            );
-          }
-        });
-      });
+    try {
+      // Send the message to the target node's queue
+      await this.redis.lpush(
+        `raft:cluster:${this.config.clusterId}:queue:${targetNodeId}`,
+        JSON.stringify(message),
+      );
 
-      req.on("error", reject);
-      req.on("timeout", () => reject(new Error("Request timeout")));
-      req.write(postData);
-      req.end();
-    });
+      // Wait for response with timeout
+      const timeout = this.config.circuitBreaker?.timeout ?? 5000;
+      const result = await this.redis.brpop(
+        responseKey,
+        Math.floor(timeout / 1000),
+      );
+
+      if (!result) {
+        throw new Error("Request timeout - no response received");
+      }
+
+      const responseData = JSON.parse(result[1]);
+      return responseData.payload;
+    } catch (error) {
+      throw new Error(`Redis request failed: ${error}`);
+    }
   }
 
   public updateCircuitBreakers(): void {
@@ -245,7 +250,7 @@ export class RaftNetwork {
     const existingPeers = new Set(this.circuitBreakers.keys());
 
     // Add circuit breakers for new peers
-    for (const peer of currentPeers) {
+    for (const peer of Array.from(currentPeers)) {
       if (!existingPeers.has(peer)) {
         const options = {
           timeout: this.config.circuitBreaker?.timeout ?? 5000, // Default timeout if not configured
@@ -263,9 +268,27 @@ export class RaftNetwork {
     }
 
     // Remove circuit breakers for lost peers
-    for (const peer of existingPeers) {
+    for (const peer of Array.from(existingPeers)) {
       if (!currentPeers.has(peer)) {
         this.circuitBreakers.delete(peer);
+      }
+    }
+  }
+
+  public resetCircuitBreakers(): void {
+    this.logger.info("Resetting all circuit breakers", {
+      nodeId: this.config.nodeId,
+      count: this.circuitBreakers.size,
+    });
+
+    // Reset all circuit breakers to closed state
+    for (const [peerId, breaker] of this.circuitBreakers) {
+      if (breaker.opened) {
+        breaker.close();
+        this.logger.debug("Reset circuit breaker", {
+          peerId,
+          nodeId: this.config.nodeId,
+        });
       }
     }
   }

@@ -2,11 +2,7 @@ import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
 import type { RaftNode } from "../src/core/raft-node";
 import { RaftEngine } from "../src/raft-engine";
 import { MockStateMachine } from "./shared/mocks/state-machine.mock";
-import type {
-  RaftConfiguration,
-  PersistenceConfig,
-  NetworkConfig,
-} from "../src/types";
+import type { RaftConfiguration } from "../src/types";
 import { RaftState, LogLevel } from "../src/constants";
 import { createTempDataDir, cleanupDataDir } from "./shared/utils/temp-dir";
 import type { RaftNetwork } from "../src/network/raft-network";
@@ -37,14 +33,14 @@ const baseConfig: Partial<RaftConfiguration> = {
     dataDir: "/tmp/test",
     walEnabled: false,
     walSizeLimit: 1024 * 1024,
-  } as PersistenceConfig,
+  },
   network: {
     requestTimeout: 200,
     maxRetries: 3,
     retryDelay: 50,
     circuitBreakerThreshold: 5,
     circuitBreakerTimeout: 5000,
-  } as NetworkConfig, // Faster network timeout for tests
+  }, // Faster network timeout for tests
 };
 
 async function createTestNode(

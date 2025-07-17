@@ -310,7 +310,8 @@ export class RaftLog<TCommand = unknown> {
       });
     } catch (error) {
       this.logger.error("Failed to load log from storage", {
-        error,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
         nodeId: this.nodeId,
       });
       // Don't throw on storage errors during loading - just log and continue with empty log

@@ -239,7 +239,7 @@ export class ConcurrentWritesShowcase {
     if (clientResults.status === "fulfilled") {
       for (let i = 0; i < clientResults.value.length; i++) {
         const result = clientResults.value[i];
-        if (result.status === "fulfilled") {
+        if (result && result.status === "fulfilled") {
           totalSuccess += result.value.successful;
           totalFailures += result.value.failed;
         } else {

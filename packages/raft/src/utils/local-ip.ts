@@ -1,4 +1,4 @@
-import os from "node:os";
+import * as os from "node:os";
 
 export function getLocalIpAddress(): string {
   const interfaces = os.networkInterfaces();

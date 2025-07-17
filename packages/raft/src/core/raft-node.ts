@@ -18,7 +18,7 @@ import type {
   AppendEntriesResponse,
   AppendEntriesRequest,
 } from "../types";
-import { RaftState, RaftEventType } from "../constants";
+import { RaftState, RaftEventType, MessageType } from "../constants";
 import {
   RaftValidationException,
   RaftStorageException,
@@ -73,6 +73,9 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   // Represents the currently active configuration. Can be C_old (simple array), C_joint (oldPeers/newPeers), or C_new (simple array).
   private activeConfiguration: { oldPeers?: string[]; newPeers: string[] };
 
+  // Redis message listener control
+  private redisListenerActive = false;
+
   constructor(config: RaftConfiguration, stateMachine: StateMachine<TCommand>) {
     super();
     this.config = config;
@@ -124,6 +127,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       this.logger,
       this.peerDiscovery,
       this.metrics,
+      this.storage,
     );
     this.weightCalculator = new VoteWeightCalculator(
       config.voting,
@@ -145,6 +149,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       await this.loadLatestSnapshotFromDisk(); // Load snapshot after log, before other services
 
       await this.peerDiscovery.start();
+      this.startRedisMessageListener();
 
       // If activeConfiguration wasn't loaded from persisted state (e.g. fresh start),
       // initialize it based on discovered peers.
@@ -187,15 +192,22 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       });
     } catch (error) {
       this.logger.fatal("Failed to start Raft node", {
-        error,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
         nodeId: this.config.nodeId,
       });
-      throw new RaftException(`Failed to start node: ${error}`);
+      throw new RaftException(
+        `Failed to start node: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
   public async stop(): Promise<void> {
     this.clearTimers();
+    this.redisListenerActive = false;
+
+    // Give any pending operations a moment to complete
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     try {
       await this.peerDiscovery.stop();
@@ -211,6 +223,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     }
 
     try {
+      // Only close Redis if it's still connected
       if (this.storage.status === "ready") {
         await this.storage.quit();
       }
@@ -772,7 +785,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
           if (newConfigPeers.includes(this.config.nodeId)) votesFromNew++;
         }
 
-        for (const [voterId, voteResponse] of votes.entries()) {
+        for (const [voterId, voteResponse] of Array.from(votes.entries())) {
           if (voteResponse.voteGranted) {
             if (oldConfigPeers.includes(voterId)) votesFromOld++;
             if (newConfigPeers.includes(voterId)) votesFromNew++;
@@ -810,7 +823,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         // Fallback to simple vote counting if weights are not being used
         let receivedVotes = 0;
         if (this.votedFor === this.config.nodeId) receivedVotes++; // Self-vote
-        for (const voteResponse of votes.values()) {
+        for (const voteResponse of Array.from(votes.values())) {
           if (voteResponse.voteGranted) receivedVotes++;
         }
         const majorityCount = Math.floor(currentPeers.length / 2) + 1;
@@ -892,7 +905,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   private calculateTotalWeight(votes: Map<string, VoteResponse>): number {
     let totalWeight = this.weightCalculator.calculateWeight(this.config.nodeId); // Self vote
 
-    for (const response of votes.values()) {
+    for (const response of Array.from(votes.values())) {
       totalWeight += response.voterWeight;
     }
 
@@ -904,7 +917,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       this.config.nodeId,
     ); // Self vote
 
-    for (const response of votes.values()) {
+    for (const response of Array.from(votes.values())) {
       if (response.voteGranted) {
         receivedWeight += response.voterWeight;
       }
@@ -1017,6 +1030,9 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
           success: response.success,
         });
       } catch (error) {
+        console.log({
+          error,
+        });
         this.logger.warn("Failed to send heartbeat", { peerId, error });
       }
     });
@@ -2120,6 +2136,94 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       candidateTerm: request.term,
     });
     return { term: this.currentTerm, voteGranted: true };
+  }
+
+  private startRedisMessageListener(): void {
+    const queueKey = `raft:cluster:${this.config.clusterId}:queue:${this.config.nodeId}`;
+    this.redisListenerActive = true;
+
+    // Start listening for messages in a separate async context
+    this.processRedisMessages(queueKey).catch((error) => {
+      this.logger.error("Redis message listener error", {
+        error,
+        nodeId: this.config.nodeId,
+      });
+    });
+  }
+
+  private async processRedisMessages(queueKey: string): Promise<void> {
+    while (this.redisListenerActive) {
+      try {
+        // Block for messages with 1 second timeout
+        const result = await this.storage.brpop(queueKey, 1);
+
+        if (result) {
+          const message = JSON.parse(result[1]);
+          await this.handleRedisMessage(message);
+        }
+      } catch (error) {
+        if (this.redisListenerActive) {
+          this.logger.error("Error processing Redis messages", {
+            error,
+            nodeId: this.config.nodeId,
+          });
+          // Wait a bit before retrying to avoid busy loop
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+    }
+  }
+
+  private async handleRedisMessage(message: any): Promise<void> {
+    try {
+      const { type, payload, requestId, from } = message;
+      const responseKey = `raft:cluster:${this.config.clusterId}:responses:${from}:${requestId}`;
+
+      let response;
+
+      switch (type) {
+        case MessageType.VOTE_REQUEST:
+          response = await this.handleVoteRequest(payload);
+          break;
+        case MessageType.APPEND_ENTRIES:
+          response = await this.handleAppendEntries(payload);
+          break;
+        case MessageType.PRE_VOTE_REQUEST:
+          response = await this.handlePreVoteRequest(payload);
+          break;
+        case MessageType.INSTALL_SNAPSHOT:
+          response = await this.handleInstallSnapshot(payload);
+          break;
+        case MessageType.TIMEOUT_NOW_REQUEST:
+          await this.handleTimeoutNowRequest(payload);
+          // TimeoutNow doesn't require a response
+          return;
+        default:
+          this.logger.warn("Unknown message type", {
+            type,
+            nodeId: this.config.nodeId,
+          });
+          return;
+      }
+
+      // Send response back
+      await this.storage.lpush(
+        responseKey,
+        JSON.stringify({
+          from: this.config.nodeId,
+          to: from,
+          requestId,
+          payload: response,
+          timestamp: Date.now(),
+        }),
+      );
+    } catch (error) {
+      this.logger.error("Error handling Redis message", {
+        error,
+        message,
+        nodeId: this.config.nodeId,
+      });
+    }
   }
 
   public async handleVoteRequest(request: VoteRequest): Promise<VoteResponse> {

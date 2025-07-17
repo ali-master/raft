@@ -82,8 +82,10 @@ export function createMockRedis() {
     set: vi.fn().mockResolvedValue("OK"),
     mget: vi.fn().mockResolvedValue([]),
     quit: vi.fn().mockResolvedValue("OK"),
+    lpush: vi.fn().mockResolvedValue(1),
+    brpop: vi.fn().mockResolvedValue(null),
     status: "ready",
-  };
+  } as any;
 }
 
 /**
@@ -96,13 +98,25 @@ export async function getTestRedis() {
   return context.redis.duplicate();
 }
 
-export function createMockLogger() {
+export function createMockLogger(): any {
   return {
     debug: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
     fatal: vi.fn(),
+    config: {
+      level: LogLevel.ERROR,
+      enableConsole: false,
+      enableFile: false,
+      filePath: "/dev/null",
+      redactedFields: [],
+      enableStructured: false,
+    },
+    redactPattern: undefined,
+    redact: vi.fn((obj: any) => obj),
+    shouldLog: vi.fn().mockReturnValue(false),
+    formatMessage: vi.fn().mockReturnValue(""),
   };
 }
 

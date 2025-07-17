@@ -215,7 +215,7 @@ Type 'help' at any time to see available commands.
   }
 
   private async handleCreateCluster(args: string[]): Promise<void> {
-    const size = parseInt(args[0]) || 3;
+    const size = parseInt(args[0] || "3") || 3;
 
     if (size < 1 || size > 10) {
       console.log(chalk.red("Cluster size must be between 1 and 10"));
@@ -285,7 +285,7 @@ Type 'help' at any time to see available commands.
       uniqueValues.size === 1 ? "✅ Consistent" : "⚠️  Inconsistent";
 
     console.log(`🔄 State Machine: ${consistencyStatus}`);
-    if (stateMachineStates.length > 0) {
+    if (stateMachineStates.length > 0 && stateMachineStates[0]) {
       console.log(`🔢 Counter Value: ${stateMachineStates[0].value}`);
       console.log(`📋 Version: ${stateMachineStates[0].version}`);
     }
@@ -374,7 +374,7 @@ Type 'help' at any time to see available commands.
     }
 
     const operation = args[0];
-    const value = parseInt(args[1]);
+    const value = parseInt(args[1] || "0");
 
     if (!operation) {
       console.log(chalk.yellow("Usage: submit <operation> [value]"));
@@ -508,8 +508,8 @@ Type 'help' at any time to see available commands.
     }
 
     const [part1Str, part2Str] = partitionSpec.split("|").map((s) => s.trim());
-    const partition1 = part1Str.split(",").map((s) => s.trim());
-    const partition2 = part2Str.split(",").map((s) => s.trim());
+    const partition1 = part1Str?.split(",").map((s) => s.trim()) || [];
+    const partition2 = part2Str?.split(",").map((s) => s.trim()) || [];
 
     try {
       console.log(chalk.blue("Creating network partition..."));
@@ -602,7 +602,7 @@ Type 'help' at any time to see available commands.
   }
 
   private async handleWatch(args: string[]): Promise<void> {
-    const interval = parseInt(args[0]) || 2000;
+    const interval = parseInt(args[0] || "2000") || 2000;
 
     console.log(
       chalk.blue(`Starting real-time monitoring (${interval}ms interval)`),
@@ -714,7 +714,7 @@ Type 'help' at any time to see available commands.
   }
 
   private async handleBenchmark(args: string[]): Promise<void> {
-    const operations = parseInt(args[0]) || 100;
+    const operations = parseInt(args[0] || "100") || 100;
 
     const leader = this.clusterManager.getLeader();
     if (!leader) {
@@ -874,6 +874,11 @@ Type 'help' at any time to see available commands.
     }
 
     const testNode = nodes[Math.floor(Math.random() * nodes.length)];
+
+    if (!testNode) {
+      console.log(chalk.red("❌ No nodes available for recovery test"));
+      return;
+    }
 
     console.log(chalk.blue(`Stopping node: ${testNode.nodeId}`));
     await this.clusterManager.stopNode(testNode.nodeId);

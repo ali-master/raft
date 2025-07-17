@@ -25,7 +25,7 @@ export class RaftEventBus extends EventEmitter {
     }
 
     const allEvents: RaftEvent[] = [];
-    for (const [key, events] of this.events) {
+    for (const [key, events] of Array.from(this.events)) {
       if (key.startsWith(nodeId)) {
         allEvents.push(...events);
       }

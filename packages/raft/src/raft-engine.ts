@@ -70,6 +70,11 @@ export class RaftEngine {
     this.logger.info("Raft node stopped", { nodeId });
   }
 
+  public removeNode(nodeId: string): void {
+    this.nodes.delete(nodeId);
+    this.logger.info("Raft node removed from engine", { nodeId });
+  }
+
   public getNode(nodeId: string): RaftNode | undefined {
     return this.nodes.get(nodeId);
   }

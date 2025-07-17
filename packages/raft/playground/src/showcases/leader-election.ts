@@ -96,7 +96,7 @@ export class LeaderElectionShowcase {
 
     // Restart the failed node and observe behavior
     this.logger.info(`Restarting failed node ${leader.nodeId}...`);
-    await this.clusterManager.startNode(leader.nodeId);
+    await this.clusterManager.restartNode(leader.nodeId);
     await this.delay(3000);
 
     const restartedNode = this.clusterManager.getNode(leader.nodeId);
@@ -113,7 +113,14 @@ export class LeaderElectionShowcase {
 
     // Clean up and create 4-node cluster for split vote possibility
     await this.clusterManager.cleanup();
+    await this.delay(3000); // Wait longer for cleanup to complete
+
+    // Create new cluster
     await this.clusterManager.createCluster(4, "counter");
+
+    // Reset circuit breakers after cluster creation and allow time for initialization
+    this.clusterManager.resetAllCircuitBreakers();
+    await this.delay(2000); // Allow reset to take effect and cluster to stabilize
 
     // Stop current leader to force election
     const leader = this.clusterManager.getLeader();

@@ -112,11 +112,13 @@ export class ClusterShowcase {
 
     // Check if all nodes have the same state
     const firstState = states[0];
-    const allSynced = states.every(
-      (state) =>
-        state.value === firstState.value &&
-        state.version === firstState.version,
-    );
+    const allSynced = firstState
+      ? states.every(
+          (state) =>
+            state.value === firstState.value &&
+            state.version === firstState.version,
+        )
+      : false;
 
     if (allSynced) {
       this.logger.success("All nodes are synchronized!");

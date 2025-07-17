@@ -153,7 +153,7 @@ export class WALEngine<TCommand = unknown> extends EventEmitter {
     // entries before the given index
     const segmentsToCheck: WALSegment[] = [];
 
-    for (const segment of this.segments.values()) {
+    for (const segment of Array.from(this.segments.values())) {
       // We'll need to check segments individually
       segmentsToCheck.push(segment);
     }
@@ -259,7 +259,7 @@ export class WALEngine<TCommand = unknown> extends EventEmitter {
   private async recoverSequence(): Promise<void> {
     let maxSequence = 0;
 
-    for (const segment of this.segments.values()) {
+    for (const segment of Array.from(this.segments.values())) {
       if (segment.endSequence > maxSequence) {
         maxSequence = segment.endSequence;
       }
@@ -269,7 +269,7 @@ export class WALEngine<TCommand = unknown> extends EventEmitter {
   }
 
   private async loadEntriesFromDisk(): Promise<void> {
-    for (const segment of this.segments.values()) {
+    for (const segment of Array.from(this.segments.values())) {
       const segmentEntries = await this.readSegment(segment);
       this.inMemoryEntries.push(...segmentEntries);
     }
@@ -463,7 +463,7 @@ export class WALEngine<TCommand = unknown> extends EventEmitter {
 
   private async getTotalSize(): Promise<number> {
     let totalSize = 0;
-    for (const segment of this.segments.values()) {
+    for (const segment of Array.from(this.segments.values())) {
       totalSize += segment.size;
     }
     return totalSize;

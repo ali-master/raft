@@ -53,12 +53,12 @@ export class PeerDiscoveryService extends EventEmitter {
         this.updateSystemMetrics(),
         this.discoverPeers(),
         this.cleanupStaleNodes(),
-      ]).catch((error) =>
+      ]).catch((error) => {
         this.logger.error("Health check failed", {
           error,
           nodeId: this.config.nodeId,
-        }),
-      );
+        });
+      });
     }, this.config.peerDiscovery?.healthCheckInterval ?? 10000);
 
     this.logger.info("Peer discovery service started", {
@@ -175,6 +175,7 @@ export class PeerDiscoveryService extends EventEmitter {
         const data = await this.redis.get(key);
         if (data) {
           const peerInfo: PeerInfo = JSON.parse(data);
+          peerInfo.lastSeen = new Date(peerInfo.lastSeen) || new Date(); // Ensure lastSeen is a Date object
           currentPeers.add(peerInfo.nodeId);
 
           const existingPeer = this.peers.get(peerInfo.nodeId);
@@ -192,17 +193,20 @@ export class PeerDiscoveryService extends EventEmitter {
       }
 
       // Detect lost peers
-      for (const peerId of previousPeers) {
+      for (const peerId of Array.from(previousPeers)) {
         if (!currentPeers.has(peerId)) {
           const lostPeer = this.peers.get(peerId);
           this.peers.delete(peerId);
           this.logger.info("Peer lost", { peerId });
-          this.emit(RaftEventType.PEER_LOST, lostPeer);
+          if (lostPeer) {
+            this.emit(RaftEventType.PEER_LOST, lostPeer);
+          }
         }
       }
     } catch (error) {
       this.logger.error("Failed to discover peers", {
-        error,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
         nodeId: this.config.nodeId,
       });
     }
@@ -212,7 +216,7 @@ export class PeerDiscoveryService extends EventEmitter {
     const now = new Date();
     const staleThreshold = this.config.peerDiscovery?.peerTimeout ?? 30000;
 
-    for (const [nodeId, peerInfo] of this.peers) {
+    for (const [nodeId, peerInfo] of Array.from(this.peers)) {
       const timeSinceLastSeen = now.getTime() - peerInfo.lastSeen.getTime();
 
       if (timeSinceLastSeen > staleThreshold) {
