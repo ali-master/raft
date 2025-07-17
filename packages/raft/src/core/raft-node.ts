@@ -461,6 +461,14 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   private async startElection(
     triggeredByTimeoutNow: boolean = false,
   ): Promise<void> {
+    // Don't start elections if the node is shutting down
+    if (!this.redisListenerActive) {
+      this.logger.debug("Skipping election - node is shutting down", {
+        nodeId: this.config.nodeId,
+      });
+      return;
+    }
+
     if (!triggeredByTimeoutNow) {
       this.logger.info("Election timer elapsed, starting Pre-Vote phase.", {
         nodeId: this.config.nodeId,
@@ -475,13 +483,18 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         lastLogTerm: this.log.getLastTerm(),
       };
 
-      const otherPeers = this.getPeers().filter(
+      // Use dynamic peer discovery to get actual live peers
+      const discoveredPeers = this.peerDiscovery.getPeers();
+      const otherPeers = discoveredPeers.filter(
         (p) => p !== this.config.nodeId,
       );
+
+      // Check if this is truly a single node cluster based on actual discovered peers
+      // Also ensure we're not in the middle of a cleanup process (redisListenerActive check)
       if (
         otherPeers.length === 0 &&
-        this.getPeers().includes(this.config.nodeId) &&
-        this.getPeers().length === 1
+        discoveredPeers.length === 0 &&
+        this.redisListenerActive
       ) {
         this.logger.info(
           "Single node cluster, proceeding directly to election (no Pre-Vote needed).",
@@ -590,11 +603,16 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     };
 
     // Send PreVoteRequests to all *other* peers in the current configuration
-    const otherPeers = this.getPeers().filter((p) => p !== this.config.nodeId);
+    // Use dynamic peer discovery to get actual live peers
+    const discoveredPeers = this.peerDiscovery.getPeers();
+    const otherPeers = discoveredPeers.filter((p) => p !== this.config.nodeId);
+
+    // Check if this is truly a single node cluster based on actual discovered peers
+    // Also ensure we're not in the middle of a cleanup process (redisListenerActive check)
     if (
       otherPeers.length === 0 &&
-      this.getPeers().includes(this.config.nodeId) &&
-      this.getPeers().length === 1
+      discoveredPeers.length === 0 &&
+      this.redisListenerActive
     ) {
       this.logger.info(
         "Single node cluster, proceeding directly to election (no Pre-Vote needed).",
@@ -2175,6 +2193,15 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   }
 
   private async handleRedisMessage(message: any): Promise<void> {
+    // Don't process messages if the node is stopping
+    if (!this.redisListenerActive) {
+      this.logger.debug("Ignoring message - node is stopping", {
+        nodeId: this.config.nodeId,
+        messageType: message.type,
+      });
+      return;
+    }
+
     try {
       const { type, payload, requestId, from } = message;
       const responseKey = `raft:cluster:${this.config.clusterId}:responses:${from}:${requestId}`;

@@ -4,6 +4,25 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
+interface ThroughputResult {
+  throughput: number;
+  errorRate: number;
+  [key: string]: any;
+}
+
+interface MemoryResult {
+  peakMemory: number;
+  operations: number;
+  avgMemoryPerOp: number;
+  [key: string]: any;
+}
+
+interface ConcurrencyResult {
+  clients: number;
+  successRate: number;
+  [key: string]: any;
+}
+
 export class StressTestShowcase {
   private logger = new PlaygroundLogger();
   private clusterManager = new ClusterManager("stress-test-showcase");
@@ -602,15 +621,13 @@ export class StressTestShowcase {
     if (this.stressResults.throughput) {
       const throughputResults = Object.values(
         this.stressResults.throughput,
-      ) as any[];
+      ) as ThroughputResult[];
       const maxThroughput = Math.max(
-        ...throughputResults.map((r: any) => r.throughput),
+        ...throughputResults.map((r) => r.throughput),
       );
       const avgErrorRate = (
-        throughputResults.reduce(
-          (sum: number, r: any) => sum + r.errorRate,
-          0,
-        ) / throughputResults.length
+        throughputResults.reduce((sum: number, r) => sum + r.errorRate, 0) /
+        throughputResults.length
       ).toFixed(2);
 
       console.log(`  Peak Throughput: ${maxThroughput} ops/sec`);
@@ -621,15 +638,11 @@ export class StressTestShowcase {
     if (this.stressResults.concurrency) {
       const concurrencyResults = Object.values(
         this.stressResults.concurrency,
-      ) as any[];
-      const maxClients = Math.max(
-        ...concurrencyResults.map((r: any) => r.clients),
-      );
+      ) as ConcurrencyResult[];
+      const maxClients = Math.max(...concurrencyResults.map((r) => r.clients));
       const avgSuccessRate = (
-        concurrencyResults.reduce(
-          (sum: number, r: any) => sum + r.successRate,
-          0,
-        ) / concurrencyResults.length
+        concurrencyResults.reduce((sum: number, r) => sum + r.successRate, 0) /
+        concurrencyResults.length
       ).toFixed(2);
 
       console.log(`  Max Concurrent Clients: ${maxClients}`);
@@ -638,13 +651,12 @@ export class StressTestShowcase {
 
     console.log(chalk.green("\\n💾 Memory Performance:"));
     if (this.stressResults.memory) {
-      const memoryResults = Object.values(this.stressResults.memory) as any[];
-      const maxOps = Math.max(...memoryResults.map((r: any) => r.operations));
+      const memoryResults = Object.values(
+        this.stressResults.memory,
+      ) as MemoryResult[];
+      const maxOps = Math.max(...memoryResults.map((r) => r.operations));
       const avgMemoryPerOp = (
-        memoryResults.reduce(
-          (sum: number, r: any) => sum + r.avgMemoryPerOp,
-          0,
-        ) /
+        memoryResults.reduce((sum: number, r) => sum + r.avgMemoryPerOp, 0) /
         memoryResults.length /
         1024
       ).toFixed(2);
@@ -705,9 +717,9 @@ export class StressTestShowcase {
     if (this.stressResults.throughput) {
       const throughputResults = Object.values(
         this.stressResults.throughput,
-      ) as any[];
+      ) as ThroughputResult[];
       const maxThroughput = Math.max(
-        ...throughputResults.map((r: any) => r.throughput),
+        ...throughputResults.map((r) => r.throughput),
       );
       score += Math.min(30, maxThroughput / 10); // 300+ ops/sec = 30 points
       factors++;
@@ -717,12 +729,10 @@ export class StressTestShowcase {
     if (this.stressResults.concurrency) {
       const concurrencyResults = Object.values(
         this.stressResults.concurrency,
-      ) as any[];
+      ) as ConcurrencyResult[];
       const avgSuccessRate =
-        concurrencyResults.reduce(
-          (sum: number, r: any) => sum + r.successRate,
-          0,
-        ) / concurrencyResults.length;
+        concurrencyResults.reduce((sum: number, r) => sum + r.successRate, 0) /
+        concurrencyResults.length;
       score += (avgSuccessRate / 100) * 25;
       factors++;
     }

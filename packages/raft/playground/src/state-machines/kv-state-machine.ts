@@ -1,6 +1,7 @@
 import type { StateMachine } from "@usex/raft";
 import Redis from "ioredis";
 import { PlaygroundLogger } from "../utils/logger";
+import type { UnknownCommand } from "../types/common";
 
 export interface KVCommand {
   type: "set" | "delete" | "clear";
@@ -71,7 +72,9 @@ export class KVStateMachine implements StateMachine {
         break;
 
       default:
-        throw new Error(`Unknown KV command type: ${(command as any).type}`);
+        throw new Error(
+          `Unknown KV command type: ${(command as UnknownCommand).type}`,
+        );
     }
 
     this.version++;

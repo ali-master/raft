@@ -9,12 +9,28 @@ import Redis from "ioredis";
 
 export type StateMachineType = "counter" | "kv";
 
+export interface CleanupableStateMachine {
+  cleanup(): Promise<void>;
+}
+
+export interface ExtendedRaftNode {
+  clearTimers(): void;
+  redisListenerActive: boolean;
+  peerDiscovery: {
+    stop(): Promise<void>;
+  };
+  network: {
+    resetCircuitBreakers(): void;
+  };
+}
+
 export interface NodeInfo {
   nodeId: string;
   node: RaftNode;
   stateMachine: CounterStateMachine | KVStateMachine;
   config: any;
   port: number;
+  weight?: number;
 }
 
 export interface ClusterMetrics {
@@ -96,7 +112,7 @@ export class ClusterManager {
     for (const [nodeId, weight] of Object.entries(nodeWeights)) {
       const nodeInfo = await this.createNode(nodeId, stateMachineType);
       // Store weight information (in a real implementation, this would be part of the configuration)
-      (nodeInfo as any).weight = weight;
+      nodeInfo.weight = weight;
       nodes.push(nodeInfo);
     }
 
@@ -104,7 +120,7 @@ export class ClusterManager {
     for (const nodeInfo of nodes) {
       await nodeInfo.node.start();
       this.logger.success(
-        `Started weighted node ${nodeInfo.nodeId} (weight: ${(nodeInfo as any).weight})`,
+        `Started weighted node ${nodeInfo.nodeId} (weight: ${nodeInfo.weight})`,
       );
     }
 
@@ -180,7 +196,7 @@ export class ClusterManager {
 
     // Cleanup state machine if it has a cleanup method
     if ("cleanup" in nodeInfo.stateMachine) {
-      await (nodeInfo.stateMachine as any).cleanup();
+      await (nodeInfo.stateMachine as CleanupableStateMachine).cleanup();
     }
 
     // Remove from both ClusterManager and RaftEngine
@@ -357,11 +373,65 @@ export class ClusterManager {
   async cleanup(): Promise<void> {
     this.logger.info("Cleaning up cluster");
 
-    // First, stop all timers and mark nodes as stopping to prevent new operations
+    // Step 1: Stop all timers and prevent new operations
+    for (const nodeInfo of this.nodes.values()) {
+      try {
+        // Clear all timers first to prevent new elections/messages
+        const extendedNode = nodeInfo.node as unknown as ExtendedRaftNode;
+        extendedNode.clearTimers();
+        extendedNode.redisListenerActive = false;
+      } catch (_error) {
+        this.logger.warn(
+          `Failed to stop timers for ${nodeInfo.nodeId}`,
+          undefined,
+          _error,
+        );
+      }
+    }
+
+    // Step 2: Stop peer discovery to prevent new peer announcements
+    for (const nodeInfo of this.nodes.values()) {
+      try {
+        const extendedNode = nodeInfo.node as unknown as ExtendedRaftNode;
+        await extendedNode.peerDiscovery.stop();
+      } catch (_error) {
+        this.logger.warn(
+          `Failed to stop peer discovery for ${nodeInfo.nodeId}`,
+          undefined,
+          _error,
+        );
+      }
+    }
+
+    // Step 3: Wait longer for in-flight Redis operations to complete or timeout
+    // Circuit breaker timeout is typically 5 seconds, so wait 6 seconds to be safe
+    await this.delay(6000);
+
+    // Step 4: Clear ALL Redis data for this cluster after operations complete
+    try {
+      const patterns = [
+        `raft:cluster:${this.clusterId}:node:*`,
+        `raft:cluster:${this.clusterId}:queue:*`,
+        `raft:cluster:${this.clusterId}:responses:*`,
+      ];
+
+      for (const pattern of patterns) {
+        const keys = await this.redis.keys(pattern);
+        if (keys.length > 0) {
+          await this.redis.del(...keys);
+        }
+      }
+
+      this.logger.debug(`Cleared all Redis data for cluster ${this.clusterId}`);
+    } catch (_error) {
+      this.logger.warn("Failed to clear Redis cluster data", undefined, _error);
+    }
+
+    // Step 5: Stop all nodes after Redis is cleared
     const stopPromises = Array.from(this.nodes.values()).map(
       async (nodeInfo) => {
         try {
-          // Stop the node and wait for graceful shutdown
+          // Stop the node (Redis operations will fail gracefully)
           await nodeInfo.node.stop();
 
           // Remove from RaftEngine tracking
@@ -369,7 +439,7 @@ export class ClusterManager {
 
           // Clean up state machine if it has a cleanup method
           if ("cleanup" in nodeInfo.stateMachine) {
-            await (nodeInfo.stateMachine as any).cleanup();
+            await (nodeInfo.stateMachine as CleanupableStateMachine).cleanup();
           }
         } catch (_error) {
           this.logger.error(
@@ -384,16 +454,7 @@ export class ClusterManager {
     // Wait for all nodes to stop gracefully
     await Promise.allSettled(stopPromises);
 
-    // Add a small delay to ensure all Redis operations complete
-    await this.delay(500);
-
-    // Clear Redis data after all nodes are stopped
-    try {
-      await this.redis.flushall();
-    } catch (_error) {
-      this.logger.error("Error clearing Redis data", undefined, _error);
-    }
-
+    // Step 6: Final cleanup
     this.nodes.clear();
     this.logger.success("Cluster cleanup completed");
   }
@@ -403,9 +464,12 @@ export class ClusterManager {
     for (const nodeInfo of this.nodes.values()) {
       try {
         // Access the network property to reset circuit breakers
-        const network = (nodeInfo.node as any).network;
-        if (network && typeof network.resetCircuitBreakers === "function") {
-          network.resetCircuitBreakers();
+        const extendedNode = nodeInfo.node as unknown as ExtendedRaftNode;
+        if (
+          extendedNode.network &&
+          typeof extendedNode.network.resetCircuitBreakers === "function"
+        ) {
+          extendedNode.network.resetCircuitBreakers();
         }
       } catch (_error) {
         this.logger.warn(

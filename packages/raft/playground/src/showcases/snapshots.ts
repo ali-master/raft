@@ -3,6 +3,11 @@ import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 
+interface SnapshotCapableNode {
+  createSnapshot?(): Promise<void>;
+  getSnapshotMetadata?(): any;
+}
+
 export class SnapshotShowcase {
   private logger = new PlaygroundLogger();
   private clusterManager = new ClusterManager("snapshot-showcase");
@@ -117,8 +122,9 @@ export class SnapshotShowcase {
       );
 
       // Trigger snapshot creation (if method exists)
-      if ("createSnapshot" in leader.node) {
-        await (leader.node as any).createSnapshot();
+      const snapshotNode = leader.node as unknown as SnapshotCapableNode;
+      if (snapshotNode.createSnapshot) {
+        await snapshotNode.createSnapshot();
         this.logger.success("Manual snapshot creation triggered");
       } else {
         this.logger.info(
@@ -297,8 +303,9 @@ export class SnapshotShowcase {
       // Try to get snapshot info if available
       let snapshotInfo = "N/A";
       try {
-        if ("getSnapshotMetadata" in nodeInfo.node) {
-          const metadata = (nodeInfo.node as any).getSnapshotMetadata();
+        const snapshotNode = nodeInfo.node as unknown as SnapshotCapableNode;
+        if (snapshotNode.getSnapshotMetadata) {
+          const metadata = snapshotNode.getSnapshotMetadata();
           snapshotInfo = metadata
             ? `Index: ${metadata.lastIncludedIndex}`
             : "None";

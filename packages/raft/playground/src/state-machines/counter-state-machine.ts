@@ -1,5 +1,6 @@
 import type { StateMachine } from "@usex/raft";
 import { PlaygroundLogger } from "../utils/logger";
+import type { UnknownCommand } from "../types/common";
 
 export interface CounterCommand {
   type: "increment" | "decrement" | "set" | "reset";
@@ -48,7 +49,9 @@ export class CounterStateMachine implements StateMachine {
         this.value = 0;
         break;
       default:
-        throw new Error(`Unknown command type: ${(command as any).type}`);
+        throw new Error(
+          `Unknown command type: ${(command as UnknownCommand).type}`,
+        );
     }
 
     this.version++;
