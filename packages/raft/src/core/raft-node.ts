@@ -61,6 +61,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   private electionTimer: NodeJS.Timeout | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private metricsTimer: NodeJS.Timeout | null = null;
+  private deadPeerCleanupTimer: NodeJS.Timeout | null = null;
 
   // Snapshot metadata
   private latestSnapshotMeta: {
@@ -172,6 +173,30 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
           "Initialized activeConfiguration with discovered peers",
           { peers: initialPeers },
         );
+      } else {
+        // Reconcile persistent configuration with discovered peers
+        const discoveredPeers = this.peerDiscovery.getPeers();
+        const allAvailablePeers = Array.from(
+          new Set([...discoveredPeers, this.config.nodeId]),
+        );
+
+        // Remove any peers from configuration that are no longer discovered
+        const originalPeers = [...this.activeConfiguration.newPeers];
+        this.activeConfiguration.newPeers =
+          this.activeConfiguration.newPeers.filter((peer) =>
+            allAvailablePeers.includes(peer),
+          );
+
+        if (originalPeers.length !== this.activeConfiguration.newPeers.length) {
+          this.logger.info(
+            "Reconciled activeConfiguration with discovered peers",
+            {
+              originalPeers,
+              discoveredPeers: allAvailablePeers,
+              reconciledPeers: this.activeConfiguration.newPeers,
+            },
+          );
+        }
       }
 
       this.network.initializeCircuitBreakers();
@@ -179,8 +204,12 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       // Initialize metrics immediately
       await this.updateMetrics();
 
-      this.startElectionTimer();
+      // Start background tasks
       this.startMetricsCollection();
+      this.startDeadPeerCleanup();
+
+      // Delay election timer to allow for peer discovery
+      this.delayedElectionStart();
 
       this.logger.info("Raft node started", {
         nodeId: this.config.nodeId,
@@ -213,6 +242,15 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     try {
+      // Shutdown network layer
+      if ("shutdown" in this.network) {
+        (this.network as any).shutdown();
+      }
+    } catch (error) {
+      this.logger.warn("Error shutting down network", { error });
+    }
+
+    try {
       await this.peerDiscovery.stop();
     } catch (error) {
       this.logger.warn("Error stopping peer discovery", { error });
@@ -226,10 +264,13 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     }
 
     try {
-      // Only close Redis if it's still connected
-      if (this.storage.status === "ready") {
+      this.storage.on("ready", async () => {
+        // Clean up this node's message queue before closing Redis
+        await this.storage.del(
+          `raft:cluster:${this.config.clusterId}:queue:${this.config.nodeId}`,
+        );
         await this.storage.quit();
-      }
+      });
     } catch (error) {
       this.logger.warn("Error closing Redis connection", { error });
     }
@@ -393,6 +434,18 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     this.peerDiscovery.on(RaftEventType.PEER_LOST, (peerInfo: PeerInfo) => {
       this.logger.info("Peer lost", { peerId: peerInfo.nodeId });
       this.network.updateCircuitBreakers();
+
+      // Update active configuration to remove lost peer
+      if (this.activeConfiguration.newPeers.includes(peerInfo.nodeId)) {
+        this.activeConfiguration.newPeers =
+          this.activeConfiguration.newPeers.filter(
+            (peer) => peer !== peerInfo.nodeId,
+          );
+        this.logger.info("Updated activeConfiguration after peer lost", {
+          lostPeer: peerInfo.nodeId,
+          newConfiguration: this.activeConfiguration.newPeers,
+        });
+      }
     });
   }
 
@@ -429,10 +482,133 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     }
   }
 
+  private startDeadPeerCleanup(): void {
+    // Run cleanup every 20 seconds
+    this.deadPeerCleanupTimer = setInterval(() => {
+      void this.cleanupDeadPeers();
+    }, 20000);
+  }
+
+  private delayedElectionStart(): void {
+    // Wait for peer discovery to complete before starting election timer
+    // This prevents premature single-node elections during startup
+    const startupGracePeriod = 2000; // 2 seconds to allow peer registration
+
+    this.logger.info("Delaying election start for peer discovery", {
+      gracePeriod: startupGracePeriod,
+      nodeId: this.config.nodeId,
+    });
+
+    setTimeout(() => {
+      // Check if we discovered any peers during grace period
+      const discoveredPeers = this.peerDiscovery
+        .getPeers()
+        .filter((p) => p !== this.config.nodeId);
+
+      if (discoveredPeers.length === 0) {
+        this.logger.info(
+          "No peers discovered during grace period, checking configuration",
+          {
+            configPeers: this.config.peers?.length ?? 0,
+            nodeId: this.config.nodeId,
+          },
+        );
+
+        // If we have configured peers but haven't discovered them yet, wait a bit more
+        if (this.config.peers && this.config.peers.length > 1) {
+          this.logger.info("Configured peers exist, extending grace period", {
+            configuredPeers: this.config.peers.length,
+            nodeId: this.config.nodeId,
+          });
+
+          setTimeout(() => {
+            this.startElectionTimer();
+          }, 3000); // Additional 3 seconds for slow peer discovery
+          return;
+        }
+      }
+
+      this.logger.info("Starting election timer after grace period", {
+        discoveredPeers: discoveredPeers.length,
+        nodeId: this.config.nodeId,
+      });
+
+      this.startElectionTimer();
+    }, startupGracePeriod);
+  }
+
+  private async cleanupDeadPeers(): Promise<void> {
+    try {
+      const deadPeers = this.network.getDeadPeers();
+
+      if (deadPeers.length > 0) {
+        this.logger.info("Cleaning up dead peers", {
+          deadPeers,
+          count: deadPeers.length,
+          nodeId: this.config.nodeId,
+        });
+
+        for (const peerId of deadPeers) {
+          // Remove from peer discovery
+          this.peerDiscovery.removePeer(peerId);
+
+          // Remove from network layer
+          this.network.removePeer(peerId);
+
+          // Remove from leader state if we're the leader
+          if (this.state === RaftState.LEADER) {
+            this.nextIndex.delete(peerId);
+            this.matchIndex.delete(peerId);
+          }
+
+          this.logger.info("Removed dead peer", {
+            peerId,
+            nodeId: this.config.nodeId,
+          });
+        }
+
+        // Update active configuration if needed
+        if (deadPeers.length > 0) {
+          // Remove dead peers from active configuration
+          this.activeConfiguration.newPeers =
+            this.activeConfiguration.newPeers.filter(
+              (peer) => !deadPeers.includes(peer),
+            );
+
+          // Also remove from old peers if in joint consensus
+          if (this.activeConfiguration.oldPeers) {
+            this.activeConfiguration.oldPeers =
+              this.activeConfiguration.oldPeers.filter(
+                (peer) => !deadPeers.includes(peer),
+              );
+          }
+
+          this.logger.info(
+            "Updated activeConfiguration after removing dead peers",
+            {
+              removedPeers: deadPeers,
+              newConfiguration: this.activeConfiguration.newPeers,
+              oldConfiguration: this.activeConfiguration.oldPeers,
+            },
+          );
+
+          // Persist the updated configuration
+          await this.persistState();
+        }
+      }
+    } catch (error) {
+      this.logger.error("Failed to cleanup dead peers", {
+        error: error instanceof Error ? error.message : String(error),
+        nodeId: this.config.nodeId,
+      });
+    }
+  }
+
   private clearTimers(): void {
     this.clearElectionTimer();
     this.clearHeartbeatTimer();
     this.clearMetricsTimer();
+    this.clearDeadPeerCleanupTimer();
   }
 
   private clearElectionTimer(): void {
@@ -453,6 +629,13 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     if (this.metricsTimer) {
       clearInterval(this.metricsTimer);
       this.metricsTimer = null;
+    }
+  }
+
+  private clearDeadPeerCleanupTimer(): void {
+    if (this.deadPeerCleanupTimer) {
+      clearInterval(this.deadPeerCleanupTimer);
+      this.deadPeerCleanupTimer = null;
     }
   }
 
@@ -1029,6 +1212,19 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     const peers = this.peerDiscovery.getPeers();
     const heartbeatPromises = peers.map(async (peerId) => {
       try {
+        // Check if we should skip this peer due to known connectivity issues
+        const connectionHealth = this.network.getConnectionHealth(peerId);
+        if (
+          !connectionHealth.isHealthy &&
+          connectionHealth.consecutiveFailures > 5
+        ) {
+          this.logger.debug("Skipping heartbeat to unhealthy peer", {
+            peerId,
+            consecutiveFailures: connectionHealth.consecutiveFailures,
+          });
+          return;
+        }
+
         const nextIndex = this.nextIndex.get(peerId) || 0;
         const prevLogIndex = nextIndex - 1;
         const prevLogTerm =
@@ -1060,10 +1256,17 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
           success: response.success,
         });
       } catch (error) {
-        console.log({
-          error,
-        });
-        this.logger.warn("Failed to send heartbeat", { peerId, error });
+        // Check if this is a known unreachable peer
+        const connectionHealth = this.network.getConnectionHealth(peerId);
+        if (connectionHealth.consecutiveFailures >= 3) {
+          this.logger.debug("Heartbeat failed to known problematic peer", {
+            peerId,
+            consecutiveFailures: connectionHealth.consecutiveFailures,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        } else {
+          this.logger.warn("Failed to send heartbeat", { peerId, error });
+        }
       }
     });
 
@@ -2205,6 +2408,11 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     const queueKey = `raft:cluster:${this.config.clusterId}:queue:${this.config.nodeId}`;
     this.redisListenerActive = true;
 
+    this.logger.info("Starting Redis message listener", {
+      nodeId: this.config.nodeId,
+      queueKey,
+    });
+
     // Start listening for messages in a separate async context
     this.processRedisMessages(queueKey).catch((error) => {
       this.logger.error("Redis message listener error", {
@@ -2251,6 +2459,13 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       const { type, payload, requestId, from } = message;
       const responseKey = `raft:cluster:${this.config.clusterId}:responses:${from}:${requestId}`;
 
+      this.logger.debug("Processing Redis message", {
+        nodeId: this.config.nodeId,
+        from,
+        type,
+        requestId,
+      });
+
       let response;
 
       switch (type) {
@@ -2269,11 +2484,21 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         case MessageType.TIMEOUT_NOW_REQUEST:
           await this.handleTimeoutNowRequest(payload);
           // TimeoutNow doesn't require a response
+          this.logger.debug(
+            "Processed TIMEOUT_NOW_REQUEST (no response needed)",
+            {
+              nodeId: this.config.nodeId,
+              from,
+              requestId,
+            },
+          );
           return;
         default:
           this.logger.warn("Unknown message type", {
             type,
             nodeId: this.config.nodeId,
+            from,
+            requestId,
           });
           return;
       }
@@ -2289,6 +2514,14 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
           timestamp: Date.now(),
         }),
       );
+
+      this.logger.debug("Sent Redis response", {
+        nodeId: this.config.nodeId,
+        to: from,
+        type,
+        requestId,
+        responseKey,
+      });
     } catch (error) {
       this.logger.error("Error handling Redis message", {
         error,

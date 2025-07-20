@@ -248,4 +248,28 @@ export class PeerDiscoveryService extends EventEmitter {
       peer.lastSeen = new Date();
     }
   }
+
+  /**
+   * Manually removes a peer from the discovered peers list.
+   * This is used when a peer is detected as dead by the network layer.
+   * @param nodeId The ID of the peer to remove.
+   */
+  public removePeer(nodeId: string): void {
+    const peer = this.peers.get(nodeId);
+    if (peer) {
+      this.peers.delete(nodeId);
+      this.logger.info("Manually removed dead peer", {
+        nodeId,
+        lastSeen: peer.lastSeen,
+      });
+      this.emit(RaftEventType.PEER_LOST, peer);
+    }
+  }
+
+  /**
+   * Gets the count of active peers (excluding self).
+   */
+  public getActivePeerCount(): number {
+    return this.getPeers().length;
+  }
 }
