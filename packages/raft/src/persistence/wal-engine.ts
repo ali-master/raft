@@ -196,7 +196,7 @@ export class WALEngine<TCommand = unknown> extends EventEmitter {
 
     for (const segment of segmentsToCompact) {
       segment.status = WALSegmentStatus.COMPACTED;
-      await this.updateSegmentMetadata(segment);
+      await this.removeSegment(segment.id);
     }
 
     this.emit("compaction", { segments: segmentsToCompact.length });

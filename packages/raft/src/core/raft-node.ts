@@ -308,11 +308,11 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         RaftCommandType.APPLICATION,
         applicationCommandPayload,
       );
-      // TODO: this.lastApplied needs to be updated when entries are actually applied after commitment.
-      // For now, this is just appending. The commit logic will handle majority checks.
+
+      // Update leader's own matchIndex so advanceCommitIndex counts the leader
+      this.matchIndex.set(this.config.nodeId, index);
 
       this.publishEvent(RaftEventType.LOG_REPLICATED, {
-        // This event might be premature here
         index,
         commandPayload: applicationCommandPayload,
         term: this.currentTerm,
@@ -919,45 +919,9 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
 
     try {
       this.state = RaftState.CANDIDATE;
-      // If triggered by TimeoutNow, term might have already been incremented by handler or by discovering higher term.
-      // If not, and pre-vote was skipped or passed, increment currentTerm.
-      // The `prospectiveTerm` for pre-vote was `this.currentTerm + 1`.
-      // If pre-vote was skipped (single node or TimeoutNow), we must increment here.
-      // If pre-vote passed, `this.currentTerm` is still the old term.
-      if (!triggeredByTimeoutNow) {
-        // If pre-vote path was taken or single node
-        this.currentTerm = this.currentTerm + 1;
-      } else {
-        // For TimeoutNow, if request.term was > currentTerm, currentTerm was updated.
-        // If request.term == currentTerm, we need to increment it here.
-        // startElection is called by handleTimeoutNowRequest *after* term alignment or if term was already aligned.
-        // The handler for TimeoutNow will call startElection. It should ensure term is correct.
-        // Let's assume handleTimeoutNowRequest handles term increment appropriately before calling startElection(true)
-        // Or, more simply, if triggered by TimeoutNow, the handler should set the term.
-        // For now, let's ensure it increments if it's still the same as before this flow started.
-        // A specific check: if called by TimeoutNow, the term IS this.currentTerm +1, or already set higher.
-        // The main thing is that `this.currentTerm` for VoteRequest should be the new, higher term.
-        // The handler `handleTimeoutNowRequest` will call `becomeFollower(request.term)` if `request.term > this.currentTerm`.
-        // Then it will call `startElection(true, request.term)`. So `startElection` needs to accept the target term.
-        // This is getting complex. Simpler: `handleTimeoutNowRequest` ensures `this.currentTerm` is set to `request.term`
-        // (if `request.term > this.currentTerm`) or `this.currentTerm + 1` (if `request.term == this.currentTerm`)
-        // *before* calling `startElection(true)`.
-        // So, `startElection` when `triggeredByTimeoutNow` can assume `this.currentTerm` is already the prospective term.
-        // No, the standard is: candidate increments its term.
-        // If triggeredByTimeoutNow, the term should be incremented.
-        // If this.currentTerm was already updated by a TimeoutNow request with a higher term, that's fine.
-        // If TimeoutNow request had same term, we MUST increment.
-        // The `prospectiveTerm` variable isn't available here.
-        // This means `handleTimeoutNowRequest` MUST set `this.currentTerm` to the term it will campaign in.
-      }
-      // The logic from pre-vote already set `this.currentTerm = prospectiveTerm` if pre-vote passed.
-      // If pre-vote was skipped for single node, `prospectiveTerm` is `this.currentTerm + 1`.
-      // If triggeredByTimeoutNow, this path is skipped.
-      // The term increment should happen reliably *once* before sending VoteRequests.
-      // Let's adjust: the pre-vote path sets currentTerm. If triggered, the handler sets it.
-      // The original code did this.currentTerm = prospectiveTerm (which was currentTerm+1)
-      // This means if `triggeredByTimeoutNow` is true, the caller (handleTimeoutNowRequest) is responsible
-      // for setting the correct `this.currentTerm` for the campaign.
+      // Per Raft spec: a candidate always increments its current term before starting an election.
+      // This applies regardless of whether triggered by election timeout or TimeoutNow.
+      this.currentTerm = this.currentTerm + 1;
 
       this.votedFor = this.config.nodeId;
       await this.persistState(); // Persist new term and votedFor
@@ -1151,12 +1115,16 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     this.clearElectionTimer();
     this.startHeartbeatTimer();
 
-    // Initialize leader state
+    // Initialize leader state: per Raft spec, nextIndex is initialized to
+    // leader's last log index + 1, and matchIndex to 0.
+    const lastLogIndex = this.log.getLastIndex();
     const peers = this.peerDiscovery.getPeers();
     for (const peerId of peers) {
-      this.nextIndex.set(peerId, this.log.getLength());
+      this.nextIndex.set(peerId, lastLogIndex + 1);
       this.matchIndex.set(peerId, 0);
     }
+    // Set leader's own matchIndex to its last log index
+    this.matchIndex.set(this.config.nodeId, lastLogIndex);
 
     await this.peerDiscovery.updatePeerState(
       this.config.nodeId,
@@ -1179,7 +1147,29 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       term: this.currentTerm,
     });
 
-    // Send initial heartbeat
+    // Per Raft Section 5.4.2: Upon election, the leader appends a no-op entry to its log.
+    // This ensures that entries from previous terms can be committed indirectly once
+    // the no-op entry from the current term is committed.
+    try {
+      const noOpIndex = await this.log.appendEntry(
+        this.currentTerm,
+        RaftCommandType.NO_OP,
+        {} as TCommand,
+      );
+      this.matchIndex.set(this.config.nodeId, noOpIndex);
+      this.logger.info("Appended no-op entry as new leader", {
+        index: noOpIndex,
+        term: this.currentTerm,
+        nodeId: this.config.nodeId,
+      });
+    } catch (error) {
+      this.logger.error("Failed to append no-op entry", {
+        error,
+        nodeId: this.config.nodeId,
+      });
+    }
+
+    // Send initial heartbeat (which will also replicate the no-op entry)
     await this.sendHeartbeats();
   }
 
@@ -1223,42 +1213,15 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       return;
     }
 
+    // Per Raft spec, heartbeats are AppendEntries RPCs. When a follower is behind,
+    // the heartbeat should include pending entries to replicate. Using replicateLogToPeer
+    // handles both cases: empty entries (heartbeat) when up-to-date, or actual entries when behind.
     const peers = this.peerDiscovery.getPeers();
     const heartbeatPromises = peers.map(async (peerId) => {
+      if (peerId === this.config.nodeId) return;
+
       try {
-        // Check if we should skip this peer due to known connectivity issues
-        const connectionHealth = this.network.getConnectionHealth(peerId);
-        if (
-          !connectionHealth.isHealthy &&
-          connectionHealth.consecutiveFailures > 5
-        ) {
-          this.logger.debug("Skipping heartbeat to unhealthy peer", {
-            peerId,
-            consecutiveFailures: connectionHealth.consecutiveFailures,
-          });
-          return;
-        }
-
-        const nextIndex = this.nextIndex.get(peerId) || 0;
-        const prevLogIndex = nextIndex - 1;
-        const prevLogTerm =
-          prevLogIndex >= 0 ? this.log.getEntry(prevLogIndex)?.term || 0 : 0;
-
-        const request: AppendEntriesRequest = {
-          term: this.currentTerm,
-          leaderId: this.config.nodeId,
-          prevLogIndex,
-          prevLogTerm,
-          entries: [], // Heartbeat has no entries
-          leaderCommit: this.commitIndex,
-        };
-
-        const response = await this.network.sendAppendEntries(peerId, request);
-
-        if (response.term > this.currentTerm) {
-          await this.becomeFollower(response.term);
-          return;
-        }
+        await this.replicateLogToPeer(peerId);
 
         this.metrics.incrementCounter("raft_heartbeats_total", {
           node_id: this.config.nodeId,
@@ -1267,20 +1230,10 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
 
         this.publishEvent(RaftEventType.HEARTBEAT_RECEIVED, {
           from: peerId,
-          success: response.success,
+          success: true,
         });
       } catch (error) {
-        // Check if this is a known unreachable peer
-        const connectionHealth = this.network.getConnectionHealth(peerId);
-        if (connectionHealth.consecutiveFailures >= 3) {
-          this.logger.debug("Heartbeat failed to known problematic peer", {
-            peerId,
-            consecutiveFailures: connectionHealth.consecutiveFailures,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        } else {
-          this.logger.warn("Failed to send heartbeat", { peerId, error });
-        }
+        this.logger.warn("Failed to send heartbeat", { peerId, error });
       }
     });
 
@@ -1294,6 +1247,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
 
     const peers = this.peerDiscovery.getPeers();
     for (const peerId of peers) {
+      if (peerId === this.config.nodeId) continue;
       await this.replicateLogToPeer(peerId);
     }
   }
@@ -1302,7 +1256,6 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     const nextIndex = this.nextIndex.get(peerId) || 0;
 
     // If nextIndex is before the log's first index, follower needs a snapshot
-    // This method getFirstIndex() needs to be added to RaftLog
     if (nextIndex < this.log.getFirstIndex()) {
       this.logger.info(
         `Peer ${peerId} is too far behind (nextIndex: ${nextIndex}, firstLogIndex: ${this.log.getFirstIndex()}). Sending snapshot.`,
@@ -1342,19 +1295,11 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         // Leader advances its own commit index based on matchIndex from all (relevant) followers
         await this.advanceCommitIndex();
       } else {
-        // If AppendEntries fails because of log inconsistency, decrement nextIndex for that follower and retry.
-        // This is standard Raft log catch-up.
-        if (response.term === this.currentTerm) {
-          // Only decrement if it's a log mismatch, not a term issue
-          const currentNext = this.nextIndex.get(peerId) || 0;
-          this.nextIndex.set(peerId, Math.max(0, currentNext - 1));
-        }
-        // If it falls behind the first log index, the next attempt (e.g. next heartbeat) will send a snapshot.
-        // If it falls behind the first log index, the next attempt will send a snapshot.
+        // If AppendEntries fails because of log inconsistency, decrement nextIndex and retry.
+        // Per Raft: decrement nextIndex once per failed AppendEntries RPC.
         const currentNext = this.nextIndex.get(peerId) || 0;
         this.nextIndex.set(peerId, Math.max(0, currentNext - 1));
-        // No immediate retry here, will be picked up by next heartbeat or replication cycle.
-        // If we wanted to immediately retry: await this.replicateLogToPeer(peerId);
+        // If it falls behind the first log index, the next attempt will send a snapshot.
         this.logger.info(
           `Log replication failed for peer ${peerId}, nextIndex decremented to ${this.nextIndex.get(peerId)}. Will retry or send snapshot.`,
           { nodeId: this.config.nodeId },
@@ -1864,6 +1809,8 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       } else if (entry.commandType === RaftCommandType.APPLICATION) {
         await this.stateMachine.apply(entry.commandPayload as TCommand);
       }
+      // NO_OP entries are intentionally not applied to the state machine;
+      // they only serve to advance the commit index for previous-term entries.
 
       this.lastApplied = entry.index;
       appliedSomething = true;
@@ -1879,31 +1826,6 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       await this.persistState();
     }
 
-    // Old placeholder logic, removed in favor of the loop above.
-    /*
-    // A real implementation would iterate from this.lastApplied up to this.commitIndex.
-    // For each entry, check its type.
-
-    // Example of applying a single hypothetical entry at this.lastApplied + 1:
-    const entryToApplyIndex = this.lastApplied + 1;
-    if (entryToApplyIndex <= this.commitIndex) {
-      const entry = this.log.getEntry(entryToApplyIndex);
-      if (entry) {
-        if (entry.commandType === RaftCommandType.CHANGE_CONFIG) {
-          this.applyConfigurationChange(entry.commandPayload as ConfigurationChangePayload);
-        } else if (entry.commandType === RaftCommandType.APPLICATION) {
-          // Apply application command to stateMachine
-          // await this.stateMachine.apply(entry.commandPayload); // This would be the actual application
-        }
-        this.lastApplied = entry.index;
-        // Persist state after applying, especially if lastApplied changed or config changed.
-        // await this.persistState(); // May not persist after every single entry for performance.
-      }
-    }
-    // After applying all up to commitIndex, persistState if lastApplied changed.
-    if (this.lastApplied > 0) { // A condition to persist if anything changed
-        // await this.persistState();
-    }*/
   }
 
   private applyConfigurationChange(payload: ConfigurationChangePayload): void {
@@ -2729,7 +2651,9 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     }
 
     // Check if log contains an entry at prevLogIndex with prevLogTerm
-    if (request.prevLogIndex > 0) {
+    // prevLogIndex >= 0 means there's a previous entry to validate;
+    // prevLogIndex === -1 means entries start from the very beginning (no validation needed)
+    if (request.prevLogIndex >= 0) {
       const prevEntry = this.log.getEntry(request.prevLogIndex);
       if (!prevEntry || prevEntry.term !== request.prevLogTerm) {
         this.logger.info("Rejecting AppendEntries: Log inconsistency", {

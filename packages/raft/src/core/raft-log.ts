@@ -47,7 +47,6 @@ export class RaftLog<TCommand = unknown> {
     commandType: RaftCommandType,
     commandPayload: TCommand | ConfigurationChangePayload,
   ): Promise<number> {
-    console.log(commandPayload);
     const index = this.logStartIndex + this.entries.length;
     const entry: LogEntry<TCommand> = {
       term,
@@ -92,8 +91,11 @@ export class RaftLog<TCommand = unknown> {
         );
       }
 
-      // Remove conflicting entries
-      this.entries = this.entries.slice(0, prevLogIndex + 1);
+      // Remove conflicting entries (account for logStartIndex offset)
+      const sliceEnd = prevLogIndex + 1 - this.logStartIndex;
+      if (sliceEnd >= 0) {
+        this.entries = this.entries.slice(0, sliceEnd);
+      }
 
       // Append new entries
       for (const entry of entries) {
@@ -258,13 +260,17 @@ export class RaftLog<TCommand = unknown> {
       return true;
     }
 
-    if (prevLogIndex >= this.entries.length) {
+    // Account for logStartIndex offset when checking bounds
+    if (
+      prevLogIndex < this.logStartIndex ||
+      prevLogIndex >= this.logStartIndex + this.entries.length
+    ) {
       return false;
     }
 
     // If prevLogTerm is provided, validate it matches
     if (prevLogTerm !== undefined) {
-      const entry = this.entries[prevLogIndex];
+      const entry = this.entries[prevLogIndex - this.logStartIndex];
       return entry !== undefined && entry.term === prevLogTerm;
     }
 
@@ -457,17 +463,16 @@ export class RaftLog<TCommand = unknown> {
       await this.persistEntry(entry); // Re-persist remaining entries
     }
 
-    // TODO: WAL truncation for entries *after* a certain point.
-    // This might involve marking segments for deletion or more complex WAL management.
-    // For now, new entries will go to new segments. If the entire log was discarded,
-    // the WAL might also need to be reset or a new one started after snapshot installation.
+    // Truncate WAL entries that are no longer valid after snapshot installation.
+    // We mark segments containing entries beyond the snapshot point for compaction,
+    // and remove in-memory WAL entries that correspond to the discarded log entries.
     if (this.walEngine) {
-      // This is a placeholder. WAL might need a more specific truncation here.
-      // If the entire log is cleared, WAL might need to reflect this, perhaps by starting fresh
-      // or creating a new snapshot marker.
-      this.logger.warn(
-        "WAL truncation after snapshot installation needs specific implementation.",
-        { index, term },
+      // Truncate all WAL log entries before the snapshot's last included index + 1
+      // since the snapshot covers everything up to that point.
+      await this.walEngine.truncateLogEntriesBefore(index + 1);
+      this.logger.info(
+        "WAL truncated after snapshot installation",
+        { snapshotIndex: index, snapshotTerm: term },
       );
     }
 

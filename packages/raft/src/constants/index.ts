@@ -82,4 +82,5 @@ export enum MessageType {
 export enum RaftCommandType {
   APPLICATION = "APPLICATION", // For regular client commands
   CHANGE_CONFIG = "CHANGE_CONFIG",
+  NO_OP = "NO_OP", // Leader no-op entry to commit previous-term entries (Raft Section 5.4.2)
 }
