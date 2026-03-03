@@ -55,24 +55,24 @@
   },
   "dependencies": {
     "@usex/raft": "workspace:^",
-    "eventemitter3": "^5.0.1"
+    "eventemitter3": "^5.0.4"
   },
   "devDependencies": {
-    "@nestjs/common": "11.1.4",
-    "@nestjs/core": "11.1.4",
-    "@nestjs/config": "^4.0.2",
+    "@nestjs/common": "11.1.14",
+    "@nestjs/core": "11.1.14",
+    "@nestjs/config": "^4.0.3",
     "@nestjs/event-emitter": "^3.0.1",
-    "@nestjs/testing": "11.1.4",
-    "@swc/core": "^1.12.14",
-    "@testcontainers/redis": "^11.2.1",
-    "@types/express": "^5.0.3",
+    "@nestjs/testing": "11.1.14",
+    "@swc/core": "^1.15.18",
+    "@testcontainers/redis": "^11.12.0",
+    "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
-    "@types/node": "24.0.14",
-    "ioredis": "^5.6.1",
+    "@types/node": "25.3.3",
+    "ioredis": "^5.10.0",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
-    "testcontainers": "^11.2.1",
-    "unplugin-swc": "^1.5.5"
+    "testcontainers": "^11.12.0",
+    "unplugin-swc": "^1.5.9"
   },
   "peerDependencies": {
     "@nestjs/common": "^10.0.0 || ^11.0.0",
@@ -94,5 +94,5 @@
       "breaking change": "Breaking changes"
     }
   },
-  "packageManager": "pnpm@10.13.1"
+  "packageManager": "pnpm@10.30.3"
 }

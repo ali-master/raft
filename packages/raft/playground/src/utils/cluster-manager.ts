@@ -46,7 +46,7 @@ export interface ClusterMetrics {
 export class ClusterManager {
   private nodes: Map<string, NodeInfo> = new Map();
   private raftEngine: RaftEngine;
-  private logger: PlaygroundLogger;
+  private logger: InstanceType<typeof PlaygroundLogger>;
   private redis: Redis;
   private readonly clusterId: string;
   private readonly config: PlaygroundConfig;
@@ -84,11 +84,19 @@ export class ClusterManager {
       nodes.push(nodeInfo);
     }
 
-    // Start all nodes
-    for (const nodeInfo of nodes) {
+    // Start all nodes simultaneously to avoid timing issues
+    this.logger.info("Starting all nodes simultaneously...");
+    const startPromises = nodes.map(async (nodeInfo) => {
       await nodeInfo.node.start();
       this.logger.success(`Started node ${nodeInfo.nodeId}`);
-    }
+      return nodeInfo;
+    });
+
+    await Promise.all(startPromises);
+
+    // Add extra delay to ensure all Redis listeners are fully initialized
+    this.logger.info("Waiting for all Redis listeners to initialize...");
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     // Wait for cluster to stabilize
     await this.waitForStability();
@@ -116,13 +124,21 @@ export class ClusterManager {
       nodes.push(nodeInfo);
     }
 
-    // Start all nodes
-    for (const nodeInfo of nodes) {
+    // Start all nodes simultaneously to avoid timing issues
+    this.logger.info("Starting all weighted nodes simultaneously...");
+    const startPromises = nodes.map(async (nodeInfo) => {
       await nodeInfo.node.start();
       this.logger.success(
         `Started weighted node ${nodeInfo.nodeId} (weight: ${nodeInfo.weight})`,
       );
-    }
+      return nodeInfo;
+    });
+
+    await Promise.all(startPromises);
+
+    // Add extra delay to ensure all Redis listeners are fully initialized
+    this.logger.info("Waiting for all Redis listeners to initialize...");
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     // Wait for cluster to stabilize
     await this.waitForStability();
@@ -349,6 +365,7 @@ export class ClusterManager {
         stableCount++;
         this.logger.debug(
           `Stability check ${stableCount}/${requiredStableChecks}`,
+          leader?.nodeId,
           {
             leader: leader.nodeId,
             followers: followers.length,
@@ -363,7 +380,7 @@ export class ClusterManager {
         }
       } else {
         stableCount = 0; // Reset counter if not stable
-        this.logger.debug("Cluster not stable yet", {
+        this.logger.debug("Cluster not stable yet", leader?.nodeId, {
           hasLeader: !!leader,
           followers: followers.length,
           candidates: candidates.length,
@@ -465,6 +482,7 @@ export class ClusterManager {
       const patterns = [
         `raft:cluster:${this.clusterId}:queue:*`,
         `raft:cluster:${this.clusterId}:responses:*`,
+        `node-*:state`, // Clear persisted node states
       ];
 
       for (const pattern of patterns) {
@@ -485,7 +503,26 @@ export class ClusterManager {
       );
     }
 
-    // Step 7: Final cleanup - remove from RaftEngine and clean up state machines
+    // Step 7: Clear filesystem persistence data
+    try {
+      const fs = await import("fs/promises");
+      const persistenceDir = `/tmp/raft-playground/${this.clusterId}`;
+
+      try {
+        await fs.rm(persistenceDir, { recursive: true, force: true });
+        this.logger.debug(`Cleared persistence directory: ${persistenceDir}`);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to clear persistence directory: ${persistenceDir}`,
+          undefined,
+          error,
+        );
+      }
+    } catch (error) {
+      this.logger.warn("Failed to import fs/path modules", undefined, error);
+    }
+
+    // Step 8: Final cleanup - remove from RaftEngine and clean up state machines
     for (const nodeInfo of this.nodes.values()) {
       try {
         // Remove from RaftEngine tracking
@@ -504,7 +541,7 @@ export class ClusterManager {
       }
     }
 
-    // Step 8: Final cleanup
+    // Step 9: Final cleanup
     this.nodes.clear();
     this.logger.success("Cluster cleanup completed");
   }

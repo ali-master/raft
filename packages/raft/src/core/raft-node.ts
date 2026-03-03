@@ -76,6 +76,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
 
   // Redis message listener control
   private redisListenerActive = false;
+  private redisListener?: Redis; // Separate Redis connection for blocking operations
 
   // Pre-vote tracking to prevent multiple simultaneous pre-votes
   private preVoteGrantedFor: Map<number, string> = new Map(); // term -> candidateId
@@ -237,6 +238,19 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   public async stop(): Promise<void> {
     this.clearTimers();
     this.redisListenerActive = false;
+
+    // Stop Redis listener
+    if (this.redisListener) {
+      try {
+        this.redisListener.disconnect();
+        this.redisListener = undefined;
+      } catch (error) {
+        this.logger.error("Error disconnecting Redis listener", {
+          error,
+          nodeId: this.config.nodeId,
+        });
+      }
+    }
 
     // Give any pending operations a moment to complete
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -2408,10 +2422,21 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     const queueKey = `raft:cluster:${this.config.clusterId}:queue:${this.config.nodeId}`;
     this.redisListenerActive = true;
 
-    this.logger.info("Starting Redis message listener", {
-      nodeId: this.config.nodeId,
-      queueKey,
+    // Create a separate Redis connection for blocking operations
+    this.redisListener = new Redis({
+      host: this.config.redis.host,
+      port: this.config.redis.port,
+      db: this.config.redis.db || 0,
+      password: this.config.redis.password,
     });
+
+    this.logger.info(
+      "Starting Redis message listener with separate connection",
+      {
+        nodeId: this.config.nodeId,
+        queueKey,
+      },
+    );
 
     // Start listening for messages in a separate async context
     this.processRedisMessages(queueKey).catch((error) => {
@@ -2423,13 +2448,24 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   }
 
   private async processRedisMessages(queueKey: string): Promise<void> {
-    while (this.redisListenerActive) {
+    this.logger.info("Started processing Redis messages", {
+      nodeId: this.config.nodeId,
+      queueKey,
+    });
+
+    while (this.redisListenerActive && this.redisListener) {
       try {
-        // Block for messages with 1 second timeout
-        const result = await this.storage.brpop(queueKey, 1);
+        // Block for messages with 1 second timeout using dedicated connection
+        const result = await this.redisListener.brpop(queueKey, 1);
 
         if (result) {
           const message = JSON.parse(result[1]);
+          this.logger.info("Received message from queue", {
+            nodeId: this.config.nodeId,
+            from: message.from,
+            type: message.type,
+            requestId: message.requestId,
+          });
           await this.handleRedisMessage(message);
         }
       } catch (error) {
@@ -2442,6 +2478,16 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       }
+    }
+
+    this.logger.info("Stopped processing Redis messages", {
+      nodeId: this.config.nodeId,
+    });
+
+    // Clean up listener connection
+    if (this.redisListener) {
+      await this.redisListener.disconnect();
+      this.redisListener = undefined;
     }
   }
 
@@ -2504,24 +2550,37 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       }
 
       // Send response back
-      await this.storage.lpush(
-        responseKey,
-        JSON.stringify({
-          from: this.config.nodeId,
-          to: from,
-          requestId,
-          payload: response,
-          timestamp: Date.now(),
-        }),
-      );
+      try {
+        await this.storage.lpush(
+          responseKey,
+          JSON.stringify({
+            from: this.config.nodeId,
+            to: from,
+            requestId,
+            payload: response,
+            timestamp: Date.now(),
+          }),
+        );
 
-      this.logger.debug("Sent Redis response", {
-        nodeId: this.config.nodeId,
-        to: from,
-        type,
-        requestId,
-        responseKey,
-      });
+        this.logger.info("Sent Redis response", {
+          nodeId: this.config.nodeId,
+          to: from,
+          type,
+          requestId,
+          responseKey,
+          response,
+        });
+      } catch (respError) {
+        this.logger.error("Failed to send Redis response", {
+          error: respError,
+          nodeId: this.config.nodeId,
+          to: from,
+          type,
+          requestId,
+          responseKey,
+        });
+        throw respError;
+      }
     } catch (error) {
       this.logger.error("Error handling Redis message", {
         error,
