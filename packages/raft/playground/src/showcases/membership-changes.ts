@@ -396,3 +396,5 @@ export class MembershipChangesShowcase {
     await this.clusterManager.cleanup();
   }
 }
+
+new MembershipChangesShowcase().run().finally(() => process.exit(0));

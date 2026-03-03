@@ -15,7 +15,7 @@
   },
   "main": "lib/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "[ -d src/client ] && tsc || echo 'Skipping build: run generate:client first'",
     "generate:client": "openapi-ts",
     "test": "vitest",
     "release": "standard-version",

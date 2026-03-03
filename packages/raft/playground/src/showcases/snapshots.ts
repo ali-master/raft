@@ -384,3 +384,5 @@ export class SnapshotShowcase {
     await this.clusterManager.cleanup();
   }
 }
+
+new SnapshotShowcase().run().finally(() => process.exit(0));

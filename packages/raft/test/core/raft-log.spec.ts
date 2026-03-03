@@ -45,12 +45,12 @@ describe("raftLog", () => {
       });
 
       expect(raftLog.getLength()).toBe(2);
-      expect(raftLog.getEntry(0)?.commandPayload).toEqual({
+      expect(raftLog.getEntry(1)?.commandPayload).toEqual({
         cmd: "set",
         key: "a",
         value: "1",
       });
-      expect(raftLog.getEntry(1)?.commandPayload).toEqual({
+      expect(raftLog.getEntry(2)?.commandPayload).toEqual({
         cmd: "set",
         key: "b",
         value: "2",
@@ -63,7 +63,7 @@ describe("raftLog", () => {
         key: "a",
         value: "1",
       });
-      const entry = raftLog.getEntry(0);
+      const entry = raftLog.getEntry(1);
 
       expect(entry).toBeDefined();
       expect(entry?.checksum).toBeDefined();
@@ -77,8 +77,9 @@ describe("raftLog", () => {
         value: "1",
       });
 
-      expect(mockRedis.set).toHaveBeenCalledWith(
-        "test-node:log:0",
+      expect(mockRedis.setex).toHaveBeenCalledWith(
+        "test-node:log:1",
+        3600,
         expect.stringContaining('"term":1'),
       );
     });
@@ -89,7 +90,7 @@ describe("raftLog", () => {
       const entries: LogEntry[] = [
         {
           term: 1,
-          index: 0,
+          index: 1,
           commandType: RaftCommandType.APPLICATION,
           commandPayload: { cmd: "set", key: "a", value: "1" },
           timestamp: new Date(),
@@ -97,7 +98,7 @@ describe("raftLog", () => {
         },
         {
           term: 1,
-          index: 1,
+          index: 2,
           commandType: RaftCommandType.APPLICATION,
           commandPayload: { cmd: "set", key: "b", value: "2" },
           timestamp: new Date(),
@@ -105,7 +106,7 @@ describe("raftLog", () => {
         },
       ];
 
-      await raftLog.appendEntries(entries, -1);
+      await raftLog.appendEntries(entries, 0);
       expect(raftLog.getLength()).toBe(2);
     });
 
@@ -124,7 +125,7 @@ describe("raftLog", () => {
       const newEntries: LogEntry[] = [
         {
           term: 2,
-          index: 1,
+          index: 2,
           commandType: RaftCommandType.APPLICATION,
           commandPayload: { cmd: "set", key: "c", value: "3" },
           timestamp: new Date(),
@@ -132,9 +133,9 @@ describe("raftLog", () => {
         },
       ];
 
-      await raftLog.appendEntries(newEntries, 0);
+      await raftLog.appendEntries(newEntries, 1);
       expect(raftLog.getLength()).toBe(2);
-      expect(raftLog.getEntry(1)?.commandPayload).toEqual({
+      expect(raftLog.getEntry(2)?.commandPayload).toEqual({
         cmd: "set",
         key: "c",
         value: "3",
@@ -151,7 +152,7 @@ describe("raftLog", () => {
       const newEntries: LogEntry[] = [
         {
           term: 2,
-          index: 1,
+          index: 2,
           commandType: RaftCommandType.APPLICATION,
           commandPayload: { cmd: "set", key: "b", value: "2" },
           timestamp: new Date(),
@@ -159,7 +160,8 @@ describe("raftLog", () => {
         },
       ];
 
-      await expect(raftLog.appendEntries(newEntries, 0, 2)).rejects.toThrow(
+      // Entry at index 1 has term=1, but we pass prevLogTerm=2 → should fail validation
+      await expect(raftLog.appendEntries(newEntries, 1, 2)).rejects.toThrow(
         RaftValidationException,
       );
     });
@@ -172,7 +174,7 @@ describe("raftLog", () => {
         key: "a",
         value: "1",
       });
-      const entry = raftLog.getEntry(0);
+      const entry = raftLog.getEntry(1);
 
       expect(entry).toBeDefined();
       expect(entry?.term).toBe(1);
@@ -200,7 +202,7 @@ describe("raftLog", () => {
         value: "3",
       });
 
-      const entries = raftLog.getEntries(1, 3);
+      const entries = raftLog.getEntries(2, 4);
       expect(entries).toHaveLength(2);
       expect(entries[0]?.commandPayload).toEqual({
         cmd: "set",
@@ -247,7 +249,7 @@ describe("raftLog", () => {
         value: "2",
       });
 
-      expect(raftLog.getLastIndex()).toBe(1);
+      expect(raftLog.getLastIndex()).toBe(2);
       expect(raftLog.getLastTerm()).toBe(2);
     });
   });
@@ -257,7 +259,7 @@ describe("raftLog", () => {
       const storedEntries = [
         JSON.stringify({
           term: 1,
-          index: 0,
+          index: 1,
           commandType: RaftCommandType.APPLICATION,
           commandPayload: { cmd: "set", key: "a", value: "1" },
           timestamp: new Date(),
@@ -265,7 +267,7 @@ describe("raftLog", () => {
         }),
         JSON.stringify({
           term: 1,
-          index: 1,
+          index: 2,
           commandType: RaftCommandType.APPLICATION,
           commandPayload: { cmd: "set", key: "b", value: "2" },
           timestamp: new Date(),
@@ -273,10 +275,10 @@ describe("raftLog", () => {
         }),
       ];
 
-      mockRedis.keys.mockResolvedValue(["test-node:log:0", "test-node:log:1"]);
+      mockRedis.keys.mockResolvedValue(["test-node:log:1", "test-node:log:2"]);
       mockRedis.get.mockImplementation((key: string) => {
-        if (key === "test-node:log:0") return Promise.resolve(storedEntries[0]);
-        if (key === "test-node:log:1") return Promise.resolve(storedEntries[1]);
+        if (key === "test-node:log:1") return Promise.resolve(storedEntries[0]);
+        if (key === "test-node:log:2") return Promise.resolve(storedEntries[1]);
         return Promise.resolve(null);
       });
 
@@ -317,7 +319,7 @@ describe("raftLog", () => {
 
   describe("log truncation", () => {
     it("should truncate entries before index", async () => {
-      // Add some entries first
+      // Add some entries first (indices 1, 2, 3 with 1-based indexing)
       await raftLog.appendEntry(1, RaftCommandType.APPLICATION, {
         cmd: "set",
         key: "a",
@@ -336,11 +338,11 @@ describe("raftLog", () => {
 
       expect(raftLog.getLength()).toBe(3);
 
-      // Truncate before index 2 (should keep entries 2 and beyond)
-      await raftLog.truncateBeforeIndex(2);
+      // Truncate before index 3 (should keep only entry at index 3)
+      await raftLog.truncateBeforeIndex(3);
 
       expect(raftLog.getLength()).toBe(1);
-      expect(raftLog.getEntry(0)?.commandPayload).toEqual({
+      expect(raftLog.getEntry(3)?.commandPayload).toEqual({
         cmd: "set",
         key: "c",
         value: "3",

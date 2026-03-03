@@ -180,3 +180,5 @@ export class ClusterShowcase {
     await this.clusterManager.cleanup();
   }
 }
+
+new ClusterShowcase().run().finally(() => process.exit(0));

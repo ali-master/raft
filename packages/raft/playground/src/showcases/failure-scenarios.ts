@@ -537,3 +537,5 @@ export class FailuresScenariosShowcase {
     await this.clusterManager.cleanup();
   }
 }
+
+new FailuresScenariosShowcase().run().finally(() => process.exit(0));

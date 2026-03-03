@@ -405,6 +405,17 @@ export class ClusterManager {
       await this.stopNode(nodeId);
     }
 
+    // Remove partition2 peers from discovery so partition1 nodes don't waste
+    // time on brpop timeouts trying to reach them (brpop calls serialize on
+    // a single Redis connection, making each dead peer add 2s latency)
+    for (const nodeId of partition2) {
+      try {
+        await this.redis.del(`raft:cluster:${this.clusterId}:node:${nodeId}`);
+      } catch (_error) {
+        // Ignore cleanup errors
+      }
+    }
+
     this.logger.info(
       `Partition created: [${partition1.join(", ")}] | [${partition2.join(", ")}]`,
     );
@@ -413,12 +424,16 @@ export class ClusterManager {
   async healNetworkPartition(partition2: string[]): Promise<void> {
     this.logger.info("Healing network partition");
 
-    // Restart nodes in partition2
+    // Use restartNode instead of startNode because stop() closes the Redis
+    // connection, so the existing node instance can't be reused
     for (const nodeId of partition2) {
-      await this.startNode(nodeId);
+      await this.restartNode(nodeId);
     }
 
-    await this.waitForStability();
+    // Longer timeout for post-partition stabilization: restarting nodes takes
+    // ~2s each, then re-election rounds take 4+ seconds due to brpop
+    // serialization on the shared Redis connection
+    await this.waitForStability(20000);
     this.logger.success("Network partition healed");
   }
 
@@ -429,32 +444,8 @@ export class ClusterManager {
   async cleanup(): Promise<void> {
     this.logger.info("Cleaning up cluster");
 
-    // Step 1: Reset circuit breakers to prevent cascading failures
-    this.resetAllCircuitBreakers();
-
-    // Step 2: Signal cluster shutdown to all nodes by clearing Redis peer data first
-    // This allows remaining nodes to detect they're in single-node state
-    try {
-      const peerPattern = `raft:cluster:${this.clusterId}:node:*`;
-      const keys = await this.redis.keys(peerPattern);
-      if (keys.length > 0) {
-        await this.redis.del(...keys);
-      }
-      this.logger.debug(
-        `Cleared peer discovery data for cluster ${this.clusterId}`,
-      );
-    } catch (_error) {
-      this.logger.warn(
-        "Failed to clear peer discovery data",
-        undefined,
-        _error,
-      );
-    }
-
-    // Step 3: Wait for nodes to detect single-node state and stabilize
-    await this.delay(2000);
-
-    // Step 4: Gracefully stop all nodes after they've had time to adapt
+    // Step 1: Stop all nodes immediately - this cancels pending network
+    // operations via network.shutdown() which resolves blocked brpop calls
     const stopPromises = Array.from(this.nodes.values()).map(
       async (nodeInfo) => {
         try {
@@ -473,13 +464,13 @@ export class ClusterManager {
     // Wait for all nodes to stop gracefully
     await Promise.allSettled(stopPromises);
 
-    // Step 5: Wait for circuit breakers to reset and operations to complete
-    // Circuit breaker timeout is typically 5 seconds, so wait 6 seconds to be safe
-    await this.delay(6000);
+    // Brief pause for any lingering Redis operations to settle
+    await this.delay(500);
 
-    // Step 6: Clear remaining Redis data for this cluster
+    // Step 2: Clear all Redis data for this cluster
     try {
       const patterns = [
+        `raft:cluster:${this.clusterId}:node:*`,
         `raft:cluster:${this.clusterId}:queue:*`,
         `raft:cluster:${this.clusterId}:responses:*`,
         `node-*:state`, // Clear persisted node states
@@ -492,18 +483,12 @@ export class ClusterManager {
         }
       }
 
-      this.logger.debug(
-        `Cleared remaining Redis data for cluster ${this.clusterId}`,
-      );
+      this.logger.debug(`Cleared Redis data for cluster ${this.clusterId}`);
     } catch (_error) {
-      this.logger.warn(
-        "Failed to clear remaining Redis data",
-        undefined,
-        _error,
-      );
+      this.logger.warn("Failed to clear Redis data", undefined, _error);
     }
 
-    // Step 7: Clear filesystem persistence data
+    // Step 3: Clear filesystem persistence data
     try {
       const fs = await import("fs/promises");
       const persistenceDir = `/tmp/raft-playground/${this.clusterId}`;
@@ -522,13 +507,11 @@ export class ClusterManager {
       this.logger.warn("Failed to import fs/path modules", undefined, error);
     }
 
-    // Step 8: Final cleanup - remove from RaftEngine and clean up state machines
+    // Step 4: Remove from RaftEngine and clean up state machines
     for (const nodeInfo of this.nodes.values()) {
       try {
-        // Remove from RaftEngine tracking
         this.raftEngine.removeNode(nodeInfo.nodeId);
 
-        // Clean up state machine if it has a cleanup method
         if ("cleanup" in nodeInfo.stateMachine) {
           await (nodeInfo.stateMachine as CleanupableStateMachine).cleanup();
         }
@@ -541,7 +524,7 @@ export class ClusterManager {
       }
     }
 
-    // Step 9: Final cleanup
+    // Step 5: Clear internal state
     this.nodes.clear();
     this.logger.success("Cluster cleanup completed");
   }

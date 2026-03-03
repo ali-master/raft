@@ -797,3 +797,5 @@ export class StressTestShowcase {
     await this.clusterManager.cleanup();
   }
 }
+
+new StressTestShowcase().run().finally(() => process.exit(0));

@@ -78,6 +78,10 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   private redisListenerActive = false;
   private redisListener?: Redis; // Separate Redis connection for blocking operations
 
+  // Guard against heartbeat pileup: if a previous round is still in flight
+  // (e.g. waiting on brpop to dead peers), skip the current timer tick
+  private heartbeatInProgress = false;
+
   // Pre-vote tracking to prevent multiple simultaneous pre-votes
   private preVoteGrantedFor: Map<number, string> = new Map(); // term -> candidateId
 
@@ -239,6 +243,14 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     this.clearTimers();
     this.redisListenerActive = false;
 
+    // Shutdown network layer first - this cancels all pending brpop calls
+    // via Promise.race so they resolve immediately instead of blocking
+    try {
+      this.network.shutdown();
+    } catch (error) {
+      this.logger.warn("Error shutting down network", { error });
+    }
+
     // Stop Redis listener
     if (this.redisListener) {
       try {
@@ -256,15 +268,6 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     try {
-      // Shutdown network layer
-      if ("shutdown" in this.network) {
-        (this.network as any).shutdown();
-      }
-    } catch (error) {
-      this.logger.warn("Error shutting down network", { error });
-    }
-
-    try {
       await this.peerDiscovery.stop();
     } catch (error) {
       this.logger.warn("Error stopping peer discovery", { error });
@@ -278,13 +281,13 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     }
 
     try {
-      this.storage.on("ready", async () => {
-        // Clean up this node's message queue before closing Redis
+      // Clean up this node's message queue before closing Redis
+      if (this.storage.status === "ready") {
         await this.storage.del(
           `raft:cluster:${this.config.clusterId}:queue:${this.config.nodeId}`,
         );
         await this.storage.quit();
-      });
+      }
     } catch (error) {
       this.logger.warn("Error closing Redis connection", { error });
     }
@@ -1213,31 +1216,44 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       return;
     }
 
-    // Per Raft spec, heartbeats are AppendEntries RPCs. When a follower is behind,
-    // the heartbeat should include pending entries to replicate. Using replicateLogToPeer
-    // handles both cases: empty entries (heartbeat) when up-to-date, or actual entries when behind.
-    const peers = this.peerDiscovery.getPeers();
-    const heartbeatPromises = peers.map(async (peerId) => {
-      if (peerId === this.config.nodeId) return;
+    // Prevent pileup: if the previous heartbeat round is still in flight
+    // (e.g. waiting on brpop timeouts to dead peers), skip this tick.
+    // Without this guard, each 50ms timer tick would queue more brpop calls
+    // on the shared Redis connection, creating cascading 300s+ latencies.
+    if (this.heartbeatInProgress) {
+      return;
+    }
 
-      try {
-        await this.replicateLogToPeer(peerId);
+    this.heartbeatInProgress = true;
+    try {
+      // Per Raft spec, heartbeats are AppendEntries RPCs. When a follower is behind,
+      // the heartbeat should include pending entries to replicate. Using replicateLogToPeer
+      // handles both cases: empty entries (heartbeat) when up-to-date, or actual entries when behind.
+      const peers = this.peerDiscovery.getPeers();
+      const heartbeatPromises = peers.map(async (peerId) => {
+        if (peerId === this.config.nodeId) return;
 
-        this.metrics.incrementCounter("raft_heartbeats_total", {
-          node_id: this.config.nodeId,
-          cluster_id: this.config.clusterId,
-        });
+        try {
+          await this.replicateLogToPeer(peerId);
 
-        this.publishEvent(RaftEventType.HEARTBEAT_RECEIVED, {
-          from: peerId,
-          success: true,
-        });
-      } catch (error) {
-        this.logger.warn("Failed to send heartbeat", { peerId, error });
-      }
-    });
+          this.metrics.incrementCounter("raft_heartbeats_total", {
+            node_id: this.config.nodeId,
+            cluster_id: this.config.clusterId,
+          });
 
-    await Promise.allSettled(heartbeatPromises);
+          this.publishEvent(RaftEventType.HEARTBEAT_RECEIVED, {
+            from: peerId,
+            success: true,
+          });
+        } catch (error) {
+          this.logger.warn("Failed to send heartbeat", { peerId, error });
+        }
+      });
+
+      await Promise.allSettled(heartbeatPromises);
+    } finally {
+      this.heartbeatInProgress = false;
+    }
   }
 
   private async replicateLogToFollowers(): Promise<void> {
@@ -1267,7 +1283,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
 
     const prevLogIndex = nextIndex - 1;
     const prevLogTerm =
-      prevLogIndex >= 0 ? this.log.getEntry(prevLogIndex)?.term || 0 : 0;
+      prevLogIndex > 0 ? this.log.getEntry(prevLogIndex)?.term || 0 : 0;
 
     const entries = this.log.getEntries(nextIndex);
 
@@ -1298,7 +1314,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         // If AppendEntries fails because of log inconsistency, decrement nextIndex and retry.
         // Per Raft: decrement nextIndex once per failed AppendEntries RPC.
         const currentNext = this.nextIndex.get(peerId) || 0;
-        this.nextIndex.set(peerId, Math.max(0, currentNext - 1));
+        this.nextIndex.set(peerId, Math.max(1, currentNext - 1));
         // If it falls behind the first log index, the next attempt will send a snapshot.
         this.logger.info(
           `Log replication failed for peer ${peerId}, nextIndex decremented to ${this.nextIndex.get(peerId)}. Will retry or send snapshot.`,
@@ -1369,7 +1385,8 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         activeConfiguration: this.activeConfiguration, // Persist current/joint config
       };
 
-      await this.storage.set(stateKey, JSON.stringify(state));
+      const ttl = this.config.redis.ttl ?? 3600;
+      await this.storage.setex(stateKey, ttl, JSON.stringify(state));
 
       // Also persist to WAL if enabled
       await this.log.persistMetadata(
@@ -1825,7 +1842,6 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       // For now, a single persist at the end if anything was applied is reasonable.
       await this.persistState();
     }
-
   }
 
   private applyConfigurationChange(payload: ConfigurationChangePayload): void {
@@ -2483,6 +2499,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
             timestamp: Date.now(),
           }),
         );
+        await this.storage.expire(responseKey, 30);
 
         this.logger.info("Sent Redis response", {
           nodeId: this.config.nodeId,
@@ -2651,9 +2668,9 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     }
 
     // Check if log contains an entry at prevLogIndex with prevLogTerm
-    // prevLogIndex >= 0 means there's a previous entry to validate;
-    // prevLogIndex === -1 means entries start from the very beginning (no validation needed)
-    if (request.prevLogIndex >= 0) {
+    // prevLogIndex > 0 means there's a previous entry to validate;
+    // prevLogIndex <= 0 means entries start from the very beginning (no validation needed)
+    if (request.prevLogIndex > 0) {
       const prevEntry = this.log.getEntry(request.prevLogIndex);
       if (!prevEntry || prevEntry.term !== request.prevLogTerm) {
         this.logger.info("Rejecting AppendEntries: Log inconsistency", {

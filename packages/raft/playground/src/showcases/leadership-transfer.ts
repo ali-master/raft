@@ -575,3 +575,5 @@ export class LeadershipTransferShowcase {
     await this.clusterManager.cleanup();
   }
 }
+
+new LeadershipTransferShowcase().run().finally(() => process.exit(0));

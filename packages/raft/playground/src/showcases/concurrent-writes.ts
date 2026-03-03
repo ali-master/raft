@@ -678,3 +678,5 @@ export class ConcurrentWritesShowcase {
     await this.clusterManager.cleanup();
   }
 }
+
+new ConcurrentWritesShowcase().run().finally(() => process.exit(0));

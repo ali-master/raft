@@ -18,7 +18,7 @@ import { calculateChecksum } from "../utils";
 
 export class RaftLog<TCommand = unknown> {
   private entries: LogEntry<TCommand>[] = [];
-  private logStartIndex: number = 0; // Represents the index of entries[0] in the overall log
+  private logStartIndex: number = 1; // Represents the index of entries[0] in the overall log (1-based per Raft spec)
   private readonly storage: Redis;
   private readonly nodeId: string;
   private readonly logger: RaftLogger;
@@ -256,7 +256,8 @@ export class RaftLog<TCommand = unknown> {
     prevLogIndex: number,
     prevLogTerm?: number,
   ): boolean {
-    if (prevLogIndex < 0) {
+    // prevLogIndex <= 0 means "beginning of log" (no previous entry to validate)
+    if (prevLogIndex <= 0) {
       return true;
     }
 
@@ -279,7 +280,8 @@ export class RaftLog<TCommand = unknown> {
 
   private async persistEntry(entry: LogEntry): Promise<void> {
     const key = `${this.nodeId}:log:${entry.index}`;
-    await this.storage.set(key, JSON.stringify(entry));
+    const ttl = this.config.redis.ttl ?? 3600;
+    await this.storage.setex(key, ttl, JSON.stringify(entry));
   }
 
   public async loadFromStorage(): Promise<void> {
@@ -361,6 +363,11 @@ export class RaftLog<TCommand = unknown> {
     // Remove entries before the given index
     const entriesToRemove = this.entries.filter((e) => e.index < index);
     this.entries = this.entries.filter((e) => e.index >= index);
+
+    // Update logStartIndex to reflect the new start of the in-memory log
+    if (index > this.logStartIndex) {
+      this.logStartIndex = index;
+    }
 
     // Remove from Redis
     for (const entry of entriesToRemove) {
@@ -470,10 +477,10 @@ export class RaftLog<TCommand = unknown> {
       // Truncate all WAL log entries before the snapshot's last included index + 1
       // since the snapshot covers everything up to that point.
       await this.walEngine.truncateLogEntriesBefore(index + 1);
-      this.logger.info(
-        "WAL truncated after snapshot installation",
-        { snapshotIndex: index, snapshotTerm: term },
-      );
+      this.logger.info("WAL truncated after snapshot installation", {
+        snapshotIndex: index,
+        snapshotTerm: term,
+      });
     }
 
     this.logger.info("Log truncated (after index due to snapshot)", {

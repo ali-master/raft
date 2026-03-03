@@ -428,3 +428,5 @@ export class PerformanceTestsShowcase {
     await this.clusterManager.cleanup();
   }
 }
+
+new PerformanceTestsShowcase().run().finally(() => process.exit(0));

@@ -513,3 +513,5 @@ export class NetworkPartitionShowcase {
     await this.clusterManager.cleanup();
   }
 }
+
+new NetworkPartitionShowcase().run().finally(() => process.exit(0));

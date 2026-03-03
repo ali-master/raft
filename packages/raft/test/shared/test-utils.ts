@@ -84,6 +84,7 @@ export function createMockRedis() {
     quit: vi.fn().mockResolvedValue("OK"),
     lpush: vi.fn().mockResolvedValue(1),
     brpop: vi.fn().mockResolvedValue(null),
+    expire: vi.fn().mockResolvedValue(1),
     status: "ready",
   } as any;
 }

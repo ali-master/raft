@@ -6,9 +6,6 @@ export default defineConfig({
     alias: {
       "@root": path.resolve(__dirname, "./src"),
     },
-    server: {
-      sourcemap: "inline",
-    },
     setupFiles: ["./test/setup.ts"],
     fileParallelism: false, // Disable parallel execution to share Redis container
     name: "Raft",
@@ -19,7 +16,6 @@ export default defineConfig({
       tsconfig: path.resolve(process.cwd(), "./tsconfig.json"),
     },
     coverage: {
-      all: false,
       clean: true,
       provider: "v8",
       cleanOnRerun: true,
@@ -32,13 +28,5 @@ export default defineConfig({
     cache: false,
     globals: true,
     pool: "forks",
-    poolOptions: {
-      threads: {
-        singleThread: true,
-      },
-      forks: {
-        singleFork: true,
-      },
-    },
   },
 });

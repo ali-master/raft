@@ -293,3 +293,5 @@ export class LeaderElectionShowcase {
     await this.clusterManager.cleanup();
   }
 }
+
+new LeaderElectionShowcase().run().finally(() => process.exit(0));

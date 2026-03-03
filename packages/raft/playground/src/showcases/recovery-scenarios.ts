@@ -655,3 +655,5 @@ export class RecoveryShowcase {
     await this.clusterManager.cleanup();
   }
 }
+
+new RecoveryShowcase().run().finally(() => process.exit(0));

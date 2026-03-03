@@ -1,8 +1,8 @@
 import type { StateMachine } from "../../../src/types";
 
-export class MockStateMachine<TCommand = unknown>
-  implements StateMachine<TCommand>
-{
+export class MockStateMachine<
+  TCommand = unknown,
+> implements StateMachine<TCommand> {
   public commands: TCommand[] = [];
   public snapshotApplied: boolean = false;
   public appliedSnapshotData: Buffer | null = null;

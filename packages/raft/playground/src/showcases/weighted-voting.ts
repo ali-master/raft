@@ -424,3 +424,5 @@ export class WeightedVotingShowcase {
     await this.clusterManager.cleanup();
   }
 }
+
+new WeightedVotingShowcase().run().finally(() => process.exit(0));

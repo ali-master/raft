@@ -370,3 +370,5 @@ export class LogReplicationShowcase {
     await this.clusterManager.cleanup();
   }
 }
+
+new LogReplicationShowcase().run().finally(() => process.exit(0));

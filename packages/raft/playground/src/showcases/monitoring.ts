@@ -392,3 +392,5 @@ export class MonitoringShowcase {
     await this.clusterManager.cleanup();
   }
 }
+
+new MonitoringShowcase().run().finally(() => process.exit(0));
