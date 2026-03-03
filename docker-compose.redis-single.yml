@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   redis-single:
-    image: redis:8-alpine
+    image: redis:8
     container_name: redis-single
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:

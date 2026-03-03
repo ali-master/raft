@@ -1,11 +1,9 @@
-version: '3.8'
-
 services:
   # ===================================
   # Redis Master
   # ===================================
   redis-master:
-    image: redis:8-alpine
+    image: redis:8
     container_name: redis-master
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
@@ -25,7 +23,7 @@ services:
   # Redis Replicas
   # ===================================
   redis-replica-1:
-    image: redis:8-alpine
+    image: redis:8
     container_name: redis-replica-1
     command: redis-server --replicaof redis-master 6379 --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
@@ -45,7 +43,7 @@ services:
     restart: unless-stopped
 
   redis-replica-2:
-    image: redis:8-alpine
+    image: redis:8
     container_name: redis-replica-2
     command: redis-server --replicaof redis-master 6379 --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
@@ -68,7 +66,7 @@ services:
   # Redis Sentinels
   # ===================================
   redis-sentinel-1:
-    image: redis:8-alpine
+    image: redis:8
     container_name: redis-sentinel-1
     volumes:
       - ./config/sentinel.conf:/etc/redis-sentinel.conf:ro
@@ -92,7 +90,7 @@ services:
     restart: unless-stopped
 
   redis-sentinel-2:
-    image: redis:8-alpine
+    image: redis:8
     container_name: redis-sentinel-2
     volumes:
       - ./config/sentinel.conf:/etc/redis-sentinel.conf:ro
@@ -116,7 +114,7 @@ services:
     restart: unless-stopped
 
   redis-sentinel-3:
-    image: redis:8-alpine
+    image: redis:8
     container_name: redis-sentinel-3
     volumes:
       - ./config/sentinel.conf:/etc/redis-sentinel.conf:ro
