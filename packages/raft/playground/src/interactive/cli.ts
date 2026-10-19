@@ -36,6 +36,7 @@ Type 'help' at any time to see available commands.
       await this.startInteractiveSession();
     } catch (_error) {
       this.logger.error("Interactive CLI failed", undefined, _error);
+      throw _error;
     } finally {
       await this.cleanup();
     }
@@ -621,7 +622,7 @@ Type 'help' at any time to see available commands.
           chalk.cyan(`📊 REAL-TIME CLUSTER MONITOR (Update #${watchCount})`),
         );
         console.log(chalk.blue("━".repeat(70)));
-        console.log(chalk.yellow("Press Ctrl+C to stop watching\\n"));
+        console.log(chalk.yellow("Press Ctrl+C to stop watching\n"));
 
         const nodes = this.clusterManager.getAllNodes();
         if (nodes.length === 0) {
@@ -640,7 +641,7 @@ Type 'help' at any time to see available commands.
         );
 
         // Node details
-        console.log(chalk.green("\\n📋 NODE DETAILS:"));
+        console.log(chalk.green("\n📋 NODE DETAILS:"));
         for (const nodeInfo of nodes) {
           const state = nodeInfo.node.getState();
           const term = nodeInfo.node.getCurrentTerm();
@@ -675,12 +676,12 @@ Type 'help' at any time to see available commands.
         const uniqueValues = new Set(stateMachineStates.map((s) => s.value));
         const consistencyIcon = uniqueValues.size === 1 ? "✅" : "⚠️";
 
-        console.log(chalk.green("\\n🔄 CONSISTENCY:"));
+        console.log(chalk.green("\n🔄 CONSISTENCY:"));
         console.log(
           `   ${consistencyIcon} ${uniqueValues.size === 1 ? "All nodes consistent" : "Inconsistency detected"}`,
         );
 
-        console.log(chalk.blue("\\n━".repeat(70)));
+        console.log(chalk.blue("\n━".repeat(70)));
         console.log(
           chalk.gray(`Last updated: ${new Date().toLocaleTimeString()}`),
         );
@@ -694,7 +695,7 @@ Type 'help' at any time to see available commands.
 
     const stopWatching = () => {
       clearInterval(watchInterval);
-      console.log(chalk.green("\\n✅ Monitoring stopped"));
+      console.log(chalk.green("\n✅ Monitoring stopped"));
 
       // Restore original handlers
       process.removeAllListeners("SIGINT");
@@ -707,7 +708,7 @@ Type 'help' at any time to see available commands.
     setTimeout(() => {
       console.log(
         chalk.gray(
-          "\\nWatching... (monitoring will continue until you press Ctrl+C)",
+          "\nWatching... (monitoring will continue until you press Ctrl+C)",
         ),
       );
     }, interval);
@@ -745,7 +746,7 @@ Type 'help' at any time to see available commands.
       if ((i + 1) % Math.max(1, Math.floor(operations / 10)) === 0) {
         const progress = (((i + 1) / operations) * 100).toFixed(1);
         process.stdout.write(
-          `\\r${chalk.blue(`Progress: ${progress}% (${i + 1}/${operations})`)}`,
+          `\r${chalk.blue(`Progress: ${progress}% (${i + 1}/${operations})`)}`,
         );
       }
     }
@@ -754,7 +755,7 @@ Type 'help' at any time to see available commands.
     const duration = endTime - startTime;
     const throughput = Math.round((successful / duration) * 1000);
 
-    console.log(chalk.cyan("\\n\\n📈 BENCHMARK RESULTS"));
+    console.log(chalk.cyan("\n\n📈 BENCHMARK RESULTS"));
     console.log(chalk.blue("━".repeat(30)));
     console.log(`⚡ Operations: ${operations}`);
     console.log(`✅ Successful: ${successful}`);
@@ -928,7 +929,7 @@ Type 'help' at any time to see available commands.
 
       if ((i + 1) % 10 === 0) {
         process.stdout.write(
-          `\\r${chalk.blue(`Progress: ${i + 1}/${operations}`)}`,
+          `\r${chalk.blue(`Progress: ${i + 1}/${operations}`)}`,
         );
       }
     }
@@ -938,7 +939,7 @@ Type 'help' at any time to see available commands.
 
     console.log(
       chalk.green(
-        `\\n✅ Stress test complete: ${successful}/${operations} successful, ${throughput} ops/sec`,
+        `\n✅ Stress test complete: ${successful}/${operations} successful, ${throughput} ops/sec`,
       ),
     );
   }
@@ -962,4 +963,8 @@ Type 'help' at any time to see available commands.
     this.isRunning = false;
     await this.clusterManager.cleanup();
   }
+}
+
+if (import.meta.main) {
+  await new InteractiveCLI().run();
 }

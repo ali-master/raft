@@ -39,6 +39,7 @@ Press 'q' to quit the visualizer at any time.
       await this.startVisualInterface();
     } catch (_error) {
       this.logger.error("Cluster visualizer failed", undefined, _error);
+      throw _error;
     } finally {
       await this.cleanup();
     }
@@ -103,25 +104,11 @@ Press 'q' to quit the visualizer at any time.
       },
     });
 
-    // Title
-    // const _title = blessed.text({
-    //   parent: container,
-    //   top: 0,
-    //   left: "center",
-    //   width: "shrink",
-    //   height: 1,
-    //   content: "🏛️  RAFT CLUSTER VISUALIZER 🏛️",
-    //   style: {
-    //     fg: "cyan",
-    //     bold: true,
-    //   },
-    // });
-
     // Cluster overview box
     const overviewBox = blessed.box({
       parent: container,
       label: " Cluster Overview ",
-      top: 2,
+      top: 0,
       left: 0,
       width: "50%",
       height: 8,
@@ -139,7 +126,7 @@ Press 'q' to quit the visualizer at any time.
     const nodesBox = blessed.box({
       parent: container,
       label: " Node Details ",
-      top: 2,
+      top: 0,
       left: "50%",
       width: "50%",
       height: 15,
@@ -153,13 +140,15 @@ Press 'q' to quit the visualizer at any time.
       },
       scrollable: true,
       alwaysScroll: true,
+      keys: true,
+      mouse: true,
     });
 
     // Metrics box
     const metricsBox = blessed.box({
       parent: container,
       label: " Performance Metrics ",
-      top: 10,
+      top: 8,
       left: 0,
       width: "50%",
       height: 7,
@@ -177,10 +166,10 @@ Press 'q' to quit the visualizer at any time.
     const operationsBox = blessed.box({
       parent: container,
       label: " Recent Operations ",
-      top: 17,
+      top: 15,
       left: 0,
       width: "100%",
-      height: 8,
+      height: "100%-16",
       border: {
         type: "line",
       },
@@ -193,38 +182,6 @@ Press 'q' to quit the visualizer at any time.
       alwaysScroll: true,
     });
 
-    // Controls box
-    // const controlsBox = blessed.box({
-    //   parent: container,
-    //   label: " Controls ",
-    //   top: 25,
-    //   left: 0,
-    //   width: "100%",
-    //   height: 5,
-    //   border: {
-    //     type: "line",
-    //   },
-    //   style: {
-    //     border: {
-    //       fg: "white",
-    //     },
-    //   },
-    // });
-
-    // Controls text
-    // const _controlsText = blessed.text({
-    //   parent: container, // was controlsBox
-    //   top: 0,
-    //   left: 1,
-    //   width: "100%-2",
-    //   height: 3,
-    //   content:
-    //     "Controls: [s] Submit Operation | [f] Fail Random Node | [r] Restart Failed Node | [p] Network Partition | [h] Heal Partition | [q] Quit",
-    //   style: {
-    //     fg: "white",
-    //   },
-    // });
-
     // Status bar
     const statusBar = blessed.text({
       parent: container,
@@ -232,7 +189,8 @@ Press 'q' to quit the visualizer at any time.
       left: 0,
       width: "100%",
       height: 1,
-      content: "Status: Running | Press [q] to quit",
+      content:
+        "[s] Submit [f] Fail [r] Restart [p] Partition [h] Heal [q] Quit",
       style: {
         fg: "white",
         bg: "blue",
@@ -240,10 +198,21 @@ Press 'q' to quit the visualizer at any time.
     });
 
     // Handle key events
+    // Route cluster logs into the dashboard while it owns the terminal.
+    const originalConsole = {
+      log: console.log,
+      warn: console.warn,
+      error: console.error,
+    };
+    for (const level of ["log", "warn", "error"] as const) {
+      console[level] = (...args: unknown[]) => {
+        this.appendToOperationsLog(operationsBox, args.map(String).join(" "));
+      };
+    }
+    this.screen.on("destroy", () => Object.assign(console, originalConsole));
     this.screen.key(["q", "C-c"], () => {
       this.isRunning = false;
       this.screen?.destroy();
-      process.exit(0);
     });
 
     // Operation submission
@@ -272,11 +241,9 @@ Press 'q' to quit the visualizer at any time.
     this.screen.key("f", async () => {
       try {
         const nodes = this.clusterManager.getAllNodes();
-        const activeNodes = nodes.filter(
-          (n) => n.node.getState() !== RaftState.CANDIDATE,
-        );
+        const activeNodes = nodes.filter((n) => n.node.isRunning());
 
-        if (activeNodes.length > 2) {
+        if (activeNodes.length > Math.floor(nodes.length / 2) + 1) {
           // Keep majority
           const randomNode =
             activeNodes[Math.floor(Math.random() * activeNodes.length)];
@@ -302,21 +269,10 @@ Press 'q' to quit the visualizer at any time.
     // Restart random failed node
     this.screen.key("r", async () => {
       try {
-        // In a real implementation, we'd track failed nodes
-        // For demo, we'll try to restart a random node ID
-        const allPossibleNodes = [
-          "node-0",
-          "node-1",
-          "node-2",
-          "node-3",
-          "node-4",
-        ];
-        const activeNodes = this.clusterManager
+        const failedNodes = this.clusterManager
           .getAllNodes()
+          .filter((n) => !n.node.isRunning())
           .map((n) => n.nodeId);
-        const failedNodes = allPossibleNodes.filter(
-          (id) => !activeNodes.includes(id),
-        );
 
         if (failedNodes.length > 0) {
           const nodeToRestart =
@@ -397,7 +353,7 @@ Press 'q' to quit the visualizer at any time.
         const nodes = this.clusterManager.getAllNodes();
 
         const overviewContent = [
-          `Cluster Size: ${nodes.length} nodes`,
+          `Running: ${metrics.activeNodes}/${nodes.length} nodes`,
           `Leader: ${metrics.leader || "None"}`,
           `Current Term: ${metrics.term}`,
           `Followers: ${metrics.followers.length}`,
@@ -405,7 +361,7 @@ Press 'q' to quit the visualizer at any time.
           `Last Update: ${new Date().toLocaleTimeString()}`,
         ];
 
-        overviewBox.setContent(overviewContent.join("\\n"));
+        overviewBox.setContent(overviewContent.join("\n"));
 
         // Update node details
         let nodeContent = "";
@@ -430,13 +386,13 @@ Press 'q' to quit the visualizer at any time.
               break;
           }
 
-          nodeContent += `${stateIcon} ${nodeInfo.nodeId}\\n`;
-          nodeContent += `  State: ${state}\\n`;
-          nodeContent += `  Term: ${term}\\n`;
-          nodeContent += `  Commit: ${commitIndex}\\n`;
-          nodeContent += `  Applied: ${lastApplied}\\n`;
-          nodeContent += `  Counter: ${smState.value}\\n`;
-          nodeContent += `\\n`;
+          nodeContent += `${stateIcon} ${nodeInfo.nodeId}\n`;
+          nodeContent += `  State: ${nodeInfo.node.isRunning() ? state : "stopped"}\n`;
+          nodeContent += `  Term: ${term}\n`;
+          nodeContent += `  Commit: ${commitIndex}\n`;
+          nodeContent += `  Applied: ${lastApplied}\n`;
+          nodeContent += `  Counter: ${smState.value}\n`;
+          nodeContent += `\n`;
         }
 
         nodesBox.setContent(nodeContent);
@@ -460,7 +416,7 @@ Press 'q' to quit the visualizer at any time.
           `Memory: ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB`,
         ];
 
-        metricsBox.setContent(metricsContent.join("\\n"));
+        metricsBox.setContent(metricsContent.join("\n"));
 
         // Occasionally submit automatic operations
         if (updateCount % 10 === 0) {
@@ -523,7 +479,7 @@ Press 'q' to quit the visualizer at any time.
     const logEntry = `[${timestamp}] ${message}`;
 
     const currentContent = box.getContent();
-    const lines = currentContent.split("\\n").filter((line) => line.trim());
+    const lines = currentContent.split("\n").filter((line) => line.trim());
 
     // Keep only last 10 lines
     if (lines.length >= 10) {
@@ -531,7 +487,7 @@ Press 'q' to quit the visualizer at any time.
     }
 
     lines.push(logEntry);
-    box.setContent(lines.join("\\n"));
+    box.setContent(lines.join("\n"));
 
     // Scroll to bottom
     box.setScrollPerc(100);
@@ -556,4 +512,10 @@ Press 'q' to quit the visualizer at any time.
     await this.clusterManager.cleanup();
     console.log(chalk.green("Visualizer cleanup complete"));
   }
+}
+
+if (import.meta.main) {
+  new ClusterVisualizer().run().catch(() => {
+    process.exitCode = 1;
+  });
 }
