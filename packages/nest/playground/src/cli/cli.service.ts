@@ -1,8 +1,8 @@
 import { Injectable, OnApplicationBootstrap } from "@nestjs/common";
 import { RaftService } from "@usex/raft-nestjs";
-import { LoggerService } from "@/shared/services/logger.service";
+import { LoggerService } from "../shared/services/logger.service";
 import * as readline from "readline";
-import * as chalk from "chalk";
+import chalk from "chalk";
 
 @Injectable()
 export class CliService implements OnApplicationBootstrap {

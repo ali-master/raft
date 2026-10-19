@@ -2,7 +2,7 @@ import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { ConfigService } from "@nestjs/config";
-import * as compression from "compression";
+import compression from "compression";
 import helmet from "helmet";
 import { AppModule } from "./app.module";
 import { Logger } from "@nestjs/common";

@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { RaftService } from "@usex/raft-nestjs";
-import { EventBusService } from "@/shared/services/event-bus.service";
-import { LoggerService } from "@/shared/services/logger.service";
+import { EventBusService } from "../shared/services/event-bus.service";
+import { LoggerService } from "../shared/services/logger.service";
 
 export interface NodeInfo {
   id: string;
