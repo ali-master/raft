@@ -1,11 +1,13 @@
 import { RaftState, RaftEngine } from "@usex/raft";
-import type { RaftNode } from "@usex/raft";
+import type { RaftNode, RaftConfiguration } from "@usex/raft";
 import type { PlaygroundConfig } from "./config";
 import { DEFAULT_PLAYGROUND_CONFIG, createRaftConfig } from "./config";
 import { PlaygroundLogger } from "./logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
 import { KVStateMachine } from "../state-machines/kv-state-machine";
 import Redis from "ioredis";
+import type { PlaygroundDashboard } from "../dashboard/server";
+import { ObservatoryStateMachine } from "../dashboard/commands";
 
 export type StateMachineType = "counter" | "kv";
 
@@ -28,7 +30,7 @@ export interface NodeInfo {
   nodeId: string;
   node: RaftNode;
   stateMachine: CounterStateMachine | KVStateMachine;
-  config: any;
+  config: RaftConfiguration;
   port: number;
   weight?: number;
 }
@@ -47,9 +49,10 @@ export class ClusterManager {
   private nodes: Map<string, NodeInfo> = new Map();
   private raftEngine: RaftEngine;
   private logger: InstanceType<typeof PlaygroundLogger>;
-  private redis: Redis;
+  private readonly blockedLinks = new Set<string>();
   private readonly clusterId: string;
   private readonly config: PlaygroundConfig;
+  private dashboard?: PlaygroundDashboard;
 
   constructor(
     clusterId: string = "playground-cluster",
@@ -59,12 +62,6 @@ export class ClusterManager {
     this.config = config;
     this.raftEngine = new RaftEngine();
     this.logger = new PlaygroundLogger();
-
-    // Setup Redis connection for cleanup
-    this.redis = new Redis({
-      host: config.cluster.redisHost,
-      port: config.cluster.redisPort,
-    });
   }
 
   async createCluster(
@@ -78,9 +75,11 @@ export class ClusterManager {
 
     const nodes: NodeInfo[] = [];
 
-    for (let i = 0; i < size; i++) {
-      const nodeId = `node-${i}`;
-      const nodeInfo = await this.createNode(nodeId, stateMachineType);
+    const peerIds = Array.from({ length: size }, (_, i) => `node-${i}`);
+    for (const nodeId of peerIds) {
+      const config = createRaftConfig(nodeId, this.clusterId, this.config);
+      config.peers = peerIds;
+      const nodeInfo = await this.createNode(nodeId, stateMachineType, config);
       nodes.push(nodeInfo);
     }
 
@@ -118,8 +117,15 @@ export class ClusterManager {
     const nodes: NodeInfo[] = [];
 
     for (const [nodeId, weight] of Object.entries(nodeWeights)) {
-      const nodeInfo = await this.createNode(nodeId, stateMachineType);
-      // Store weight information (in a real implementation, this would be part of the configuration)
+      const config = createRaftConfig(nodeId, this.clusterId, this.config);
+      config.peers = Object.keys(nodeWeights);
+      config.voting = {
+        enableWeighting: true,
+        weights: nodeWeights,
+        defaultWeight: weight,
+        weightMetrics: [],
+      };
+      const nodeInfo = await this.createNode(nodeId, stateMachineType, config);
       nodeInfo.weight = weight;
       nodes.push(nodeInfo);
     }
@@ -149,22 +155,29 @@ export class ClusterManager {
   async createNode(
     nodeId: string,
     stateMachineType: StateMachineType = "counter",
+    raftConfig: RaftConfiguration = createRaftConfig(
+      nodeId,
+      this.clusterId,
+      this.config,
+    ),
   ): Promise<NodeInfo> {
+    await this.enableDashboard();
     this.logger.info(`Creating node ${nodeId}`);
-
-    const raftConfig = createRaftConfig(nodeId, this.clusterId, this.config);
+    raftConfig.peers ??= [...new Set([...this.nodes.keys(), nodeId])];
 
     // Create state machine
     let stateMachine: CounterStateMachine | KVStateMachine;
     switch (stateMachineType) {
       case "counter":
-        stateMachine = new CounterStateMachine(nodeId);
+        stateMachine = this.dashboard?.controls
+          ? new ObservatoryStateMachine(nodeId)
+          : new CounterStateMachine(nodeId);
         break;
       case "kv":
         stateMachine = new KVStateMachine(nodeId, {
           host: this.config.cluster.redisHost,
           port: this.config.cluster.redisPort,
-          db: parseInt(nodeId.split("-")[1]!) + 1, // Use different DB for each node
+          db: 0,
           keyPrefix: `playground:${this.clusterId}:`,
         });
         break;
@@ -174,6 +187,48 @@ export class ClusterManager {
 
     // Create Raft node
     const node = await this.raftEngine.createNode(raftConfig, stateMachine);
+    // Fault injection stays in the playground; running nodes retain their voting membership.
+    const { network } = node as unknown as {
+      network: {
+        sendMessage: (
+          target: string,
+          type: unknown,
+          payload: object,
+        ) => Promise<unknown>;
+      };
+    };
+    const send = network.sendMessage.bind(network);
+    network.sendMessage = async (target, type, payload) => {
+      if (this.blockedLinks.has(`${nodeId}->${target}`)) {
+        this.dashboard?.rpc(nodeId, target, type, payload, "blocked");
+        throw new Error(`Simulated partition: ${nodeId} -> ${target}`);
+      }
+      const start = performance.now();
+      this.dashboard?.rpc(nodeId, target, type, payload, "sent");
+      try {
+        const result = await send(target, type, payload);
+        this.dashboard?.rpc(
+          nodeId,
+          target,
+          type,
+          payload,
+          "received",
+          performance.now() - start,
+        );
+        return result;
+      } catch (error) {
+        this.dashboard?.rpc(
+          nodeId,
+          target,
+          type,
+          payload,
+          "failed",
+          performance.now() - start,
+          String(error),
+        );
+        throw error;
+      }
+    };
 
     const nodeInfo: NodeInfo = {
       nodeId,
@@ -184,7 +239,35 @@ export class ClusterManager {
     };
 
     this.nodes.set(nodeId, nodeInfo);
+    this.dashboard?.observe(nodeInfo);
     return nodeInfo;
+  }
+
+  async enableDashboard(
+    controls = false,
+  ): Promise<PlaygroundDashboard | undefined> {
+    if (this.dashboard) return this.dashboard;
+    if (
+      !controls &&
+      (process.env.RAFT_DASHBOARD === "0" ||
+        process.env.CI ||
+        process.env.VITEST)
+    )
+      return;
+    const { PlaygroundDashboard } = await import("../dashboard/server");
+    const dashboard = new PlaygroundDashboard(this, this.clusterId, controls);
+    try {
+      await dashboard.start({ keepAlive: controls });
+      this.dashboard = dashboard;
+      return dashboard;
+    } catch (error) {
+      if (controls) throw error;
+      this.logger.warn("Could not start the dashboard", undefined, error);
+    }
+  }
+
+  getBlockedLinks(): string[] {
+    return [...this.blockedLinks];
   }
 
   async addNode(
@@ -198,6 +281,10 @@ export class ClusterManager {
 
     // Wait for the new node to be discovered
     await this.delay(2000);
+    const leader = this.getLeader();
+    if (!leader) throw new Error("No leader available for membership change");
+    await leader.node.changeClusterConfiguration([...this.nodes.keys()]);
+    await this.waitForStability();
 
     return nodeInfo;
   }
@@ -208,6 +295,20 @@ export class ClusterManager {
       throw new Error(`Node ${nodeId} not found`);
     }
 
+    let leader = this.getLeader();
+    if (leader?.nodeId === nodeId && this.nodes.size > 1) {
+      const target = this.getFollowers()[0];
+      if (!target)
+        throw new Error("No follower available for leadership transfer");
+      await leader.node.transferLeadership(target.nodeId);
+      await this.waitForStability();
+      leader = this.getLeader();
+    }
+    if (leader && this.nodes.size > 1) {
+      await leader.node.changeClusterConfiguration(
+        [...this.nodes.keys()].filter((id) => id !== nodeId),
+      );
+    }
     await nodeInfo.node.stop();
 
     // Cleanup state machine if it has a cleanup method
@@ -252,13 +353,16 @@ export class ClusterManager {
 
     // Remove the node from the RaftEngine to allow recreation
     this.raftEngine.removeNode(nodeId);
-    await this.delay(1000);
+    if ("cleanup" in nodeInfo.stateMachine)
+      await nodeInfo.stateMachine.cleanup();
 
     // Recreate the node with fresh connections
     const newNodeInfo = await this.createNode(
       nodeId,
       nodeInfo.stateMachine instanceof CounterStateMachine ? "counter" : "kv",
+      nodeInfo.config,
     );
+    if (nodeInfo.weight !== undefined) newNodeInfo.weight = nodeInfo.weight;
 
     // Start the new node
     await newNodeInfo.node.start();
@@ -274,20 +378,28 @@ export class ClusterManager {
   }
 
   getLeader(): NodeInfo | undefined {
-    return this.getAllNodes().find(
-      (node) => node.node.getState() === RaftState.LEADER,
-    );
+    return this.getAllNodes()
+      .filter(
+        (node) =>
+          node.node.isRunning() && node.node.getState() === RaftState.LEADER,
+      )
+      .sort(
+        (left, right) =>
+          right.node.getCurrentTerm() - left.node.getCurrentTerm(),
+      )[0];
   }
 
   getFollowers(): NodeInfo[] {
     return this.getAllNodes().filter(
-      (node) => node.node.getState() === RaftState.FOLLOWER,
+      (node) =>
+        node.node.isRunning() && node.node.getState() === RaftState.FOLLOWER,
     );
   }
 
   getCandidates(): NodeInfo[] {
     return this.getAllNodes().filter(
-      (node) => node.node.getState() === RaftState.CANDIDATE,
+      (node) =>
+        node.node.isRunning() && node.node.getState() === RaftState.CANDIDATE,
     );
   }
 
@@ -310,7 +422,7 @@ export class ClusterManager {
 
     const metrics: ClusterMetrics = {
       totalNodes: allNodes.length,
-      activeNodes: allNodes.length, // Simplified - could check actual health
+      activeNodes: allNodes.filter((info) => info.node.isRunning()).length,
       followers: followers.map((n) => n.nodeId),
       candidates: candidates.map((n) => n.nodeId),
       term,
@@ -331,7 +443,7 @@ export class ClusterManager {
     }
 
     await leader.node.appendLog(command);
-    this.logger.info(
+    this.logger.debug(
       `Appended command to leader ${leader.nodeId}`,
       undefined,
       command,
@@ -349,7 +461,9 @@ export class ClusterManager {
       const leader = this.getLeader();
       const followers = this.getFollowers();
       const candidates = this.getCandidates();
-      const allNodes = this.getAllNodes();
+      const allNodes = this.getAllNodes().filter((info) =>
+        info.node.isRunning(),
+      );
 
       // Check if cluster is stable
       const isStable =
@@ -400,19 +514,10 @@ export class ClusterManager {
   ): Promise<void> {
     this.logger.warn("Simulating network partition");
 
-    // Stop nodes in partition2 to simulate network split
-    for (const nodeId of partition2) {
-      await this.stopNode(nodeId);
-    }
-
-    // Remove partition2 peers from discovery so partition1 nodes don't waste
-    // time on brpop timeouts trying to reach them (brpop calls serialize on
-    // a single Redis connection, making each dead peer add 2s latency)
-    for (const nodeId of partition2) {
-      try {
-        await this.redis.del(`raft:cluster:${this.clusterId}:node:${nodeId}`);
-      } catch (_error) {
-        // Ignore cleanup errors
+    for (const left of partition1) {
+      for (const right of partition2) {
+        this.blockedLinks.add(`${left}->${right}`);
+        this.blockedLinks.add(`${right}->${left}`);
       }
     }
 
@@ -424,16 +529,12 @@ export class ClusterManager {
   async healNetworkPartition(partition2: string[]): Promise<void> {
     this.logger.info("Healing network partition");
 
-    // Use restartNode instead of startNode because stop() closes the Redis
-    // connection, so the existing node instance can't be reused
-    for (const nodeId of partition2) {
-      await this.restartNode(nodeId);
+    for (const link of this.blockedLinks) {
+      const [from, to] = link.split("->");
+      if (partition2.includes(from!) || partition2.includes(to!))
+        this.blockedLinks.delete(link);
     }
-
-    // Longer timeout for post-partition stabilization: restarting nodes takes
-    // ~2s each, then re-election rounds take 4+ seconds due to brpop
-    // serialization on the shared Redis connection
-    await this.waitForStability(20000);
+    if (this.blockedLinks.size === 0) await this.waitForStability(20000);
     this.logger.success("Network partition healed");
   }
 
@@ -467,25 +568,32 @@ export class ClusterManager {
     // Brief pause for any lingering Redis operations to settle
     await this.delay(500);
 
-    // Step 2: Clear all Redis data for this cluster
+    // Step 2: Clear only data owned by this playground cluster.
+    const redis = new Redis({
+      host: this.config.cluster.redisHost,
+      port: this.config.cluster.redisPort,
+    });
     try {
       const patterns = [
         `raft:cluster:${this.clusterId}:node:*`,
         `raft:cluster:${this.clusterId}:queue:*`,
         `raft:cluster:${this.clusterId}:responses:*`,
-        `node-*:state`, // Clear persisted node states
+        `playground:${this.clusterId}:*`,
+        `raft:${this.clusterId}:*`,
       ];
 
       for (const pattern of patterns) {
-        const keys = await this.redis.keys(pattern);
+        const keys = await redis.keys(pattern);
         if (keys.length > 0) {
-          await this.redis.del(...keys);
+          await redis.del(...keys);
         }
       }
 
       this.logger.debug(`Cleared Redis data for cluster ${this.clusterId}`);
     } catch (_error) {
       this.logger.warn("Failed to clear Redis data", undefined, _error);
+    } finally {
+      redis.disconnect();
     }
 
     // Step 3: Clear filesystem persistence data
@@ -525,7 +633,9 @@ export class ClusterManager {
     }
 
     // Step 5: Clear internal state
+    if (this.nodes.size) await this.dashboard?.complete();
     this.nodes.clear();
+    this.blockedLinks.clear();
     this.logger.success("Cluster cleanup completed");
   }
 
