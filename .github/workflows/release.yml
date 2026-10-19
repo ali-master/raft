@@ -16,15 +16,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - run: npm i -g --force corepack && corepack enable
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: lts/*
-          cache: pnpm
+          bun-version-file: .bun-version
 
       - name: 📦 Install dependencies
-        run: pnpm install
+        run: bun install --frozen-lockfile
 
-      - run: pnpm changelogithub
+      - run: bun run changelogithub
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

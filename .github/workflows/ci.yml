@@ -16,43 +16,39 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - run: npm i -g --force corepack && corepack enable
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: lts/*
-          cache: pnpm
+          bun-version-file: .bun-version
 
       - name: 📦 Install dependencies
-        run: pnpm install
+        run: bun install --frozen-lockfile
 
       - name: 🛠 Build project
-        run: pnpm build
+        run: bun run build
 
       - name: 🔠 Lint project
-        run: pnpm lint
+        run: bun run lint
 
   test:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-      - run: npm i -g --force corepack && corepack enable
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: lts/*
-          cache: pnpm
+          bun-version-file: .bun-version
 
       - name: 📦 Install dependencies
-        run: pnpm install
+        run: bun install --frozen-lockfile
 
       - name: 🛠 Build project
-        run: pnpm build
+        run: bun run build
 
       - name: 💪 Test types
-        run: pnpm test:types
+        run: bun run test:types
 
       - name: 🧪 Test project
-        run: pnpm test:coverage
+        run: bun run test:coverage
 
       - name: 🟩 Coverage
         uses: codecov/codecov-action@v5
