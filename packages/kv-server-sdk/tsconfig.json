@@ -1,7 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "commonjs",
+    "module": "Node20",
+    "moduleResolution": "node16",
     "declaration": true,
     "strict": true,
     "esModuleInterop": true,

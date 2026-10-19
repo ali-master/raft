@@ -13,35 +13,36 @@
     "url": "git+https://github.com/ali-master/raft.git",
     "directory": "packages/kv-server-sdk"
   },
-  "main": "lib/index.js",
+  "main": "lib/client/index.js",
   "scripts": {
-    "build": "[ -d src/client ] && tsc || echo 'Skipping build: run generate:client first'",
+    "build": "if [ -f src/client/index.ts ]; then tsc; else echo \"Skipping build: run generate:client first\"; fi",
     "generate:client": "openapi-ts",
-    "test": "vitest",
+    "test": "vitest run --passWithNoTests",
     "release": "standard-version",
-    "postrelease": "git push --follow-tags origin master && npm publish",
+    "postrelease": "git push --follow-tags origin master && bun publish",
     "release:beta": "standard-version --prerelease beta",
-    "postrelease:beta": "git push --follow-tags origin master && npm publish --tag beta"
+    "postrelease:beta": "git push --follow-tags origin master && bun publish --tag beta"
   },
   "dependencies": {
-    "@hey-api/client-fetch": "^0.13.1",
-    "load-script": "^2.0.0"
+    "load-script": "^2.0.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "standard-version": "^9.5.0",
-    "@hey-api/openapi-ts": "^0.93.1",
-    "@testing-library/dom": "^10.4.1",
-    "happy-dom": "20.8.3",
-    "msw": "^2.12.10",
-    "typescript": "^5.9.3",
-    "vitest": "~4.0.18"
+    "@hey-api/openapi-ts": "^0.99.0",
+    "@testing-library/dom": "^10.4.2",
+    "happy-dom": "21.0.3",
+    "msw": "^3.0.3",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "~5.0.5"
   },
   "engines": {
-    "node": ">=23.11.x",
-    "bun": ">=1.2.x"
+    "node": ">=22.22.3",
+    "bun": ">=1.4.3"
   },
-  "packageManager": "pnpm@10.30.3",
+  "packageManager": "bun@1.4.3",
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "types": "lib/client/index.d.ts"
 }
