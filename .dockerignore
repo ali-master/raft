@@ -1,0 +1,12 @@
+.git
+.idea
+.vscode
+venv
+**/node_modules
+**/dist
+**/lib
+**/coverage
+**/*.env*
+**/*.log*
+**/*.tsbuildinfo
+**/data

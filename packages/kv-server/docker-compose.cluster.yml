@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     ports:
       - "6379:6379"
     volumes:
@@ -10,7 +10,9 @@ services:
     command: redis-server --appendonly yes
 
   kv-node-1:
-    build: .
+    build:
+      context: ../..
+      dockerfile: packages/kv-server/Dockerfile
     environment:
       - PORT=3001
       - REDIS_HOST=redis
@@ -30,7 +32,9 @@ services:
     restart: unless-stopped
 
   kv-node-2:
-    build: .
+    build:
+      context: ../..
+      dockerfile: packages/kv-server/Dockerfile
     environment:
       - PORT=3002
       - REDIS_HOST=redis
@@ -50,7 +54,9 @@ services:
     restart: unless-stopped
 
   kv-node-3:
-    build: .
+    build:
+      context: ../..
+      dockerfile: packages/kv-server/Dockerfile
     environment:
       - PORT=3003
       - REDIS_HOST=redis
