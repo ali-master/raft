@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f2eb" />
+    <meta
+      name="description"
+      content="Many nodes. One shared state. Explore Raft, a TypeScript consensus toolkit with a Bun-powered observatory, NestJS integration, and a key-value server."
+    />
+    <meta property="og:title" content="Raft — Many nodes. One shared state." />
+    <meta
+      property="og:description"
+      content="A TypeScript consensus toolkit. Build it. Break it. See how agreement happens."
+    />
+    <meta property="og:image" content="./social-preview.png" />
+    <meta property="og:type" content="website" />
+    <title>Raft — Many nodes. One shared state.</title>
+    <link rel="icon" href="./logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./landing.css" />
+    <script src="./landing.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="reading-progress" aria-hidden="true"></div>
+    <header class="site-header">
+      <a class="wordmark" href="#top" aria-label="Raft home"
+        ><img src="./logo-alt.svg" width="44" height="44" alt="" /><span
+          >raft<span class="wordmark-dot">.</span></span
+        ></a
+      >
+      <nav aria-label="Main navigation">
+        <a href="#idea">The idea</a>
+        <a href="#observatory">Observatory</a>
+        <a href="#ecosystem">Ecosystem</a>
+      </nav>
+      <a class="header-link" href="https://github.com/ali-master/raft"
+        >Source on GitHub <span aria-hidden="true">↗</span></a
+      >
+    </header>
+
+    <main id="main">
+      <section class="hero section-shell" id="top" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow hero-enter">
+            <span class="status-dot" aria-hidden="true"></span> A TypeScript
+            consensus toolkit
+          </p>
+          <h1 id="hero-title" class="hero-enter">
+            Many nodes.<br />One <em>shared</em><br />state<span class="ember"
+              >.</span
+            >
+          </h1>
+          <p class="hero-description hero-enter">
+            Independent by nature.<br />Together, by agreement.
+          </p>
+          <div class="hero-actions hero-enter">
+            <a class="button button-dark" href="#get-started"
+              >Start exploring <span aria-hidden="true">↗</span></a
+            >
+            <a class="text-link" href="#observatory"
+              ><span class="play-mini" aria-hidden="true">▶</span> Watch the
+              film <span class="link-detail">01:00</span></a
+            >
+          </div>
+          <p class="hero-footnote hero-enter">
+            Open source. Built with Bun. Made to be explored.
+          </p>
+        </div>
+
+        <div
+          class="cluster-art hero-enter"
+          aria-label="Interactive illustration of a five-node cluster"
+        >
+          <div class="art-coordinate coordinate-top" aria-hidden="true">
+            FIG. 01 <span>THE ART OF AGREEMENT</span>
+          </div>
+          <div class="cluster-stage" id="cluster-stage">
+            <div class="orbit orbit-outer" aria-hidden="true"></div>
+            <div class="orbit orbit-inner" aria-hidden="true"></div>
+            <div class="orbit-cross" aria-hidden="true"></div>
+            <svg
+              class="cluster-wires"
+              id="cluster-wires"
+              viewBox="0 0 600 540"
+              aria-hidden="true"
+            >
+              <g id="wire-paths"></g>
+              <g id="wire-packets"></g>
+            </svg>
+            <div class="cluster-center-label" aria-hidden="true">
+              <span>QUORUM</span><strong>03<span>/05</span></strong>
+            </div>
+            <button
+              class="cluster-node is-leader"
+              style="--x: 52%; --y: 36%"
+              data-node="0"
+              aria-label="Node 00, current illustrative leader"
+              aria-pressed="true"
+            >
+              <span class="node-object"
+                ><span class="node-face"
+                  ><span class="node-id">00</span
+                  ><span class="node-indicator"></span></span
+              ></span>
+              <span class="node-caption"
+                >NODE 00 <span class="node-role">LEADER</span></span
+              >
+            </button>
+            <button
+              class="cluster-node"
+              style="--x: 20%; --y: 18%"
+              data-node="1"
+              aria-label="Make node 01 the illustrative leader"
+              aria-pressed="false"
+            >
+              <span class="node-object"
+                ><span class="node-face"
+                  ><span class="node-id">01</span
+                  ><span class="node-indicator"></span></span
+              ></span>
+              <span class="node-caption"
+                >NODE 01 <span class="node-role">FOLLOWER</span></span
+              >
+            </button>
+            <button
+              class="cluster-node"
+              style="--x: 83%; --y: 22%"
+              data-node="2"
+              aria-label="Make node 02 the illustrative leader"
+              aria-pressed="false"
+            >
+              <span class="node-object"
+                ><span class="node-face"
+                  ><span class="node-id">02</span
+                  ><span class="node-indicator"></span></span
+              ></span>
+              <span class="node-caption"
+                >NODE 02 <span class="node-role">FOLLOWER</span></span
+              >
+            </button>
+            <button
+              class="cluster-node"
+              style="--x: 23%; --y: 69%"
+              data-node="3"
+              aria-label="Make node 03 the illustrative leader"
+              aria-pressed="false"
+            >
+              <span class="node-object"
+                ><span class="node-face"
+                  ><span class="node-id">03</span
+                  ><span class="node-indicator"></span></span
+              ></span>
+              <span class="node-caption"
+                >NODE 03 <span class="node-role">FOLLOWER</span></span
+              >
+            </button>
+            <button
+              class="cluster-node"
+              style="--x: 78%; --y: 74%"
+              data-node="4"
+              aria-label="Make node 04 the illustrative leader"
+              aria-pressed="false"
+            >
+              <span class="node-object"
+                ><span class="node-face"
+                  ><span class="node-id">04</span
+                  ><span class="node-indicator"></span></span
+              ></span>
+              <span class="node-caption"
+                >NODE 04 <span class="node-role">FOLLOWER</span></span
+              >
+            </button>
+          </div>
+          <div class="cluster-controls">
+            <div>
+              <span class="micro-label">A CONCEPT, IN MOTION</span>
+              <p id="cluster-message" role="status">
+                Select a node. Move the leadership.
+              </p>
+            </div>
+            <button
+              class="icon-button motion-toggle"
+              type="button"
+              aria-label="Pause animations"
+              aria-pressed="false"
+            >
+              <span class="motion-icon" aria-hidden="true">Ⅱ</span>
+            </button>
+          </div>
+          <p class="illustration-note">
+            Illustrative interaction · The real cluster is in the Observatory.
+          </p>
+        </div>
+        <a class="scroll-cue" href="#idea"
+          ><span aria-hidden="true">↓</span> A LITTLE COORDINATION. A LOT OF
+          POSSIBILITY.</a
+        >
+      </section>
+
+      <section
+        class="idea section-shell"
+        id="idea"
+        aria-labelledby="idea-title"
+      >
+        <div class="section-heading" data-reveal>
+          <p class="eyebrow">01 / THE IDEA</p>
+          <h2 id="idea-title">
+            Agreement isn’t magic.<br />It’s a <em>sequence.</em>
+          </h2>
+          <p class="section-intro">
+            Raft makes the journey from an individual proposal to shared state
+            something you can build, inspect, and understand.
+          </p>
+        </div>
+        <div class="sequence" data-reveal>
+          <article class="sequence-step">
+            <div class="sequence-index">
+              <span>01</span
+              ><span class="sequence-line" aria-hidden="true"></span>
+            </div>
+            <h3>A leader emerges.</h3>
+            <p>
+              Leader election gives the cluster a place to coordinate. When
+              leadership changes, a new term begins.
+            </p>
+            <div class="sequence-glyph election-glyph" aria-hidden="true">
+              <i></i><i class="selected"></i><i></i><i></i><i></i>
+            </div>
+          </article>
+          <article class="sequence-step">
+            <div class="sequence-index">
+              <span>02</span
+              ><span class="sequence-line" aria-hidden="true"></span>
+            </div>
+            <h3>A proposal travels.</h3>
+            <p>
+              The leader proposes an entry. Members replicate it in their logs,
+              working toward a quorum.
+            </p>
+            <div class="sequence-glyph log-glyph" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><span>→</span>
+            </div>
+          </article>
+          <article class="sequence-step">
+            <div class="sequence-index">
+              <span>03</span
+              ><span class="sequence-line" aria-hidden="true"></span>
+            </div>
+            <h3>State moves forward.</h3>
+            <p>
+              Committed entries are applied to state machines. The shared
+              history becomes something useful.
+            </p>
+            <div class="sequence-glyph state-glyph" aria-hidden="true">
+              <span>00</span><span>→</span><span>01</span><i>✓</i>
+            </div>
+          </article>
+        </div>
+        <a
+          class="understated-link"
+          href="https://github.com/ali-master/raft/blob/master/docs/architecture.md"
+          >Inside the architecture <span aria-hidden="true">↗</span></a
+        >
+      </section>
+
+      <section
+        class="observatory"
+        id="observatory"
+        aria-labelledby="observatory-title"
+      >
+        <div class="section-shell">
+          <div class="observatory-heading" data-reveal>
+            <div>
+              <p class="eyebrow">02 / THE OBSERVATORY</p>
+              <h2 id="observatory-title">See the <em>invisible.</em></h2>
+            </div>
+            <p>
+              Every election. Every instruction.<br />A live view into a
+              distributed world.
+            </p>
+          </div>
+          <div class="film-frame" data-reveal>
+            <div class="film-topline">
+              <span><i></i> RAFT OBSERVATORY</span
+              ><span>FIVE NODES. ONE SHARED STATE.</span
+              ><span>1080P / 01:00</span>
+            </div>
+            <div class="film-stage">
+              <video
+                id="observatory-film"
+                controls
+                playsinline
+                preload="none"
+                poster="./observatory-poster.jpg"
+                aria-label="One-minute Full HD tour of the five-node Raft Observatory"
+              >
+                <source src="./raft-observatory.mp4" type="video/mp4" />
+                <p>
+                  <a href="./raft-observatory.mp4"
+                    >Download the dashboard film.</a
+                  >
+                </p>
+              </video>
+              <button
+                class="film-play"
+                id="film-play"
+                type="button"
+                aria-label="Play the Observatory film"
+              >
+                <span class="film-play-symbol" aria-hidden="true">▶</span
+                ><span>Watch it happen<small>THE ONE-MINUTE TOUR</small></span>
+              </button>
+            </div>
+            <div class="film-caption">
+              <span>Real dashboard. Real operations.</span
+              ><a href="./raft-observatory.mp4" download
+                >Download film <span aria-hidden="true">↓</span></a
+              >
+            </div>
+          </div>
+          <p id="film-message" class="sr-only" role="status"></p>
+          <div class="observatory-details" data-reveal>
+            <article>
+              <span class="detail-icon" aria-hidden="true">↗</span>
+              <h3>Follow the leadership.</h3>
+              <p>
+                Watch elections, transfer leadership, and explore what happens
+                when nodes stop or networks split.
+              </p>
+            </article>
+            <article>
+              <span class="detail-icon" aria-hidden="true">⌘</span>
+              <h3>Trace an instruction.</h3>
+              <p>
+                Send a node report or SHA-256 probe. Follow commitment,
+                destination execution, and the actual response.
+              </p>
+            </article>
+            <article>
+              <span class="detail-icon" aria-hidden="true">⌁</span>
+              <h3>Read the pulse.</h3>
+              <p>
+                Inspect per-node RPCs, response latency, and replication lag,
+                streamed to the interface with SSE.
+              </p>
+            </article>
+          </div>
+          <div class="observatory-end">
+            <span class="micro-label">BUN + REACT + TAILWIND + SHADCN/UI</span
+            ><a
+              class="text-link"
+              href="https://github.com/ali-master/raft/tree/master/packages/raft/playground"
+              >Explore the playground <span aria-hidden="true">↗</span></a
+            >
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="ecosystem section-shell"
+        id="ecosystem"
+        aria-labelledby="ecosystem-title"
+      >
+        <div class="ecosystem-intro" data-reveal>
+          <div>
+            <p class="eyebrow">03 / THE ECOSYSTEM</p>
+            <h2 id="ecosystem-title">
+              Small pieces.<br /><em>Shared purpose.</em>
+            </h2>
+          </div>
+          <p>
+            A consensus engine at the center.<br />A family of packages around
+            it.<br />Pick your point of entry.
+          </p>
+        </div>
+        <div class="package-directory" data-reveal>
+          <a
+            class="package-row"
+            href="https://github.com/ali-master/raft/tree/master/packages/raft"
+            ><span class="package-number">01</span>
+            <div class="package-name">
+              <h3>The engine</h3>
+              <code>@usex/raft</code>
+            </div>
+            <p>Elections, replication, snapshots, and state machines.</p>
+            <span class="package-tag">CORE</span
+            ><span class="package-arrow" aria-hidden="true">↗</span></a
+          >
+          <a
+            class="package-row"
+            href="https://github.com/ali-master/raft/tree/master/packages/nest"
+            ><span class="package-number">02</span>
+            <div class="package-name">
+              <h3>A familiar framework</h3>
+              <code>@usex/raft-nestjs</code>
+            </div>
+            <p>Modules, decorators, lifecycle, and dependency injection.</p>
+            <span class="package-tag">NESTJS</span
+            ><span class="package-arrow" aria-hidden="true">↗</span></a
+          >
+          <a
+            class="package-row"
+            href="https://github.com/ali-master/raft/tree/master/packages/kv-server"
+            ><span class="package-number">03</span>
+            <div class="package-name">
+              <h3>State, made tangible</h3>
+              <code>@usex/raft-kv-server</code>
+            </div>
+            <p>A key-value service with a Raft-backed write path.</p>
+            <span class="package-tag">SERVER</span
+            ><span class="package-arrow" aria-hidden="true">↗</span></a
+          >
+          <a
+            class="package-row"
+            href="https://github.com/ali-master/raft/tree/master/packages/kv-server-sdk"
+            ><span class="package-number">04</span>
+            <div class="package-name">
+              <h3>The client connection</h3>
+              <code>@usex/kv-server-sdk</code>
+            </div>
+            <p>Generate a typed client from the server’s OpenAPI contract.</p>
+            <span class="package-tag">SDK</span
+            ><span class="package-arrow" aria-hidden="true">↗</span></a
+          >
+          <a
+            class="package-row"
+            href="https://github.com/ali-master/raft/tree/master/packages/raft/playground"
+            ><span class="package-number">05</span>
+            <div class="package-name">
+              <h3>A window into Raft</h3>
+              <code>@usex/raft-playground</code>
+            </div>
+            <p>The live Observatory, a CLI, and 14 executable scenarios.</p>
+            <span class="package-tag">EXPLORE</span
+            ><span class="package-arrow" aria-hidden="true">↗</span></a
+          >
+          <a
+            class="package-row"
+            href="https://github.com/ali-master/raft/tree/master/packages/nest/playground"
+            ><span class="package-number">06</span>
+            <div class="package-name">
+              <h3>Ideas in practice</h3>
+              <code>@usex/raft-nestjs-playground</code>
+            </div>
+            <p>Experiments with caching, locks, task queues, and more.</p>
+            <span class="package-tag">LEARN</span
+            ><span class="package-arrow" aria-hidden="true">↗</span></a
+          >
+        </div>
+      </section>
+
+      <section
+        class="start-section section-shell"
+        id="get-started"
+        aria-labelledby="start-title"
+      >
+        <div class="start-panel" data-reveal>
+          <div class="start-copy">
+            <p class="eyebrow">04 / YOUR TURN</p>
+            <h2 id="start-title">Make room<br />for <em>agreement.</em></h2>
+            <p>
+              Start with a question.<br />Open the playground.<br />See where
+              the nodes take you.
+            </p>
+            <a
+              class="text-link"
+              href="https://github.com/ali-master/raft#quick-start"
+              >Read the quick start <span aria-hidden="true">↗</span></a
+            >
+          </div>
+          <div class="terminal">
+            <div class="terminal-header">
+              <div class="terminal-dots" aria-hidden="true">
+                <i></i><i></i><i></i>
+              </div>
+              <span>YOUR NEXT EXPERIMENT</span>
+            </div>
+            <div
+              class="command-tabs"
+              role="tablist"
+              aria-label="Getting started options"
+            >
+              <button
+                id="playground-tab"
+                role="tab"
+                aria-selected="true"
+                aria-controls="command-panel"
+                tabindex="0"
+                data-command="playground"
+              >
+                Playground</button
+              ><button
+                id="library-tab"
+                role="tab"
+                aria-selected="false"
+                aria-controls="command-panel"
+                tabindex="-1"
+                data-command="library"
+              >
+                Core library
+              </button>
+            </div>
+            <div
+              id="command-panel"
+              role="tabpanel"
+              aria-labelledby="playground-tab"
+              tabindex="0"
+            >
+              <pre><code id="install-command">bun install --frozen-lockfile
+bun run build
+bun run --cwd packages/raft/playground dashboard</code></pre>
+            </div>
+            <div class="terminal-bottom">
+              <span id="command-context">From a cloned checkout</span
+              ><button id="copy-command" type="button">
+                <span aria-hidden="true">▣</span>
+                <span id="copy-label">Copy commands</span>
+              </button>
+            </div>
+            <p id="command-note">
+              Bun 1.4.3+ and Redis on localhost:6379. Then open the Observatory
+              at localhost:3210.
+            </p>
+            <span class="sr-only" id="copy-status" role="status"></span>
+          </div>
+        </div>
+        <aside class="project-note">
+          <span class="status-dot" aria-hidden="true"></span>
+          <p>
+            <strong>Built in public. Still evolving.</strong> APIs may change.
+            The current audit documents unresolved correctness issues.
+          </p>
+          <a
+            href="https://github.com/ali-master/raft/blob/master/docs/raft-spec-audit.md"
+            >Read the audit <span aria-hidden="true">↗</span></a
+          >
+        </aside>
+      </section>
+    </main>
+
+    <footer class="site-footer section-shell">
+      <div class="footer-top">
+        <a class="wordmark" href="#top" aria-label="Back to top"
+          ><img src="./logo-alt.svg" width="44" height="44" alt="" /><span
+            >raft<span class="wordmark-dot">.</span></span
+          ></a
+        >
+        <p>Independent nodes.<br />A shared way forward.</p>
+        <a class="back-top" href="#top" aria-label="Back to top">↑</a>
+      </div>
+      <div class="footer-bottom">
+        <span
+          >An open-source project by
+          <a href="https://github.com/ali-master">Ali Torki</a>.</span
+        >
+        <div>
+          <a href="https://github.com/ali-master/raft/blob/master/LICENCE"
+            >MIT License</a
+          ><a href="https://github.com/ali-master/raft/issues">Contribute ↗</a
+          ><button
+            class="motion-toggle footer-motion"
+            type="button"
+            aria-label="Pause animations"
+            aria-pressed="false"
+          >
+            Motion <span class="motion-label">on</span>
+          </button>
+        </div>
+      </div>
+    </footer>
+    <noscript
+      ><p class="no-script">
+        The cluster illustration needs JavaScript for interaction. The film,
+        documentation, and installation commands remain available.
+      </p></noscript
+    >
+  </body>
+</html>
