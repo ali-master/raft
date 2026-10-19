@@ -30,12 +30,13 @@ export class ConcurrentWritesShowcase {
       await this.demonstrateConcurrentWritesWithNetworkIssues();
 
       this.logger.result(
-        true,
+        await this.verifyConsistency(),
         "All concurrent writes scenarios completed successfully!",
       );
     } catch (_error) {
       this.logger.error("Concurrent writes showcase failed", undefined, _error);
       this.logger.result(false, "Concurrent writes demonstration failed");
+      throw _error;
     } finally {
       await this.cleanup();
     }
@@ -109,7 +110,7 @@ export class ConcurrentWritesShowcase {
       }
     }
 
-    this.logger.info(`\\nTotal operations: ${totalSuccess + totalFailures}`);
+    this.logger.info(`\nTotal operations: ${totalSuccess + totalFailures}`);
     this.logger.info(`Successful: ${totalSuccess}, Failed: ${totalFailures}`);
     this.logger.info(
       `Success rate: ${((totalSuccess / (totalSuccess + totalFailures)) * 100).toFixed(2)}%`,
@@ -175,7 +176,7 @@ export class ConcurrentWritesShowcase {
       await this.delay(500);
     }
 
-    this.logger.info(`\\nHigh concurrency results:`);
+    this.logger.info(`\nHigh concurrency results:`);
     this.logger.info(`Total operations: ${totalOperations}`);
     this.logger.info(`Completed: ${completedOperations}`);
     this.logger.info(`Successful: ${successfulOperations}`);
@@ -248,7 +249,7 @@ export class ConcurrentWritesShowcase {
       }
     }
 
-    this.logger.info(`\\nConcurrent writes with leadership changes:`);
+    this.logger.info(`\nConcurrent writes with leadership changes:`);
     this.logger.info(`Successful operations: ${totalSuccess}`);
     this.logger.info(`Failed operations: ${totalFailures}`);
     this.logger.info(
@@ -291,7 +292,7 @@ export class ConcurrentWritesShowcase {
     // Wait for all pattern clients to complete
     const results = await Promise.allSettled(clientPromises);
 
-    this.logger.info("\\nClient pattern results:");
+    this.logger.info("\nClient pattern results:");
     let totalOps = 0;
     let successfulOps = 0;
 
@@ -317,7 +318,7 @@ export class ConcurrentWritesShowcase {
     }
 
     this.logger.info(
-      `\\nOverall: ${successfulOps}/${totalOps} operations successful`,
+      `\nOverall: ${successfulOps}/${totalOps} operations successful`,
     );
 
     // Verify consistency
@@ -391,7 +392,7 @@ export class ConcurrentWritesShowcase {
       }
     }
 
-    this.logger.info(`\\nConcurrent writes with network issues:`);
+    this.logger.info(`\nConcurrent writes with network issues:`);
     this.logger.info(`Successful operations: ${totalSuccess}`);
     this.logger.info(`Failed operations: ${totalFailures}`);
     this.logger.info(
@@ -630,7 +631,7 @@ export class ConcurrentWritesShowcase {
 
     const isConsistent = uniqueValues.size === 1 && uniqueVersions.size === 1;
 
-    this.logger.info("\\n🔍 Consistency Check:");
+    this.logger.info("\n🔍 Consistency Check:");
     for (const state of stateMachineStates) {
       console.log(
         `  ${state.nodeId}: Value=${state.value}, Version=${state.version}`,
@@ -644,7 +645,7 @@ export class ConcurrentWritesShowcase {
     const nodes = this.clusterManager.getAllNodes();
     const metrics = await this.clusterManager.getMetrics();
 
-    console.log(chalk.cyan("\\n  📊 Cluster State:"));
+    console.log(chalk.cyan("\n  📊 Cluster State:"));
     console.log(`    Leader: ${metrics.leader || "None"}`);
     console.log(`    Term: ${metrics.term}`);
     console.log(`    Active Nodes: ${nodes.length}`);
@@ -659,7 +660,7 @@ export class ConcurrentWritesShowcase {
   private async displayFinalState(): Promise<void> {
     const nodes = this.clusterManager.getAllNodes();
 
-    console.log(chalk.cyan("\\n  📋 Final State Machine Values:"));
+    console.log(chalk.cyan("\n  📋 Final State Machine Values:"));
     for (const nodeInfo of nodes) {
       const sm = nodeInfo.stateMachine as CounterStateMachine;
       const state = sm.getState();
@@ -679,4 +680,12 @@ export class ConcurrentWritesShowcase {
   }
 }
 
-new ConcurrentWritesShowcase().run().finally(() => process.exit(0));
+if (import.meta.main) {
+  new ConcurrentWritesShowcase().run().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
+}

@@ -36,6 +36,7 @@ export class FailuresScenariosShowcase {
     } catch (_error) {
       this.logger.error("Failure scenarios showcase failed", undefined, _error);
       this.logger.result(false, "Failure scenarios demonstration failed");
+      throw _error;
     } finally {
       await this.cleanup();
     }
@@ -400,13 +401,10 @@ export class FailuresScenariosShowcase {
     this.logger.step(7, "Recovery Scenarios");
     this.logger.info("Testing various recovery patterns...");
 
-    // Get current failed nodes
-    const allNodeIds = ["node-0", "node-1", "node-2", "node-3", "node-4"];
-    const activeNodes = this.clusterManager.getAllNodes();
-    const activeNodeIds = activeNodes.map((n) => n.nodeId);
-    const failedNodeIds = allNodeIds.filter(
-      (id) => !activeNodeIds.includes(id),
-    );
+    const failedNodeIds = this.clusterManager
+      .getAllNodes()
+      .filter(({ node }) => !node.isRunning())
+      .map(({ nodeId }) => nodeId);
 
     if (failedNodeIds.length === 0) {
       this.logger.info("No failed nodes to recover");
@@ -425,6 +423,7 @@ export class FailuresScenariosShowcase {
         await this.verifyNodeRecovery(nodeId);
       } catch (_error) {
         this.logger.warn(`Failed to recover ${nodeId}`, undefined, _error);
+        throw _error;
       }
     }
 
@@ -442,8 +441,7 @@ export class FailuresScenariosShowcase {
   private async verifyNodeRecovery(nodeId: string): Promise<void> {
     const node = this.clusterManager.getNode(nodeId);
     if (!node) {
-      this.logger.error(`Node ${nodeId} not found for recovery verification`);
-      return;
+      throw new Error(`Node ${nodeId} not found for recovery verification`);
     }
 
     // Check if node is running and has reasonable state
@@ -511,6 +509,7 @@ export class FailuresScenariosShowcase {
           `  ${marker} ${state.nodeId}: value=${state.value}, version=${state.version}`,
         );
       });
+      throw new Error("Recovered cluster is inconsistent");
     }
   }
 
@@ -538,4 +537,12 @@ export class FailuresScenariosShowcase {
   }
 }
 
-new FailuresScenariosShowcase().run().finally(() => process.exit(0));
+if (import.meta.main) {
+  new FailuresScenariosShowcase().run().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
+}

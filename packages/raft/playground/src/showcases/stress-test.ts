@@ -1,5 +1,4 @@
 import chalk from "chalk";
-import { RaftState } from "@usex/raft";
 import { ClusterManager } from "../utils/cluster-manager";
 import { PlaygroundLogger } from "../utils/logger";
 import { CounterStateMachine } from "../state-machines/counter-state-machine";
@@ -55,12 +54,13 @@ export class StressTestShowcase {
       await this.generateStressReport();
 
       this.logger.result(
-        true,
+        await this.verifyConsistency(),
         "All stress test scenarios completed successfully!",
       );
     } catch (_error) {
       this.logger.error("Stress test showcase failed", undefined, _error);
       this.logger.result(false, "Stress testing failed");
+      throw _error;
     } finally {
       this.isStressing = false;
       await this.cleanup();
@@ -104,7 +104,7 @@ export class StressTestShowcase {
     const batchSizes = [10, 50, 100, 200];
 
     for (const batchSize of batchSizes) {
-      this.logger.info(`\\nTesting batch size: ${batchSize}`);
+      this.logger.info(`\nTesting batch size: ${batchSize}`);
 
       const startTime = Date.now();
       const endTime = startTime + testDuration;
@@ -196,7 +196,7 @@ export class StressTestShowcase {
     const operationsPerClient = 20;
 
     for (const clientCount of clientCounts) {
-      this.logger.info(`\\nTesting ${clientCount} concurrent clients...`);
+      this.logger.info(`\nTesting ${clientCount} concurrent clients...`);
 
       const startTime = Date.now();
       const clientPromises = [];
@@ -267,7 +267,7 @@ export class StressTestShowcase {
     const operationCounts = [1000, 2000, 5000, 10000];
 
     for (const opCount of operationCounts) {
-      this.logger.info(`\\nMemory test with ${opCount} operations...`);
+      this.logger.info(`\nMemory test with ${opCount} operations...`);
 
       const startTime = Date.now();
       const startMemory = process.memoryUsage();
@@ -308,7 +308,7 @@ export class StressTestShowcase {
         `${(avgMemoryPerOp / 1024).toFixed(2)} KB`,
       );
 
-      console.log(chalk.yellow("\\nMemory after operations:"));
+      console.log(chalk.yellow("\nMemory after operations:"));
       this.displayMemoryUsage(endMemory);
 
       // Store results
@@ -322,7 +322,7 @@ export class StressTestShowcase {
 
       // Force garbage collection if available
       if (global.gc) {
-        console.log(chalk.blue("\\nForcing garbage collection..."));
+        console.log(chalk.blue("\nForcing garbage collection..."));
         global.gc();
         const postGCMemory = process.memoryUsage();
         this.displayMemoryUsage(postGCMemory);
@@ -371,7 +371,7 @@ export class StressTestShowcase {
     const averageThroughput = Math.round((successCount / totalDuration) * 1000);
     const resilienceRatio = successCount / failureEvents;
 
-    this.logger.info("\\nChaos stress test results:");
+    this.logger.info("\nChaos stress test results:");
     this.logger.metric(
       "Duration",
       `${(totalDuration / 1000).toFixed(1)} seconds`,
@@ -479,7 +479,7 @@ export class StressTestShowcase {
     );
     const errorRate = ((errorOperations / totalOperations) * 100).toFixed(2);
 
-    this.logger.info("\\nEndurance test results:");
+    this.logger.info("\nEndurance test results:");
     this.logger.metric(
       "Duration",
       `${(actualDuration / 1000).toFixed(1)} seconds`,
@@ -586,7 +586,7 @@ export class StressTestShowcase {
       // Randomly fail a node
       const availableNodes = allNodes.filter((id) => {
         const node = this.clusterManager.getNode(id);
-        return node && node.node.getState() !== RaftState.CANDIDATE;
+        return node?.node.isRunning();
       });
 
       if (availableNodes.length > 3) {
@@ -601,10 +601,8 @@ export class StressTestShowcase {
         // Wait a bit, then restart
         await this.delay(Math.random() * 3000 + 1000); // 1-4 seconds
 
-        if (this.isStressing) {
-          this.logger.info(`Chaos: Restarting node ${targetNode}`);
-          await this.clusterManager.startNode(targetNode);
-        }
+        this.logger.info(`Chaos: Restarting node ${targetNode}`);
+        await this.clusterManager.startNode(targetNode);
       }
     }
   }
@@ -614,10 +612,10 @@ export class StressTestShowcase {
 
     const totalDuration = Date.now() - this.stressResults.startTime;
 
-    console.log(chalk.cyan("\\n📊 COMPREHENSIVE STRESS TEST REPORT"));
+    console.log(chalk.cyan("\n📊 COMPREHENSIVE STRESS TEST REPORT"));
     console.log(chalk.blue("═".repeat(60)));
 
-    console.log(chalk.green("\\n🚀 Throughput Performance:"));
+    console.log(chalk.green("\n🚀 Throughput Performance:"));
     if (this.stressResults.throughput) {
       const throughputResults = Object.values(
         this.stressResults.throughput,
@@ -634,7 +632,7 @@ export class StressTestShowcase {
       console.log(`  Average Error Rate: ${avgErrorRate}%`);
     }
 
-    console.log(chalk.green("\\n👥 Concurrency Performance:"));
+    console.log(chalk.green("\n👥 Concurrency Performance:"));
     if (this.stressResults.concurrency) {
       const concurrencyResults = Object.values(
         this.stressResults.concurrency,
@@ -649,7 +647,7 @@ export class StressTestShowcase {
       console.log(`  Average Success Rate: ${avgSuccessRate}%`);
     }
 
-    console.log(chalk.green("\\n💾 Memory Performance:"));
+    console.log(chalk.green("\n💾 Memory Performance:"));
     if (this.stressResults.memory) {
       const memoryResults = Object.values(
         this.stressResults.memory,
@@ -665,7 +663,7 @@ export class StressTestShowcase {
       console.log(`  Average Memory/Operation: ${avgMemoryPerOp} KB`);
     }
 
-    console.log(chalk.green("\\n💥 Chaos Resilience:"));
+    console.log(chalk.green("\n💥 Chaos Resilience:"));
     if (this.stressResults.chaos) {
       const chaos = this.stressResults.chaos;
       console.log(
@@ -677,7 +675,7 @@ export class StressTestShowcase {
       );
     }
 
-    console.log(chalk.green("\\n⏱️ Endurance Results:"));
+    console.log(chalk.green("\n⏱️ Endurance Results:"));
     if (this.stressResults.endurance) {
       const endurance = this.stressResults.endurance;
       console.log(
@@ -689,7 +687,7 @@ export class StressTestShowcase {
       console.log(`  Error rate: ${endurance.errorRate}%`);
     }
 
-    console.log(chalk.green("\\n📈 Overall Summary:"));
+    console.log(chalk.green("\n📈 Overall Summary:"));
     console.log(
       `  Total test duration: ${(totalDuration / 1000 / 60).toFixed(1)} minutes`,
     );
@@ -798,4 +796,12 @@ export class StressTestShowcase {
   }
 }
 
-new StressTestShowcase().run().finally(() => process.exit(0));
+if (import.meta.main) {
+  new StressTestShowcase().run().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
+}
