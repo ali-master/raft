@@ -2,7 +2,7 @@ import Redis from "ioredis";
 import { ClusterManager } from "../utils/cluster-manager";
 import { DEFAULT_PLAYGROUND_CONFIG } from "../utils/config";
 
-const NODE_COUNT = 10;
+const NODE_COUNT = 5;
 
 export async function runDashboard() {
   const manager = new ClusterManager(`observatory-${process.pid}`);
