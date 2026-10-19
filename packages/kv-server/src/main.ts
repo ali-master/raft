@@ -4,11 +4,10 @@ import { FastifyAdapter } from "@nestjs/platform-fastify";
 import { ValidationPipe } from "@nestjs/common";
 import { AppModule } from "./app.module";
 import { ENV_KEYS, DEFAULT_CONFIG } from "./shared";
-import fastifyCompress from "fastify-compress";
-import fastifyCors from "fastify-cors";
-import fastifyHelmet from "fastify-helmet";
-import fastifyRateLimit from "fastify-rate-limit";
-import fastifySwagger from "fastify-swagger";
+import fastifyCompress from "@fastify/compress";
+import fastifyCors from "@fastify/cors";
+import fastifyHelmet from "@fastify/helmet";
+import fastifyRateLimit from "@fastify/rate-limit";
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -28,26 +27,8 @@ async function bootstrap() {
   });
   await app.register(fastifyHelmet);
   await app.register(fastifyRateLimit, {
-    max: 100,
+    max: 600,
     timeWindow: "1 minute",
-  });
-  await app.register(fastifySwagger, {
-    routePrefix: "/api",
-    swagger: {
-      info: {
-        title: "Raft KV Server API",
-        description: "Enterprise-grade Raft KV Server API documentation",
-        version: "1.0.0",
-      },
-      securityDefinitions: {
-        bearer: {
-          type: "apiKey",
-          name: "Authorization",
-          in: "header",
-        },
-      },
-    },
-    exposeRoute: true,
   });
 
   // Global pipes

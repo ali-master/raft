@@ -1,6 +1,5 @@
 import type { SwaggerCustomOptions } from "@nestjs/swagger";
 import { DocumentBuilder } from "@nestjs/swagger";
-import type { SwaggerUiOptions } from "@nestjs/swagger/dist/interfaces/swagger-ui-options.interface";
 
 export class SwaggerConfigFactory {
   static createDocumentConfig() {
@@ -14,7 +13,7 @@ export class SwaggerConfigFactory {
       .build();
   }
 
-  static createSwaggerOptions(): SwaggerUiOptions {
+  static createSwaggerOptions(): NonNullable<SwaggerCustomOptions["swaggerOptions"]> {
     return {
       filter: true,
       tryItOutEnabled: true,

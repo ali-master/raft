@@ -1,17 +1,7 @@
 import { Post, Controller, Body } from "@nestjs/common";
 import { ApiTags, ApiResponse, ApiOperation } from "@nestjs/swagger";
-import type {
-  VoteResponse,
-  VoteRequest,
-  TimeoutNowRequest,
-  RaftNode,
-  PreVoteResponse,
-  PreVoteRequest,
-  InstallSnapshotResponse,
-  InstallSnapshotRequest,
-  AppendEntriesResponse,
-  AppendEntriesRequest,
-} from "@usex/raft";
+import { RaftNode } from "@usex/raft";
+import type { VoteResponse, VoteRequest, TimeoutNowRequest, PreVoteResponse, PreVoteRequest, InstallSnapshotResponse, InstallSnapshotRequest, AppendEntriesResponse, AppendEntriesRequest } from "@usex/raft";
 
 @ApiTags("Raft RPC")
 @Controller("raft/rpc")
