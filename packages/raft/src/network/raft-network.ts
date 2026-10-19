@@ -36,6 +36,7 @@ export class RaftNetwork {
   private readonly metrics: RaftMetricsCollector;
   private readonly redis: Redis;
   private isShutdown = false;
+  private readonly idleResponses: Redis[] = [];
   private shutdownCallbacks: Set<() => void> = new Set();
   private readonly peerHealth = new Map<string, PeerHealth>();
 
@@ -132,6 +133,8 @@ export class RaftNetwork {
 
     const startTime = performance.now();
     let shutdownCb: (() => void) | undefined;
+    let responseConnection: Redis | undefined;
+    let responseReadComplete = false;
 
     try {
       // Check if target exists
@@ -187,10 +190,13 @@ export class RaftNetwork {
         this.shutdownCallbacks.add(shutdownCb);
       });
 
+      // Blocking reads must never hold up storage writes or other RPCs.
+      responseConnection = this.idleResponses.pop() ?? this.redis.duplicate();
       const result = await Promise.race([
-        this.redis.brpop(responseKey, 2),
+        responseConnection.brpop(responseKey, 2),
         shutdownPromise,
       ]);
+      responseReadComplete = true;
 
       if (this.isShutdown) {
         await this.redis.del(responseKey).catch(() => {});
@@ -261,6 +267,17 @@ export class RaftNetwork {
 
       throw new RaftNetworkException(`Network error: ${error}`);
     } finally {
+      if (responseConnection) {
+        if (
+          responseReadComplete &&
+          !this.isShutdown &&
+          responseConnection.status === "ready"
+        ) {
+          this.idleResponses.push(responseConnection);
+        } else {
+          responseConnection.disconnect();
+        }
+      }
       if (shutdownCb) {
         this.shutdownCallbacks.delete(shutdownCb);
       }
@@ -442,8 +459,15 @@ export class RaftNetwork {
     };
   }
 
+  public resume(): void {
+    this.isShutdown = false;
+    this.peerHealth.clear();
+  }
+
   public shutdown(): void {
     this.isShutdown = true;
+    for (const connection of this.idleResponses.splice(0))
+      connection.disconnect();
     // Resolve all pending send operations so they fail fast instead of
     // blocking on brpop until timeout
     for (const cb of this.shutdownCallbacks) {

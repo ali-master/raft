@@ -55,6 +55,39 @@ describe("raftNetwork", () => {
   });
 
   describe("message sending", () => {
+    it("isolates blocking responses from storage and reuses idle connections", async () => {
+      const response = {
+        status: "ready",
+        brpop: vi
+          .fn()
+          .mockResolvedValue([
+            "key",
+            JSON.stringify({ payload: { term: 1, voteGranted: true } }),
+          ]),
+        disconnect: vi.fn(),
+      };
+      Object.assign(mockRedis, {
+        expire: vi.fn().mockResolvedValue(1),
+        del: vi.fn().mockResolvedValue(1),
+        duplicate: vi.fn(() => response),
+      });
+      mockPeerDiscovery.getPeerInfo.mockReturnValue({ nodeId: "peer1" });
+      const request = {
+        term: 1,
+        candidateId: "node1",
+        lastLogIndex: 0,
+        lastLogTerm: 0,
+        weight: 1,
+      };
+      await network.sendVoteRequest("peer1", request);
+      await network.sendVoteRequest("peer1", request);
+      expect(mockRedis.brpop).not.toHaveBeenCalled();
+      expect(mockRedis.duplicate).toHaveBeenCalledTimes(1);
+      expect(response.brpop).toHaveBeenCalledTimes(2);
+      network.shutdown();
+      expect(response.disconnect).toHaveBeenCalledOnce();
+    });
+
     it("should handle network errors gracefully", async () => {
       mockPeerDiscovery.getPeerInfo.mockReturnValue(undefined);
 
