@@ -33,6 +33,7 @@ export class LogReplicationShowcase {
     } catch (_error) {
       this.logger.error("Log replication showcase failed", undefined, _error);
       this.logger.result(false, "Log replication demonstration failed");
+      throw _error;
     } finally {
       await this.cleanup();
     }
@@ -371,4 +372,12 @@ export class LogReplicationShowcase {
   }
 }
 
-new LogReplicationShowcase().run().finally(() => process.exit(0));
+if (import.meta.main) {
+  new LogReplicationShowcase().run().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
+}

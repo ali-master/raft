@@ -30,6 +30,7 @@ export class LeaderElectionShowcase {
     } catch (_error) {
       this.logger.error("Leader election showcase failed", undefined, _error);
       this.logger.result(false, "Leader election demonstration failed");
+      throw _error;
     } finally {
       await this.cleanup();
     }
@@ -294,4 +295,12 @@ export class LeaderElectionShowcase {
   }
 }
 
-new LeaderElectionShowcase().run().finally(() => process.exit(0));
+if (import.meta.main) {
+  new LeaderElectionShowcase().run().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
+}

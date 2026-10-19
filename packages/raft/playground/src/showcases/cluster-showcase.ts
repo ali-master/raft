@@ -36,6 +36,7 @@ export class ClusterShowcase {
     } catch (_error) {
       this.logger.error("Cluster showcase failed", undefined, _error);
       this.logger.result(false, "Cluster demonstration failed");
+      throw _error;
     } finally {
       await this.cleanup();
     }
@@ -181,4 +182,12 @@ export class ClusterShowcase {
   }
 }
 
-new ClusterShowcase().run().finally(() => process.exit(0));
+if (import.meta.main) {
+  new ClusterShowcase().run().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
+}

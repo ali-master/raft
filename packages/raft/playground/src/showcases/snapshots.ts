@@ -38,6 +38,7 @@ export class SnapshotShowcase {
     } catch (_error) {
       this.logger.error("Snapshot showcase failed", undefined, _error);
       this.logger.result(false, "Snapshot demonstration failed");
+      throw _error;
     } finally {
       await this.cleanup();
     }
@@ -385,4 +386,12 @@ export class SnapshotShowcase {
   }
 }
 
-new SnapshotShowcase().run().finally(() => process.exit(0));
+if (import.meta.main) {
+  new SnapshotShowcase().run().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
+}

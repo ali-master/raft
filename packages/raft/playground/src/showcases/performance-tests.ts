@@ -36,6 +36,7 @@ export class PerformanceTestsShowcase {
     } catch (_error) {
       this.logger.error("Performance testing failed", undefined, _error);
       this.logger.result(false, "Performance testing failed");
+      throw _error;
     } finally {
       await this.cleanup();
     }
@@ -429,4 +430,12 @@ export class PerformanceTestsShowcase {
   }
 }
 
-new PerformanceTestsShowcase().run().finally(() => process.exit(0));
+if (import.meta.main) {
+  new PerformanceTestsShowcase().run().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
+}

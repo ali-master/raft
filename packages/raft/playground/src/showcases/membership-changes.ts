@@ -37,6 +37,7 @@ export class MembershipChangesShowcase {
         _error,
       );
       this.logger.result(false, "Membership changes demonstration failed");
+      throw _error;
     } finally {
       await this.cleanup();
     }
@@ -397,4 +398,12 @@ export class MembershipChangesShowcase {
   }
 }
 
-new MembershipChangesShowcase().run().finally(() => process.exit(0));
+if (import.meta.main) {
+  new MembershipChangesShowcase().run().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
+}

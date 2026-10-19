@@ -35,6 +35,7 @@ export class MonitoringShowcase {
     } catch (_error) {
       this.logger.error("Monitoring showcase failed", undefined, _error);
       this.logger.result(false, "Monitoring demonstration failed");
+      throw _error;
     } finally {
       await this.cleanup();
     }
@@ -211,7 +212,7 @@ export class MonitoringShowcase {
     console.log(chalk.green("\n🏛️  Cluster-wide Metrics:"));
     console.log(`   Total Nodes: ${nodes.length}`);
     console.log(
-      `   Active Nodes: ${nodes.filter((n) => n.node.getState() !== RaftState.CANDIDATE).length}`,
+      `   Active Nodes: ${nodes.filter((n) => n.node.isRunning()).length}`,
     );
     console.log(`   Current Term: ${metrics.term}`);
     console.log(`   Leader Node: ${metrics.leader || "None"}`);
@@ -363,7 +364,7 @@ export class MonitoringShowcase {
     console.log(`  Leader: ${metrics.leader || "None"}`);
     console.log(`  Term: ${metrics.term}`);
     console.log(
-      `  Active Nodes: ${nodes.filter((n) => n.node.getState() !== RaftState.CANDIDATE).length}/${nodes.length}`,
+      `  Active Nodes: ${nodes.filter((n) => n.node.isRunning()).length}/${nodes.length}`,
     );
     console.log(`  Candidates: ${metrics.candidates.length}`);
 
@@ -393,4 +394,12 @@ export class MonitoringShowcase {
   }
 }
 
-new MonitoringShowcase().run().finally(() => process.exit(0));
+if (import.meta.main) {
+  new MonitoringShowcase().run().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
+}
