@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { RaftState } from "@usex/raft";
 import chalk from "chalk";
 import { ClusterManager } from "../utils/cluster-manager";
@@ -19,7 +20,7 @@ export class WeightedVotingShowcase {
       await this.demonstrateWeightedVotingWithFailures();
 
       // Scenario 3: Dynamic weight changes
-      await this.demonstrateDynamicWeightChanges();
+      await this.demonstrateStableWeightConfiguration();
 
       // Scenario 4: Weighted voting in network partitions
       await this.demonstrateWeightedVotingInPartitions();
@@ -31,6 +32,7 @@ export class WeightedVotingShowcase {
     } catch (_error) {
       this.logger.error("Weighted voting showcase failed", undefined, _error);
       this.logger.result(false, "Weighted voting demonstration failed");
+      throw _error;
     } finally {
       await this.cleanup();
     }
@@ -104,11 +106,16 @@ export class WeightedVotingShowcase {
     if (leader) {
       this.logger.success(`Leader maintained by heavy nodes: ${leader.nodeId}`);
     } else {
-      this.logger.error("Heavy nodes failed to maintain leadership");
+      throw new Error("Heavy nodes failed to maintain leadership");
     }
 
+    assert(leader);
+    await leader.node.appendLog(
+      new CounterStateMachine("weighted-quorum").createIncrementCommand(1),
+    );
+
     // Now test the opposite: stop heavy nodes
-    this.logger.info("\\nTesting opposite scenario...");
+    this.logger.info("\nTesting opposite scenario...");
 
     // Restart light nodes first
     for (const nodeId of lightNodes) {
@@ -140,11 +147,15 @@ export class WeightedVotingShowcase {
         "Correctly failed to elect leader without sufficient weight",
       );
     } else {
-      this.logger.warn("Unexpected leader election with insufficient weight");
+      await assert.rejects(
+        leaderAfterHeavyFailure.node.appendLog(
+          new CounterStateMachine("minority").createIncrementCommand(100),
+        ),
+      );
     }
 
     // Restart one heavy node to restore majority
-    this.logger.info("\\nRestarting one heavy node to restore majority...");
+    this.logger.info("\nRestarting one heavy node to restore majority...");
     await this.clusterManager.startNode("heavy-node-1");
     await this.delay(2000);
 
@@ -160,67 +171,29 @@ export class WeightedVotingShowcase {
     await this.delay(2000);
   }
 
-  private async demonstrateDynamicWeightChanges(): Promise<void> {
-    this.logger.step(3, "Dynamic Weight Changes");
-    this.logger.info("Demonstrating dynamic weight adjustments...");
-
-    // This is a conceptual demonstration since actual weight changes would
-    // require cluster membership changes in a real implementation
-
-    this.logger.info("Current cluster weights:");
-    await this.displayWeightedClusterState();
-
-    // Simulate a scenario where we need to adjust weights
-    this.logger.info("\\nSimulating weight adjustment scenario...");
+  private async demonstrateStableWeightConfiguration(): Promise<void> {
+    this.logger.step(3, "Static voting weights survive node restart");
     this.logger.info(
-      "Scenario: Data center with heavy nodes experiences issues",
+      "Weights are configured identically on all members; live weight changes require a separate consensus protocol.",
     );
-
-    // Submit some operations before weight change
+    const follower = this.clusterManager.getFollowers()[0]!;
+    const weights = { ...follower.config.voting.weights };
+    await this.clusterManager.restartNode(follower.nodeId);
+    await this.clusterManager.waitForStability();
+    assert.deepEqual(
+      this.clusterManager.getNode(follower.nodeId)!.config.voting.weights,
+      weights,
+    );
     const stateMachine = new CounterStateMachine("weight-test");
-
-    this.logger.info("Submitting operations before weight change...");
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 10; i++)
       await this.clusterManager.appendToLeader(
-        stateMachine.createIncrementCommand(1, `pre-weight-${i}`),
+        stateMachine.createIncrementCommand(1),
       );
-    }
-
-    // Simulate weight adjustment by stopping and restarting nodes
-    this.logger.info("\\nSimulating weight redistribution...");
-
-    // In a real implementation, this would involve:
-    // 1. Proposing a configuration change
-    // 2. Getting consensus on the new weights
-    // 3. Applying the new weights
-
-    this.logger.info("Configuration change proposal (simulated):");
-    console.log("  heavy-node-1: 3 → 2 (reduced due to datacenter issues)");
-    console.log("  heavy-node-2: 3 → 2 (reduced due to datacenter issues)");
-    console.log("  light-node-1: 1 → 2 (promoted for reliability)");
-    console.log("  light-node-2: 1 → 2 (promoted for reliability)");
-    console.log("  light-node-3: 1 → 1 (unchanged)");
-
-    // Simulate the new configuration by restarting cluster
-    this.logger.info("\\nApplying new weight configuration...");
-
-    // Submit operations after weight change
-    this.logger.info("Submitting operations after weight change...");
-    for (let i = 0; i < 5; i++) {
-      await this.clusterManager.appendToLeader(
-        stateMachine.createIncrementCommand(1, `post-weight-${i}`),
-      );
-    }
-
-    await this.delay(2000);
-
-    // Verify consistency after weight changes
-    const finalState = await this.verifyConsistency();
-    if (finalState) {
-      this.logger.success("Consistency maintained through weight changes");
-    } else {
-      this.logger.error("Consistency issues detected after weight changes");
-    }
+    await this.delay(500);
+    this.logger.result(
+      await this.verifyConsistency(),
+      "State and configured weights preserved after restart",
+    );
   }
 
   private async demonstrateWeightedVotingInPartitions(): Promise<void> {
@@ -245,7 +218,7 @@ export class WeightedVotingShowcase {
     await this.delay(3000);
 
     // Check which partition maintains leadership
-    this.logger.info("\\nChecking partition leadership...");
+    this.logger.info("\nChecking partition leadership...");
 
     const leader = this.clusterManager.getLeader();
     if (leader) {
@@ -271,9 +244,13 @@ export class WeightedVotingShowcase {
       );
     }
 
+    assert(
+      leader && partition2.includes(leader.nodeId),
+      "Weighted majority must elect a leader",
+    );
     // Test operations in the majority partition
     if (leader && partition2.includes(leader.nodeId)) {
-      this.logger.info("\\nTesting operations in majority partition...");
+      this.logger.info("\nTesting operations in majority partition...");
 
       const stateMachine = new CounterStateMachine("partition-test");
 
@@ -294,7 +271,7 @@ export class WeightedVotingShowcase {
     }
 
     // Heal the partition
-    this.logger.info("\\nHealing network partition...");
+    this.logger.info("\nHealing network partition...");
     await this.clusterManager.healNetworkPartition(partition1);
 
     await this.delay(3000);
@@ -333,24 +310,15 @@ export class WeightedVotingShowcase {
   }
 
   private async displayWeightedClusterState(): Promise<void> {
-    this.logger.info("\\n📊 Weighted Cluster State:");
+    this.logger.info("\n📊 Weighted Cluster State:");
     const nodes = this.clusterManager.getAllNodes();
-
-    // Note: In a real implementation, weights would be stored in configuration
-    const simulatedWeights: Record<string, number> = {
-      "heavy-node-1": 3,
-      "heavy-node-2": 3,
-      "light-node-1": 1,
-      "light-node-2": 1,
-      "light-node-3": 1,
-    };
 
     let totalActiveWeight = 0;
 
     for (const nodeInfo of nodes) {
       const state = nodeInfo.node.getState();
       const term = nodeInfo.node.getCurrentTerm();
-      const weight = simulatedWeights[nodeInfo.nodeId] || 1;
+      const weight = nodeInfo.config.voting.weights?.[nodeInfo.nodeId] ?? 1;
 
       let stateIcon = "";
       let stateColor = chalk.white;
@@ -359,17 +327,17 @@ export class WeightedVotingShowcase {
         case RaftState.LEADER:
           stateIcon = "👑";
           stateColor = chalk.green;
-          totalActiveWeight += weight;
+          if (nodeInfo.node.isRunning()) totalActiveWeight += weight;
           break;
         case RaftState.FOLLOWER:
           stateIcon = "👤";
           stateColor = chalk.blue;
-          totalActiveWeight += weight;
+          if (nodeInfo.node.isRunning()) totalActiveWeight += weight;
           break;
         case RaftState.CANDIDATE:
           stateIcon = "🗳️";
           stateColor = chalk.yellow;
-          totalActiveWeight += weight;
+          if (nodeInfo.node.isRunning()) totalActiveWeight += weight;
           break;
       }
 
@@ -378,13 +346,12 @@ export class WeightedVotingShowcase {
       );
     }
 
-    const totalWeight = Object.values(simulatedWeights).reduce(
-      (sum, w) => sum + w,
-      0,
-    );
+    const totalWeight = Object.values(
+      nodes[0]!.config.voting.weights ?? {},
+    ).reduce((sum, w) => sum + w, 0);
     const requiredWeight = Math.floor(totalWeight / 2) + 1;
 
-    console.log(`\\n  Total cluster weight: ${totalWeight}`);
+    console.log(`\n  Total cluster weight: ${totalWeight}`);
     console.log(`  Active weight: ${totalActiveWeight}`);
     console.log(`  Required for majority: ${requiredWeight}`);
     console.log(
@@ -405,7 +372,7 @@ export class WeightedVotingShowcase {
 
     const isConsistent = uniqueValues.size === 1 && uniqueVersions.size === 1;
 
-    this.logger.info("\\n🔍 Consistency Check:");
+    this.logger.info("\n🔍 Consistency Check:");
     for (const state of stateMachineStates) {
       console.log(
         `  ${state.nodeId}: Value=${state.value}, Version=${state.version}`,
@@ -425,4 +392,12 @@ export class WeightedVotingShowcase {
   }
 }
 
-new WeightedVotingShowcase().run().finally(() => process.exit(0));
+if (import.meta.main) {
+  new WeightedVotingShowcase().run().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
+}
