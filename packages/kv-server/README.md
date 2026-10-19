@@ -1,452 +1,115 @@
 <div align="center">
-  <img src="../../assets/kv-server-logo.svg" alt="KV Server Logo" width="200" />
-
-  <h1>🗄️ Raft KV Server</h1>
-  
-  <h3>Enterprise-Grade Distributed Key-Value Store with Raft Consensus</h3>
-
-  <p>A production-ready, strongly consistent, and highly available key-value storage solution built on Raft consensus algorithm. Perfect for microservices, configuration management, and distributed applications that require guaranteed consistency.</p>
-
-  <!-- Enhanced Badges -->
-  <p>
-    <a href="https://badge.fury.io/js/@usex/raft-kv-server"><img src="https://badge.fury.io/js/@usex%2Fraft-kv-server.svg" alt="npm version" /></a>
-    <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
-    <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D18.12.0-brightgreen" alt="Node.js Version" /></a>
-    <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.0%2B-blue" alt="TypeScript" /></a>
-    <img src="https://img.shields.io/badge/Redis-Compatible-DC382D?logo=redis&logoColor=white" alt="Redis Compatible" />
-    <img src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white" alt="Docker Ready" />
-    <img src="https://img.shields.io/badge/Kubernetes-Native-326CE5?logo=kubernetes&logoColor=white" alt="Kubernetes Native" />
-  </p>
+  <img src="../../assets/kv-server-logo.svg" alt="Raft Quorum mark" width="88" height="88" />
+  <h1>@usex/raft-kv-server</h1>
+  <p>A key-value service built on the Raft toolkit.</p>
+  <p><a href="../../README.md">Workspace</a> · <a href="../kv-server-sdk/README.md">SDK</a> · <a href="./docs/architecture.md">Architecture</a></p>
 </div>
 
-## 🎯 Why Raft KV Server?
+A NestJS/Fastify application with CQRS handlers, a Raft-backed write path, Redis storage, value encryption, health endpoints, and OpenAPI documentation. The application and development commands run with Bun.
 
-### The Problem
+**Status:** experimental. The [data-integrity audit](../../docs/raft-spec-audit.md) records unresolved application-key isolation, snapshot, health-check, read-consistency, and OpenAPI/SDK defects, in addition to core consensus issues. Use an isolated Redis database and disposable data while evaluating it. Local reads do not have a verified quorum read barrier.
 
-Modern distributed applications face critical challenges when managing shared state:
+## Run locally
 
-- **🔥 Split-Brain Scenarios**: Traditional databases can create inconsistent states during network partitions
-- **⏰ Eventual Consistency Issues**: Applications need immediate consistency for critical operations like financial transactions
-- **🏗️ Complex Setup**: Setting up distributed databases like MongoDB, Cassandra, or PostgreSQL clusters requires extensive configuration
-- **💰 Cost Overhead**: Enterprise databases are expensive and often over-engineered for simple key-value needs
-- **🔧 Operational Complexity**: Managing replication, failover, and cluster membership manually is error-prone
-
-### The Solution
-
-Raft KV Server provides a **lightweight, strongly consistent** alternative that:
-
-✅ **Guarantees Strong Consistency** - Using the proven Raft consensus algorithm  
-✅ **Eliminates Split-Brain** - Automatic leader election prevents data conflicts  
-✅ **Simple Operations** - Easy to deploy, configure, and maintain  
-✅ **Cost-Effective** - Open source with minimal resource requirements  
-✅ **Production Ready** - Built with enterprise patterns (CQRS, health checks, monitoring)  
-
-### Perfect For
-
-| Use Case | Why Raft KV Server? |
-|----------|---------------------|
-| **🏢 Microservices Configuration** | Centralized, consistent config management across services |
-| **🔐 Session Storage** | Secure, encrypted user session data with guaranteed consistency |
-| **⚖️ Distributed Locking** | Implement distributed locks and semaphores reliably |
-| **📊 Feature Flags** | Real-time feature toggle management across all instances |
-| **🎯 Service Discovery** | Simple service registry with automatic health checking |
-| **💰 Financial Systems** | Critical data that requires ACID-like guarantees |
-| **🎮 Gaming Leaderboards** | Consistent player state and rankings |
-| **📈 Metrics Collection** | Centralized metrics storage with strong consistency |
-
-## ✨ Key Features
-
-### 🏗️ **Distributed Architecture**
-- **⚡ Raft Consensus**: Proven algorithm used by etcd, Consul, and CockroachDB
-- **🔄 Automatic Failover**: Leader election in <300ms during failures
-- **📊 Cluster Membership**: Dynamic node addition/removal
-- **🌐 Network Partition Tolerance**: Continues operating with majority of nodes
-
-### 🔒 **Security & Encryption**
-- **🛡️ AES-256 Encryption**: All values encrypted at rest
-- **🔐 TLS Support**: Secure inter-node communication
-- **🚫 Rate Limiting**: Built-in DDoS protection
-- **🛡️ CORS & Security Headers**: Production-ready security defaults
-
-### 🏢 **Enterprise Features**
-- **📚 CQRS Pattern**: Scalable command-query separation
-- **🩺 Health Monitoring**: Kubernetes-ready liveness/readiness probes
-- **📊 Metrics & Observability**: Prometheus-compatible metrics
-- **📝 API Documentation**: Auto-generated OpenAPI/Swagger docs
-- **🐳 Container Native**: Docker and Kubernetes deployment ready
-
-### 🚀 **Performance & Reliability**
-- **⚡ Fastify Backend**: High-performance HTTP server
-- **🔄 Redis Storage**: Battle-tested storage engine
-- **📈 Horizontal Scaling**: Add nodes without downtime
-- **🎯 Sub-millisecond Reads**: Local reads for optimal performance
-
-## 📚 Table of Contents
-
-- [Installation Guide](./docs/installation.md)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [API Reference](#api-reference)
-- [Examples](./docs/examples.md)
-- [Self-Hosting](./docs/self-hosted.md)
-- [Docker & Kubernetes](#docker--kubernetes)
-- [Development](#development)
-- [Project Structure](#project-structure)
-- [Contributing](#contributing)
-- [Community & Support](#community--support)
-- [License](#license)
-- [Acknowledgments](#acknowledgments)
-
-## 📦 [Installation Guide](./docs/installation.md)
-
-Step-by-step instructions for installing and running the KV Server locally, with Docker, or on Kubernetes. Includes environment setup and troubleshooting tips.
-
-## 🚀 Quick Start
-
-### Single Node (Development)
+From the repository root, with Bun >= 1.4.3:
 
 ```bash
-# 1. Clone and install
-git clone https://github.com/ali-master/raft
-cd raft/packages/kv-server
-pnpm install
-
-# 2. Configure environment
+bun install --frozen-lockfile
+bun run build
+cd packages/kv-server
 cp .env.example .env
-# Edit .env with your settings
-
-# 3. Start Redis (required)
-docker run -d --name redis -p 6379:6379 redis:7-alpine
-
-# 4. Start the server
-pnpm start:dev
 ```
 
-### Multi-Node Cluster (Production)
+Set a private `ENCRYPTION_KEY`, point Redis configuration at a disposable instance, and use a separate `RAFT_DATA_DIR` for each node. Keep the same encryption key for members of the same cluster.
 
 ```bash
-# Start a 3-node cluster with Docker Compose
-docker-compose -f docker-compose.cluster.yml up
+bun run start:dev
+# Or use the compiled application:
+bun run start:prod
 ```
 
-### First API Calls
+Defaults are HTTP port `3000`, Redis port `6379`, and Redis database `1`. See [`.env.example`](./.env.example) for configuration names. For container examples, see [installation](./docs/installation.md), [self-hosting](./docs/self-hosted.md), and [`docker-compose.cluster.yml`](./docker-compose.cluster.yml).
+
+## API
+
+| Method   | Route                                              | Current controller result                                   |
+| -------- | -------------------------------------------------- | ----------------------------------------------------------- |
+| `POST`   | `/kv/:key`                                         | Set a string from `{ "value": "..." }`; no response payload |
+| `GET`    | `/kv/:key`                                         | String value or an empty result for a missing key           |
+| `DELETE` | `/kv/:key`                                         | Delete a key; no response payload                           |
+| `GET`    | `/kv`                                              | Array of key strings                                        |
+| `GET`    | `/raft/status`                                     | `nodeId`, `state`, `isLeader`, and `metrics`                |
+| `GET`    | `/raft/leader`                                     | `{ "isLeader": boolean }`                                   |
+| `GET`    | `/raft/metrics`                                    | Node metrics                                                |
+| `GET`    | `/health`, `/health/liveness`, `/health/readiness` | Health checks with distinct scopes                          |
+
+Send writes to the current leader. Check HTTP status before interpreting the response. The current controller returns values directly; it does not wrap reads in `{ key, value, encrypted }` or lists in `{ keys, total }`.
 
 ```bash
-# Set a value
-curl -X POST http://localhost:3000/kv/user:123 \
-  -H "Content-Type: application/json" \
-  -d '{"value": "John Doe"}'
+curl http://localhost:3000/raft/leader
 
-# Get a value
-curl http://localhost:3000/kv/user:123
+curl -i -X POST http://localhost:3000/kv/example \
+  -H 'Content-Type: application/json' \
+  -d '{"value":"hello"}'
 
-# List all keys
+curl http://localhost:3000/kv/example
 curl http://localhost:3000/kv
-
-# Check cluster status
-curl http://localhost:3000/raft/status
 ```
 
-## 📊 Performance & Benchmarks
+A KV set/delete pair is not a compare-and-set lock and must not be treated as one.
 
-### Throughput Comparison
+- Swagger UI: `http://localhost:3000/api`
+- OpenAPI JSON: `http://localhost:3000/api/docs/openapi.json`
+- Client generation: [KV SDK](../kv-server-sdk/README.md)
 
-| Operation | Raft KV Server | Redis Standalone | etcd | Consul |
-|-----------|----------------|------------------|------|--------|
-| **Read (QPS)** | ~50,000 | ~100,000 | ~13,000 | ~5,000 |
-| **Write (QPS)** | ~15,000 | ~80,000 | ~10,000 | ~3,000 |
-| **Latency (p99)** | <5ms | <1ms | <10ms | <15ms |
+The current OpenAPI document lacks schemas for parts of the runtime contract. Generated validators can reject a valid write before it reaches the server. See the audit and [`data-contract.spec.ts`](./test/integration/data-contract.spec.ts).
 
-### Consistency Guarantees
+## Configuration
 
-| Database | Consistency | Split-Brain Protection | Auto-Recovery |
-|----------|-------------|----------------------|---------------|
-| **Raft KV Server** | ✅ Strong | ✅ Yes | ✅ Yes |
-| Redis Standalone | ❌ None | ❌ No | ❌ No |
-| Redis Cluster | ⚠️ Eventual | ⚠️ Partial | ⚠️ Manual |
-| MongoDB | ⚠️ Tunable | ✅ Yes | ✅ Yes |
-| etcd | ✅ Strong | ✅ Yes | ✅ Yes |
+| Variable                                                            | Purpose                                           |
+| ------------------------------------------------------------------- | ------------------------------------------------- |
+| `PORT`                                                              | Application HTTP port                             |
+| `RAFT_NODE_ID`, `RAFT_CLUSTER_ID`                                   | Stable node and cluster identities                |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB`            | Redis connection                                  |
+| `ENCRYPTION_KEY`                                                    | Value encryption key; preserve it across restarts |
+| `RAFT_DATA_DIR`                                                     | Per-node snapshot/WAL location                    |
+| `RAFT_ENABLE_SNAPSHOTS`, `RAFT_WAL_ENABLED`                         | Persistence switches                              |
+| `RAFT_ELECTION_MIN`, `RAFT_ELECTION_MAX`, `RAFT_HEARTBEAT_INTERVAL` | Timing configuration                              |
+| `RAFT_REDIS_KEY_PREFIX`                                             | Raft state/log prefix; see migration below        |
 
-### Resource Usage
+See [configuration source](./src/shared/config/) and [`.env.example`](./.env.example) for other options. Example configurations are not a production security or durability guarantee.
 
-```
-Memory: 50-100MB per node
-CPU: <5% under normal load
-Disk: Minimal (logs only)
-Network: <1MB/s for small clusters
-```
+## Redis prefix migration
 
-## ⚙️ Configuration
+Raft state/log keys default to `raft:<RAFT_CLUSTER_ID>:`. `RAFT_REDIS_KEY_PREFIX` overrides this prefix. An explicitly empty value (`RAFT_REDIS_KEY_PREFIX=`) selects the legacy unprefixed layout, `<nodeId>:state` and `<nodeId>:log:<index>`. Application KV keys are a separate concern.
 
-Create a `.env` file in the root directory (see `.env.example` for all options):
+The [migration report](../../docs/raft-playground-validation.md) covers core persistence compatibility. Separately, the [spec audit](../../docs/raft-spec-audit.md) found that the application's `createRedisInstance` factory ignores its `keyPrefix` option and that KV listing/snapshots include unrelated keys. Setting the Raft prefix does not isolate application data or repair those defects.
 
-```env
-# Server Configuration
-PORT=3000
-NODE_ENV=development
-ENCRYPTION_KEY=your-32-character-encryption-key
+For an existing installation, stop every cluster member and back up Redis and each node's `RAFT_DATA_DIR` before upgrading. Keep node IDs, Redis database, encryption key, and data directories unchanged. Retain the old layout with an explicit empty prefix, or migrate only the state/log keys for those node IDs while all members are stopped. Do not overwrite an existing destination key. Apply the same effective prefix on every member before restarting; changing a prefix setting does not move data.
 
-# Raft Configuration
-RAFT_NODE_ID=node-1
-RAFT_CLUSTER_ID=kv-cluster
-RAFT_HTTP_HOST=0.0.0.0
-RAFT_HTTP_PORT=4000
+## Development and tests
 
-# Redis Configuration
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-REDIS_DB=1
-
-# See .env.example for full configuration options
-```
-
-## 📖 API Reference
-
-### Key-Value Operations
-
-#### Set a Value
-```bash
-POST /kv/:key
-Content-Type: application/json
-
-{
-  "value": "your-value-here"
-}
-```
-
-**Response**: `201 Created` or `409 Conflict` (if not leader)
-
-#### Get a Value
-```bash
-GET /kv/:key
-```
-
-**Response**: 
-```json
-{
-  "key": "user:123",
-  "value": "John Doe",
-  "encrypted": true
-}
-```
-
-#### Delete a Value
-```bash
-DELETE /kv/:key
-```
-
-**Response**: `200 OK` or `404 Not Found`
-
-#### List All Keys
-```bash
-GET /kv
-```
-
-**Response**:
-```json
-{
-  "keys": ["user:123", "config:feature-flags", "session:abc123"],
-  "total": 3
-}
-```
-
-### Cluster Management
-
-#### Node Status
-```bash
-GET /raft/status
-```
-
-**Response**:
-```json
-{
-  "nodeId": "node-1",
-  "state": "LEADER",
-  "isLeader": true,
-  "currentTerm": 5,
-  "commitIndex": 1234,
-  "cluster": {
-    "nodes": ["node-1", "node-2", "node-3"],
-    "leader": "node-1"
-  }
-}
-```
-
-#### Health Checks
-```bash
-GET /health              # Full cluster health
-GET /health/liveness     # Node liveness probe
-GET /health/readiness    # Node readiness probe
-```
-
-### Real-World Examples
-
-#### Microservice Configuration
-```javascript
-// Service A
-const config = await fetch('http://kv-server:3000/kv/service-a:config');
-const settings = JSON.parse(config.value);
-
-// Update configuration (only on leader)
-await fetch('http://kv-server:3000/kv/service-a:config', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ value: JSON.stringify(newSettings) })
-});
-```
-
-#### Distributed Locking
-```javascript
-// Acquire lock
-const lockKey = 'lock:resource-id';
-try {
-  await fetch(`http://kv-server:3000/kv/${lockKey}`, {
-    method: 'POST',
-    body: JSON.stringify({ value: 'node-123' })
-  });
-  
-  // Critical section
-  performCriticalOperation();
-  
-} finally {
-  // Release lock
-  await fetch(`http://kv-server:3000/kv/${lockKey}`, {
-    method: 'DELETE'
-  });
-}
-```
-
-#### Feature Flags
-```javascript
-// Check feature flag
-const response = await fetch('http://kv-server:3000/kv/feature:new-ui');
-const isEnabled = response.ok && JSON.parse(response.value) === true;
-
-if (isEnabled) {
-  renderNewUI();
-} else {
-  renderLegacyUI();
-}
-```
-
-### Interactive API Documentation
-
-- **Swagger UI**: [http://localhost:3000/api](http://localhost:3000/api)
-- **OpenAPI Spec**: [http://localhost:3000/api-json](http://localhost:3000/api-json)
-
-## 🐳 Docker & Kubernetes
-
-See [Installation Guide](./docs/installation.md) and [Self-Hosting](./docs/self-hosted.md) for full deployment instructions.
-
-### Docker Compose (Multi-Node Example)
-
-```yaml
-version: '3.8'
-services:
-  kv1:
-    image: raft-kv-server
-    environment:
-      - NODE_ID=kv1
-      - CLUSTER_ID=raft-cluster
-      - PEERS=kv2,kv3
-      - ENCRYPTION_KEY=your-key
-    ports:
-      - "3001:3000"
-  kv2:
-    image: raft-kv-server
-    environment:
-      - NODE_ID=kv2
-      - CLUSTER_ID=raft-cluster
-      - PEERS=kv1,kv3
-      - ENCRYPTION_KEY=your-key
-    ports:
-      - "3002:3000"
-  kv3:
-    image: raft-kv-server
-    environment:
-      - NODE_ID=kv3
-      - CLUSTER_ID=raft-cluster
-      - PEERS=kv1,kv2
-      - ENCRYPTION_KEY=your-key
-    ports:
-      - "3003:3000"
-```
-
-### Kubernetes
-
-See [`docs/deployment.md`](./docs/deployment.md) for a full production deployment guide.
-
-## 🛠 Development
-
-### Scripts
-
-- `pnpm build` — Build the project
-- `pnpm start` — Start the server
-- `pnpm start:dev` — Start in development mode
-- `pnpm test` — Run tests
-- `pnpm lint` — Lint code
-- `pnpm format` — Format code
-
-### Testing
+From this directory:
 
 ```bash
-pnpm test
-pnpm test:watch
-pnpm test:coverage
+bun run build
+bun run test run
+bun run test:unit
+bun run test:coverage
+bun run test:types
+bun run lint
 ```
 
-## 🗂 Project Structure
+Integration fixtures require Docker. The [audit](../../docs/raft-spec-audit.md) records the current failing regressions; there is no verified throughput comparison or production consistency guarantee implied by this README.
 
-```
-src/
-├── app.module.ts           # Main application module
-├── main.ts                 # Application entry point
-├── encryption/             # Encryption module
-├── health/                 # Health check module
-├── raft/                   # Raft integration module
-│   ├── raft.module.ts      # Raft module configuration
-│   ├── raft.service.ts     # Raft service
-│   └── raft.controller.ts  # Raft status endpoints
-└── kv-store/               # KV Store module
-    ├── commands/           # CQRS commands
-    ├── queries/            # CQRS queries
-    ├── kv-state-machine.ts # Raft state machine
-    └── kv-store.controller.ts # REST controllers
-```
+## Documentation
 
-## 🤝 Contributing
+- [Installation](./docs/installation.md) and [development](./docs/development.md)
+- [Architecture](./docs/architecture.md) and [HTTP controllers](./src/kv-store/kv-store.controller.ts)
+- [Deployment examples](./docs/deployment.md)
+- [Core engine](../raft/README.md), [SDK](../kv-server-sdk/README.md), and [Observatory](../raft/playground/README.md)
+- [Brand assets](../../assets/BRAND_ASSETS.md)
 
-We welcome contributions! Please see our [Contributing Guide](../../CONTRIBUTING.md) for details.
+## License
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📱 Community & Support
-
-- 💬 **GitHub Discussions** - [Ask questions and share ideas](https://github.com/ali-master/raft/discussions)
-- 🐛 **GitHub Issues** - [Report bugs or request features](https://github.com/ali-master/raft/issues)
-- 📖 **Documentation** - [Comprehensive guides and API docs](./docs/)
-
-## 📜 License
-
-This project is licensed under the MIT License. See the [LICENCE](./LICENCE) file for details.
-
----
-
-<div align="center">
-  <p>
-    <strong>Ready to build distributed systems that just work?</strong>
-  </p>
-  <p>
-    <a href="./docs/installation.md">🚀 Get Started</a> •
-    <a href="./docs/examples.md">📚 View Examples</a> •
-    <a href="https://github.com/ali-master/raft">⭐ Star on GitHub</a>
-  </p>
-  <p>
-    Made with ❤️ by <a href="https://github.com/ali-master">Ali Master</a> and the open source community.
-  </p>
-</div>
+[MIT](../../LICENCE) · [Ali Torki](https://github.com/ali-master)
