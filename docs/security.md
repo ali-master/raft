@@ -1006,36 +1006,14 @@ apt-get remove -y telnet rsh-client rsh-redone-client
 
 ### Container Security
 
-```dockerfile
-# Secure Dockerfile
-FROM node:20-alpine AS builder
+Use the maintained [KV server Dockerfile](../packages/kv-server/Dockerfile) or [Nest playground Dockerfile](../packages/nest/playground/Dockerfile). They pin Bun 1.4.3, install from `bun.lock`, separate build dependencies from production dependencies, and run as the non-root `bun` user. The root `.dockerignore` excludes local secrets, dependencies, build output, and persisted data.
 
-# Don't run as root
-RUN addgroup -g 1001 -S raft && \
-    adduser -S raft -u 1001
-
-# Copy only necessary files
-WORKDIR /app
-COPY --chown=raft:raft package*.json ./
-RUN npm ci --only=production
-
-COPY --chown=raft:raft . .
-RUN npm run build
-
-# Production image
-FROM gcr.io/distroless/nodejs20-debian11
-
-# Copy from builder
-COPY --from=builder --chown=1001:1001 /app/dist /app/dist
-COPY --from=builder --chown=1001:1001 /app/node_modules /app/node_modules
-
-# Run as non-root
-USER 1001
-
-# No shell, minimal attack surface
-WORKDIR /app
-CMD ["dist/index.js"]
+```bash
+# Run from the repository root
+docker build -f packages/kv-server/Dockerfile -t raft-kv-server .
 ```
+
+See the [migration validation and known limitations](./bun-migration.md) before deployment.
 
 ### Application Security Headers
 
