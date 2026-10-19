@@ -9,8 +9,8 @@ import {
   DistributedCacheService,
   CacheOperation,
 } from "./distributed-cache.service";
-import { LoggerService } from "@/shared/services/logger.service";
-import { MetricsService } from "@/shared/services/metrics.service";
+import { LoggerService } from "../../shared/services/logger.service";
+import { MetricsService } from "../../shared/services/metrics.service";
 
 @Injectable()
 export class CacheEventHandler {

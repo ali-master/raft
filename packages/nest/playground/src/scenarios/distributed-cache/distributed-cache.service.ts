@@ -1,8 +1,8 @@
 import { Injectable, BadRequestException } from "@nestjs/common";
 import { RaftService } from "@usex/raft-nestjs";
-import { EventBusService } from "@/shared/services/event-bus.service";
-import { MetricsService } from "@/shared/services/metrics.service";
-import { LoggerService } from "@/shared/services/logger.service";
+import { EventBusService } from "../../shared/services/event-bus.service";
+import { MetricsService } from "../../shared/services/metrics.service";
+import { LoggerService } from "../../shared/services/logger.service";
 
 export interface CacheEntry {
   key: string;
