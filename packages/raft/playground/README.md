@@ -33,7 +33,7 @@ Each example uses its own Redis namespace and `/tmp/raft-playground/<cluster-id>
 
 `bun run start` (or `bun run dashboard`) starts the dashboard and opens your browser at `http://127.0.0.1:3210`. If the port is occupied, Bun selects a free port and prints the actual URL. Redis must already be reachable; startup failures are displayed in the UI. Stop with `Ctrl+C` to clean up this dashboard's dedicated cluster namespace.
 
-To change the cluster size, edit `NODE_COUNT` at the top of `src/dashboard/main.ts` and restart the dashboard. Use a positive integer.
+The dashboard starts with five nodes. To change the cluster size, edit `NODE_COUNT` at the top of `src/dashboard/main.ts` and restart the dashboard. Use a positive integer.
 
 The server uses **Bun.serve**, Web Streams, and SSE. **Bun.build** bundles React 19, Tailwind CSS 4, and locally owned shadcn/ui components in memory at startup. There is no separate frontend build or Node.js server. UI sources, components, tests, and server are in `src/dashboard/`; shadcn aliases are in `components.json`.
 
