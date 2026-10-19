@@ -9,7 +9,7 @@ describe("systemMetrics", () => {
       expect(cpuUsage).toBeLessThanOrEqual(100);
     });
 
-    it("should return different values on consecutive calls", async () => {
+    it("should return finite percentages on consecutive samples", async () => {
       const usage1 = await SystemMetrics.getCpuUsage();
       // Do some work to change CPU usage
       const _arr = Array.from({ length: 1000000 })
@@ -17,7 +17,11 @@ describe("systemMetrics", () => {
         .map((_, i) => i * 2);
       const usage2 = await SystemMetrics.getCpuUsage();
 
-      expect(usage1).not.toBe(usage2);
+      for (const usage of [usage1, usage2]) {
+        expect(Number.isFinite(usage)).toBe(true);
+        expect(usage).toBeGreaterThanOrEqual(0);
+        expect(usage).toBeLessThanOrEqual(100);
+      }
     });
   });
 

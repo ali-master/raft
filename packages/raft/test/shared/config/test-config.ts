@@ -88,12 +88,7 @@ export function createClusterConfigs(
       throw new Error(`Node ID at index ${i} is undefined`);
     }
     const port = basePort + i;
-    const peers = nodeIds
-      .filter((id) => id !== nodeId)
-      .map(
-        (_, index) =>
-          `localhost:${basePort + (index >= i ? index + 1 : index)}`,
-      );
+    const peers = nodeIds;
 
     configs.push(
       createTestConfig(nodeId, {

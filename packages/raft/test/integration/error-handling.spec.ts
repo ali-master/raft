@@ -1,4 +1,4 @@
-import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
+import { it, expect, describe, beforeEach, afterEach } from "vitest";
 import { createTestConfig } from "../shared/test-utils";
 import { clearRedisData } from "../shared/test-setup";
 import {
@@ -12,13 +12,11 @@ describe("errorHandling", () => {
 
   beforeEach(async () => {
     await clearRedisData();
-    vi.useFakeTimers();
     engine = new RaftEngine();
   });
 
   afterEach(async () => {
     await engine.stopAllNodes();
-    vi.useRealTimers();
   });
 
   describe("configuration errors", () => {

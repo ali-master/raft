@@ -12,7 +12,6 @@ describe("raftStateMachine", () => {
   beforeEach(async () => {
     await clearRedisData();
     vi.clearAllMocks();
-    vi.useFakeTimers();
     // Use unique node IDs for each test to avoid state persistence issues
     const timestamp = Date.now();
     configs = [
@@ -45,7 +44,6 @@ describe("raftStateMachine", () => {
         // Ignore stop errors in tests
       }
     }
-    vi.useRealTimers();
   });
 
   describe("state management", () => {
@@ -83,7 +81,7 @@ describe("raftStateMachine", () => {
       expect(node.getState()).toBe(RaftState.FOLLOWER);
 
       await expect(node.appendLog({ command: "test" })).rejects.toThrow(
-        "Only leader can append logs",
+        "Only a running leader can append logs",
       );
     });
   });

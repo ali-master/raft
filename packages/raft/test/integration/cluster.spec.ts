@@ -8,13 +8,11 @@ describe("integration Tests", () => {
 
   beforeEach(async () => {
     await clearRedisData();
-    vi.useFakeTimers();
     engine = new RaftEngine();
   });
 
   afterEach(async () => {
     await engine.stopAllNodes();
-    vi.useRealTimers();
   });
 
   it("should create a three-node cluster", async () => {
@@ -48,7 +46,9 @@ describe("integration Tests", () => {
     await engine.startNode("node3");
 
     // Wait for peer discovery
-    await vi.advanceTimersByTimeAsync(5000); // Advance 5 seconds for peer discovery
+    await vi.waitFor(() => expect(node1.getPeerInfo("node2")).toBeDefined(), {
+      timeout: 3000,
+    });
 
     // Verify that nodes are started and accessible
     expect(node1.getState()).toBeDefined();
