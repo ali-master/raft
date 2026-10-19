@@ -1,9 +1,10 @@
-// @ts-nocheck
 import * as path from "node:path";
 import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { EventEmitterModule } from "@nestjs/event-emitter";
 import { RaftModule } from "@usex/raft-nestjs";
+import type { RaftModuleOptions } from "@usex/raft-nestjs";
+import { RaftEngine } from "@usex/raft";
 
 import { CliModule } from "./cli/cli.module";
 import { ClusterModule } from "./cluster/cluster.module";
@@ -36,32 +37,32 @@ import { SharedModule } from "./shared/shared.module";
 
     // Raft Consensus
     RaftModule.forRootAsync({
+      isGlobal: true,
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        nodeId: process.env.NODE_ID || "node-1",
-        peers: process.env.PEERS?.split(",") || [],
-        storageDir: path.join(
-          __dirname,
-          "../data",
-          process.env.NODE_ID || "node-1",
-        ),
-        electionTimeout: {
-          min: Number.parseInt(process.env.ELECTION_MIN_TIMEOUT || "150", 10),
-          max: Number.parseInt(process.env.ELECTION_MAX_TIMEOUT || "300", 10),
-        },
-        heartbeatInterval: Number.parseInt(
-          process.env.HEARTBEAT_INTERVAL || "50",
-          10,
-        ),
-        persistence: {
-          provider: "redis",
-          config: {
-            host: process.env.REDIS_HOST || "localhost",
-            port: Number.parseInt(process.env.REDIS_PORT || "6379", 10),
-            password: process.env.REDIS_PASSWORD,
+      useFactory: (configService: ConfigService): RaftModuleOptions => {
+        const nodeId = configService.get<string>("NODE_ID", "node-1");
+        const config = RaftEngine.createDefaultConfiguration(
+          nodeId,
+          configService.get<string>("CLUSTER_ID", "playground-cluster"),
+        );
+        return {
+          ...config,
+          electionTimeout: [
+            Number(configService.get("ELECTION_MIN_TIMEOUT", config.electionTimeout[0])),
+            Number(configService.get("ELECTION_MAX_TIMEOUT", config.electionTimeout[1])),
+          ],
+          heartbeatInterval: Number(
+            configService.get("HEARTBEAT_INTERVAL", config.heartbeatInterval),
+          ),
+          persistence: {
+            ...config.persistence,
+            dataDir: configService.get<string>(
+              "RAFT_DATA_DIR",
+              path.join(__dirname, "../data", nodeId),
+            ),
           },
-        },
-      }),
+        };
+      },
       inject: [ConfigService],
     }),
 
