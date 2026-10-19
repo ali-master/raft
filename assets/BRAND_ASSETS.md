@@ -18,10 +18,19 @@ The **Quorum mark** brings three independent shapes into one recognizable R: an 
 | [KV compatibility logo](./kv-server-logo.svg)    | SVG · 512 × 512 viewBox | Same primary mark; keeps existing KV documentation links working     |
 | [Social preview](./social-preview.png)           | PNG · 1280 × 640        | Finished studio-rendered repository/share cover                      |
 | [Social vector companion](./social-preview.svg)  | SVG · 1280 × 640        | Editable flat composition with the same mark and copy                |
+| [Project landing page](./index.html)              | HTML + CSS + JavaScript | Interactive introduction, package directory, and dashboard film      |
+| [Observatory film](./raft-observatory.mp4)         | MP4 · 1920 × 1080 · 60 s | Live five-node dashboard tour                                        |
+| [Film poster](./observatory-poster.jpg)           | JPEG · 1920 × 1080      | Still extracted from the Observatory film                            |
 
 The older variant filenames remain available to preserve links. They now belong to one identity; they are no longer unrelated alternate logo concepts. All package README headers use the primary mark. The root README uses the social preview.
 
 The PNG social cover includes generated three-dimensional materials and light. The SVG companion is native vector artwork rather than an embedded bitmap; it deliberately uses a flat rendition. Neither file depends on external images, stylesheets, or fonts. The SVG's live text uses a local system font stack, so letterforms may vary between renderers. Use the PNG when exact typography is required.
+
+## Landing page
+
+Open `index.html` directly in a browser, or serve this directory with a static HTTP server. Keep `landing.css`, `landing.js`, the logo files, the film, and its poster beside it. There is no build step, CDN, external font, or additional dependency.
+
+The five-node sculpture is an explicitly labeled illustration; choosing a node changes the illustrated leader without contacting the real dashboard. The embedded video is the real five-node capture. Motion can be paused and respects the system's reduced-motion preference. The installation tabs support keyboard navigation; documentation links, native video playback, and the initial commands remain available without JavaScript.
 
 ## Palette
 
