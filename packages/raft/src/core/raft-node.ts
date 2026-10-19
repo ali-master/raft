@@ -445,24 +445,18 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       (peerInfo: PeerInfo) => {
         this.logger.info("New peer discovered", { peerId: peerInfo.nodeId });
         this.network.updateCircuitBreakers();
+        this.publishEvent(RaftEventType.PEER_DISCOVERED, {
+          peerId: peerInfo.nodeId,
+        });
       },
     );
 
     this.peerDiscovery.on(RaftEventType.PEER_LOST, (peerInfo: PeerInfo) => {
       this.logger.info("Peer lost", { peerId: peerInfo.nodeId });
       this.network.updateCircuitBreakers();
+      this.publishEvent(RaftEventType.PEER_LOST, { peerId: peerInfo.nodeId });
 
-      // Update active configuration to remove lost peer
-      if (this.activeConfiguration.newPeers.includes(peerInfo.nodeId)) {
-        this.activeConfiguration.newPeers =
-          this.activeConfiguration.newPeers.filter(
-            (peer) => peer !== peerInfo.nodeId,
-          );
-        this.logger.info("Updated activeConfiguration after peer lost", {
-          lostPeer: peerInfo.nodeId,
-          newConfiguration: this.activeConfiguration.newPeers,
-        });
-      }
+      // Discovery loss does not change the voting configuration.
     });
   }
 
@@ -472,6 +466,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   ): void {
     const event = new RaftEvent(type, this.config.nodeId, data);
     this.eventBus.publish(event);
+    this.emit("raftEvent", event);
   }
 
   private startElectionTimer(): void {

@@ -51,6 +51,7 @@ export type {
   PreVoteRequest,
   PreVoteResponse,
   RaftConfiguration,
+  RaftEvent,
   RaftMetrics,
   StateMachine,
   SystemMetricsSnapshot,
