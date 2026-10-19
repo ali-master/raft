@@ -18,6 +18,7 @@ import { calculateChecksum } from "../utils";
 
 export class RaftLog<TCommand = unknown> {
   private entries: LogEntry<TCommand>[] = [];
+  private snapshotTerm = 0;
   private logStartIndex: number = 1; // Represents the index of entries[0] in the overall log (1-based per Raft spec)
   private readonly storage: Redis;
   private readonly nodeId: string;
@@ -91,21 +92,29 @@ export class RaftLog<TCommand = unknown> {
         );
       }
 
-      // Remove conflicting entries (account for logStartIndex offset)
-      const sliceEnd = prevLogIndex + 1 - this.logStartIndex;
-      if (sliceEnd >= 0) {
-        this.entries = this.entries.slice(0, sliceEnd);
-      }
-
-      // Append new entries
-      for (const entry of entries) {
-        this.entries.push(entry);
-
-        // Persist to WAL first if enabled
-        if (this.walEngine) {
-          await this.walEngine.appendLogEntry(entry);
+      for (const [offset, entry] of entries.entries()) {
+        if (entry.index !== prevLogIndex + offset + 1) {
+          throw new RaftValidationException(
+            "Entries must have contiguous log indices",
+          );
         }
-
+      }
+      for (const entry of entries) {
+        const existing = this.getEntry(entry.index);
+        if (existing?.term === entry.term) continue;
+        if (existing) {
+          const discarded = this.entries.splice(
+            entry.index - this.logStartIndex,
+          );
+          await this.storage.del(
+            ...discarded.map(
+              (item) =>
+                `${this.config.redis.keyPrefix ?? ""}${this.nodeId}:log:${item.index}`,
+            ),
+          );
+        }
+        this.entries.push(entry);
+        if (this.walEngine) await this.walEngine.appendLogEntry(entry);
         await this.persistEntry(entry);
       }
 
@@ -188,7 +197,8 @@ export class RaftLog<TCommand = unknown> {
     return this.logStartIndex;
   }
 
-  public setFirstIndex(index: number): void {
+  public setFirstIndex(index: number, term = this.snapshotTerm): void {
+    this.snapshotTerm = term;
     this.logger.info(
       `Setting RaftLog first index to: ${index}. Current logStartIndex: ${this.logStartIndex}`,
       { nodeId: this.nodeId },
@@ -249,7 +259,7 @@ export class RaftLog<TCommand = unknown> {
 
   public getLastTerm(): number {
     const lastEntry = this.getLastEntry();
-    return lastEntry ? lastEntry.term : 0;
+    return lastEntry ? lastEntry.term : this.snapshotTerm;
   }
 
   private isValidPreviousEntry(
@@ -259,6 +269,10 @@ export class RaftLog<TCommand = unknown> {
     // prevLogIndex <= 0 means "beginning of log" (no previous entry to validate)
     if (prevLogIndex <= 0) {
       return true;
+    }
+
+    if (prevLogIndex === this.logStartIndex - 1) {
+      return prevLogTerm === undefined || prevLogTerm === this.snapshotTerm;
     }
 
     // Account for logStartIndex offset when checking bounds
@@ -279,7 +293,7 @@ export class RaftLog<TCommand = unknown> {
   }
 
   private async persistEntry(entry: LogEntry): Promise<void> {
-    const key = `${this.nodeId}:log:${entry.index}`;
+    const key = `${this.config.redis.keyPrefix ?? ""}${this.nodeId}:log:${entry.index}`;
     const ttl = this.config.redis.ttl ?? 3600;
     await this.storage.setex(key, ttl, JSON.stringify(entry));
   }
@@ -290,6 +304,10 @@ export class RaftLog<TCommand = unknown> {
       if (this.walRecovery) {
         const recoveryState = await this.walRecovery.recover();
         this.entries = recoveryState.logs as LogEntry<TCommand>[];
+        this.logStartIndex =
+          this.entries[0]?.index ??
+          (recoveryState.lastSnapshot?.lastIncludedIndex ?? 0) + 1;
+        this.snapshotTerm = recoveryState.lastSnapshot?.lastIncludedTerm ?? 0;
         this.logger.info("Log recovered from WAL", {
           entryCount: this.entries.length,
           nodeId: this.nodeId,
@@ -298,7 +316,7 @@ export class RaftLog<TCommand = unknown> {
       }
 
       // Fallback to Redis storage
-      const pattern = `${this.nodeId}:log:*`;
+      const pattern = `${this.config.redis.keyPrefix ?? ""}${this.nodeId}:log:*`;
       const keys = await this.storage.keys(pattern);
 
       const entries: LogEntry[] = [];
@@ -360,6 +378,7 @@ export class RaftLog<TCommand = unknown> {
   }
 
   public async truncateBeforeIndex(index: number): Promise<void> {
+    this.snapshotTerm = this.getEntry(index - 1)?.term ?? this.snapshotTerm;
     // Remove entries before the given index
     const entriesToRemove = this.entries.filter((e) => e.index < index);
     this.entries = this.entries.filter((e) => e.index >= index);
@@ -371,7 +390,7 @@ export class RaftLog<TCommand = unknown> {
 
     // Remove from Redis
     for (const entry of entriesToRemove) {
-      const key = `${this.nodeId}:log:${entry.index}`;
+      const key = `${this.config.redis.keyPrefix ?? ""}${this.nodeId}:log:${entry.index}`;
       await this.storage.del(key);
     }
 
@@ -445,9 +464,8 @@ export class RaftLog<TCommand = unknown> {
     );
 
     if (existingEntryIndex !== -1) {
-      // If an entry with the same index and term exists, retain log entries up to that point
-      // and discard entries *after* it.
-      const entriesToKeep = this.entries.slice(0, existingEntryIndex + 1);
+      // The snapshot replaces the prefix; a matching suffix remains valid.
+      const entriesToKeep = this.entries.slice(existingEntryIndex + 1);
       removedCount = this.entries.length - entriesToKeep.length;
       this.entries = entriesToKeep;
     } else {
@@ -457,11 +475,14 @@ export class RaftLog<TCommand = unknown> {
       this.entries = [];
     }
 
+    this.logStartIndex = index + 1;
+    this.snapshotTerm = term;
+
     // Update Redis: remove the discarded entries
     // This is simplified; in a real scenario, you might remove a range of keys.
     // For now, we'll re-persist the (potentially empty) current log or clear all.
     // This part needs to be efficient.
-    const allKeysPattern = `${this.nodeId}:log:*`;
+    const allKeysPattern = `${this.config.redis.keyPrefix ?? ""}${this.nodeId}:log:*`;
     const keys = await this.storage.keys(allKeysPattern);
     if (keys.length > 0) {
       await this.storage.del(keys);

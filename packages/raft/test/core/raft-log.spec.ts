@@ -78,7 +78,7 @@ describe("raftLog", () => {
       });
 
       expect(mockRedis.setex).toHaveBeenCalledWith(
-        "test-node:log:1",
+        `${config.redis.keyPrefix}test-node:log:1`,
         3600,
         expect.stringContaining('"term":1'),
       );
@@ -86,6 +86,26 @@ describe("raftLog", () => {
   });
 
   describe("appendEntries", () => {
+    it("keeps a matching suffix when an older batch or heartbeat is retried", async () => {
+      for (let i = 0; i < 3; i++)
+        await raftLog.appendEntry(1, RaftCommandType.APPLICATION, i);
+      await raftLog.appendEntries([raftLog.getEntry(2)!], 1, 1);
+      await raftLog.appendEntries([], 1, 1);
+      expect(raftLog.getLastIndex()).toBe(3);
+      expect(raftLog.getEntry(3)?.commandPayload).toBe(2);
+    });
+
+    it("retains the matching suffix and term when installing a snapshot", async () => {
+      for (let i = 0; i < 3; i++)
+        await raftLog.appendEntry(2, RaftCommandType.APPLICATION, i);
+      await raftLog.truncateEntriesAfter(2, 2);
+      expect(raftLog.getFirstIndex()).toBe(3);
+      expect(raftLog.getEntry(3)?.commandPayload).toBe(2);
+      await raftLog.truncateEntriesAfter(3, 2);
+      expect(raftLog.getLastIndex()).toBe(3);
+      expect(raftLog.getLastTerm()).toBe(2);
+    });
+
     it("should append multiple entries", async () => {
       const entries: LogEntry[] = [
         {
@@ -275,10 +295,15 @@ describe("raftLog", () => {
         }),
       ];
 
-      mockRedis.keys.mockResolvedValue(["test-node:log:1", "test-node:log:2"]);
+      mockRedis.keys.mockResolvedValue([
+        `${config.redis.keyPrefix}test-node:log:1`,
+        `${config.redis.keyPrefix}test-node:log:2`,
+      ]);
       mockRedis.get.mockImplementation((key: string) => {
-        if (key === "test-node:log:1") return Promise.resolve(storedEntries[0]);
-        if (key === "test-node:log:2") return Promise.resolve(storedEntries[1]);
+        if (key === `${config.redis.keyPrefix}test-node:log:1`)
+          return Promise.resolve(storedEntries[0]);
+        if (key === `${config.redis.keyPrefix}test-node:log:2`)
+          return Promise.resolve(storedEntries[1]);
         return Promise.resolve(null);
       });
 
