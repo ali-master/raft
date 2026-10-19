@@ -4,12 +4,16 @@ import { createRoot } from "react-dom/client";
 import {
   Zap,
   X,
+  Vote,
+  Terminal,
   ShieldCheck,
   Send,
   Scissors,
   RotateCcw,
   Radio,
   Power,
+  Play,
+  Pause,
   Orbit,
   Network,
   LoaderCircle,
@@ -40,13 +44,37 @@ import {
   DropdownMenuContent,
   DropdownMenu,
 } from "./components/ui/dropdown-menu";
-
+import { TabsTrigger, TabsList, Tabs } from "./components/ui/tabs";
+import { ScrollArea } from "./components/ui/scroll-area";
+import {
+  DialogTitle,
+  DialogHeader,
+  DialogDescription,
+  DialogContent,
+  Dialog,
+} from "./components/ui/dialog";
 import { useObservatory } from "./use-observatory";
 import { Topology } from "./topology";
-import { quorumFor, describeEvent } from "./model";
-import type { DashboardNode } from "./model";
+import { quorumFor, isHeartbeat, eventFamily, describeEvent } from "./model";
+import type { EventFamily, DashboardNode } from "./model";
+import type { ObservatoryEvent } from "./journal";
 import { cn } from "./lib/utils";
+
+const familyIcons = {
+  consensus: Vote,
+  replication: Layers,
+  network: Radio,
+  system: Terminal,
+};
+const familyColors = {
+  consensus: "text-candidate",
+  replication: "text-primary",
+  network: "text-follower",
+  system: "text-muted-foreground",
+};
 const format = new Intl.NumberFormat("en-US");
+const clock = (time: number) =>
+  new Date(time).toLocaleTimeString("en-GB", { hour12: false });
 
 function Hint({ children, text }: { children: ReactNode; text: string }) {
   return (
@@ -216,9 +244,12 @@ function Replication({
 }
 
 function App() {
-  const { state, events, packets, connected, reducedMotion } =
+  const { state, events, packets, connected, omitted, reducedMotion } =
     useObservatory();
   const [selected, setSelected] = useState("");
+  const [tab, setTab] = useState("activity");
+  const [frozen, setFrozen] = useState<ObservatoryEvent[] | null>(null);
+  const [detail, setDetail] = useState<ObservatoryEvent | null>(null);
   const [pending, setPending] = useState("");
   const [notice, setNotice] = useState<{
     message: string;
@@ -236,6 +267,13 @@ function App() {
   const commitIndex =
     quorum.leader?.commitIndex ??
     Math.max(0, ...nodes.map((node) => node.commitIndex));
+  const filtered = (frozen ?? events)
+    .filter((event) =>
+      tab === "activity"
+        ? !isHeartbeat(event) && event.type !== "metrics_updated"
+        : eventFamily(event) === tab,
+    )
+    .slice(0, 80);
   const startupError =
     state?.status === "error"
       ? events.find((event) => event.type === "error")
@@ -256,6 +294,8 @@ function App() {
   }, [notice]);
 
   useEffect(() => {
+    setFrozen(null);
+    setDetail(null);
     setSelected("");
     setNotice(null);
   }, [state?.sessionId]);
@@ -742,6 +782,137 @@ function App() {
               </div>
             </section>
 
+            <section
+              id="activity"
+              className="panel scroll-mt-6 overflow-hidden"
+            >
+              <div className="flex items-center justify-between gap-2 px-5 pb-3 pt-5">
+                <div className="flex items-center gap-2">
+                  <h2 className="section-heading">The pulse</h2>
+                  <span className="mono text-[10px] text-muted-foreground">
+                    {format.format(state?.totalEvents ?? 0)}
+                  </span>
+                </div>
+                <Hint
+                  text={
+                    frozen
+                      ? "Resume the event feed"
+                      : "Freeze the feed; the cluster keeps running"
+                  }
+                >
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => setFrozen(frozen ? null : events)}
+                    aria-label={
+                      frozen ? "Resume event feed" : "Pause event feed"
+                    }
+                  >
+                    {frozen ? (
+                      <Play className="size-3" />
+                    ) : (
+                      <Pause className="size-3" />
+                    )}
+                  </Button>
+                </Hint>
+              </div>
+              <Tabs value={tab} onValueChange={setTab} className="px-5">
+                <TabsList className="h-8 w-full bg-background/70 p-1">
+                  {[
+                    ["activity", "Highlights"],
+                    ["consensus", "Votes"],
+                    ["replication", "Log"],
+                    ["network", "RPC"],
+                  ].map(([value, label]) => (
+                    <TabsTrigger
+                      key={value}
+                      value={value!}
+                      className="h-6 flex-1 rounded-sm text-[10px]"
+                    >
+                      {label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+              <div className="flex items-center justify-between px-5 py-3 text-[9px] text-muted-foreground">
+                <span>
+                  {frozen
+                    ? "FEED PAUSED · CLUSTER STILL LIVE"
+                    : "LIVE EVENT STREAM"}
+                </span>
+                <span className="mono">SSE</span>
+              </div>
+              <ScrollArea
+                className="feed-scroll h-[397px] px-5"
+                aria-label="Cluster events"
+              >
+                {!filtered.length && (
+                  <div className="flex min-h-48 flex-col items-center justify-center gap-3 text-center">
+                    <Radio
+                      className="size-6 text-muted-foreground/50"
+                      strokeWidth={1}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {state?.status === "complete"
+                        ? "No retained events in this category."
+                        : "Listening for the next event."}
+                    </p>
+                    <p className="max-w-48 text-[10px] leading-relaxed text-muted-foreground/70">
+                      {tab === "activity"
+                        ? "Heartbeat traffic lives in the RPC tab. Major transitions appear here."
+                        : "Events appear as the cluster runs."}
+                    </p>
+                  </div>
+                )}
+                {filtered.map((event) => {
+                  const family: EventFamily = eventFamily(event);
+                  const Icon = familyIcons[family];
+                  return (
+                    <button
+                      type="button"
+                      key={event.id}
+                      className="event-row"
+                      onClick={() => setDetail(event)}
+                    >
+                      <span
+                        className={cn(
+                          "event-icon",
+                          event.type === "error"
+                            ? "text-destructive"
+                            : familyColors[family],
+                        )}
+                      >
+                        <Icon className="size-3" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="mono truncate text-[10px] text-muted-foreground">
+                            {event.nodeId}
+                          </span>
+                          <time
+                            dateTime={new Date(event.time).toISOString()}
+                            className="mono shrink-0 text-[9px] text-muted-foreground/70"
+                          >
+                            {clock(event.time)}
+                          </time>
+                        </span>
+                        <span className="mt-1 block break-words text-[11px] leading-[1.6] text-foreground/90">
+                          {describeEvent(event)}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </ScrollArea>
+              <div className="flex items-center justify-between border-t border-border px-5 py-3 text-[9px] text-muted-foreground">
+                <span>
+                  {omitted
+                    ? `${format.format(omitted)} older events outside replay window`
+                    : "Select an event for its full payload"}
+                </span>
+                <ArrowUpRight className="size-3" />
+              </div>
+            </section>
           </aside>
         </div>
 
@@ -773,6 +944,32 @@ function App() {
         </div>
       </main>
 
+      <Dialog
+        open={!!detail}
+        onOpenChange={(open) => {
+          if (!open) setDetail(null);
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Terminal className="size-4 text-primary" />
+              Event #{detail?.id}
+            </DialogTitle>
+            <DialogDescription>
+              {detail
+                ? `${detail.nodeId} · ${detail.type} · ${clock(detail.time)}`
+                : "Event details"}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm">{detail && describeEvent(detail)}</p>
+          <ScrollArea className="max-h-80 rounded-lg bg-background p-4">
+            <pre className="whitespace-pre-wrap break-all font-mono text-xs leading-relaxed text-follower">
+              {JSON.stringify(detail?.data, null, 2)}
+            </pre>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </TooltipProvider>
   );
 }
