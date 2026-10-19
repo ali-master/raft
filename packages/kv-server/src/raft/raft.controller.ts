@@ -1,6 +1,6 @@
 import { Get, Controller } from "@nestjs/common";
 import { ApiTags, ApiResponse, ApiOperation } from "@nestjs/swagger";
-import type { RaftService } from "./raft.service";
+import { RaftService } from "./raft.service";
 import type { RaftState } from "@usex/raft";
 
 interface RaftStatusResponse {

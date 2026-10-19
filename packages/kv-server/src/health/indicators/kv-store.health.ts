@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { HealthIndicatorResult } from "@nestjs/terminus";
-import type { KVStoreService } from "../../kv-store/kv-store.service";
+import { KVStoreService } from "../../kv-store/kv-store.service";
 import { BaseHealthIndicator } from "../../shared";
 
 @Injectable()

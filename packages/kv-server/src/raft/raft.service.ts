@@ -1,8 +1,7 @@
 import type { OnModuleDestroy } from "@nestjs/common";
 import { Injectable } from "@nestjs/common";
-import type { ConfigService } from "@nestjs/config";
-import type { RaftNode } from "@usex/raft";
-import { RaftState } from "@usex/raft";
+import { ConfigService } from "@nestjs/config";
+import { RaftState, RaftNode  } from "@usex/raft";
 import { ConfigHelper } from "../shared";
 
 @Injectable()

@@ -1,9 +1,9 @@
 import { Get, Controller } from "@nestjs/common";
-import type { HealthCheckService, HealthCheckResult } from "@nestjs/terminus";
-import { HealthCheck } from "@nestjs/terminus";
+import { HealthCheckService, HealthCheck  } from "@nestjs/terminus";
+import type { HealthCheckResult } from "@nestjs/terminus";
 import { ApiTags, ApiOperation } from "@nestjs/swagger";
-import type { KVStoreHealthIndicator } from "./indicators/kv-store.health";
-import type { RaftHealthIndicator } from "./indicators/raft.health";
+import { KVStoreHealthIndicator } from "./indicators/kv-store.health";
+import { RaftHealthIndicator } from "./indicators/raft.health";
 
 @ApiTags("Health")
 @Controller("health")

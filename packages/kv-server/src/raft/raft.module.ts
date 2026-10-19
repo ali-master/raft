@@ -3,6 +3,7 @@ import { ConfigService, ConfigModule } from "@nestjs/config";
 import { RaftNode, RaftEngine } from "@usex/raft";
 import { KVStateMachine } from "../kv-store/kv-state-machine";
 import { EncryptionService } from "../encryption/encryption.service";
+import { EncryptionModule } from "../encryption/encryption.module";
 import { RaftService } from "./raft.service";
 import { RaftController } from "./raft.controller";
 import { RaftRpcController } from "./raft-rpc.controller";
@@ -10,7 +11,7 @@ import { RedisConfigFactory, RaftConfigFactory } from "../shared";
 
 @Global()
 @Module({
-  imports: [ConfigModule],
+  imports: [ConfigModule, EncryptionModule],
   controllers: [RaftController, RaftRpcController],
   providers: [
     {
