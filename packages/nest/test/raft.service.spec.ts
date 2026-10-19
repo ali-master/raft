@@ -15,16 +15,15 @@ describe("RaftService", () => {
     mockNode = {
       getState: vi.fn(),
       getLeaderId: vi.fn(),
+      getNodeId: vi.fn().mockReturnValue("node-1"),
       getCurrentTerm: vi.fn(),
       getMetrics: vi.fn(),
-      getPeers: vi.fn(),
-      propose: vi.fn(),
-      addPeer: vi.fn(),
-      removePeer: vi.fn(),
+      getPeers: vi.fn().mockReturnValue(["node-1", "old-peer"]),
+      appendLog: vi.fn(),
+      changeClusterConfiguration: vi.fn(),
       forceElection: vi.fn(),
       createSnapshot: vi.fn(),
-      getEventBus: vi.fn(),
-    };
+    } satisfies Partial<RaftNode>;
 
     mockEngine = {
       getNode: vi.fn(),
@@ -116,10 +115,10 @@ describe("RaftService", () => {
 
   describe("getLeaderId", () => {
     it("should return leader ID", () => {
-      // TODO: Update when getLeaderId is implemented in RaftService
+      mockNode.getLeaderId.mockReturnValue("leader-node");
       const result = service.getLeaderId();
 
-      expect(result).toBe(null);
+      expect(result).toBe("leader-node");
     });
 
     it("should return null when no leader", () => {
@@ -157,18 +156,23 @@ describe("RaftService", () => {
 
       const result = service.getAllNodes();
 
-      expect(result).toBe(nodesMap);
+      expect(result).toEqual([mockNode]);
       expect(mockEngine.getAllNodes).toHaveBeenCalled();
     });
   });
 
   describe("propose", () => {
     it("should propose value to node", async () => {
-      mockNode.propose.mockResolvedValue(undefined);
+      mockNode.appendLog.mockResolvedValue(true);
 
       await service.propose({ data: "test" });
 
-      expect(mockNode.propose).toHaveBeenCalledWith({ data: "test" });
+      expect(mockNode.appendLog).toHaveBeenCalledWith({ data: "test" });
+    });
+
+    it("should propagate a rejected write", async () => {
+      mockNode.appendLog.mockRejectedValue(new Error("Not the leader"));
+      await expect(service.propose("value")).rejects.toThrow("Not the leader");
     });
 
     it("should throw error when node not found", async () => {
@@ -194,19 +198,45 @@ describe("RaftService", () => {
 
   describe("peer management", () => {
     it("should add peer", async () => {
-      mockNode.addPeer.mockResolvedValue(undefined);
-
       await service.addPeer("new-peer");
 
-      expect(mockNode.addPeer).toHaveBeenCalledWith("new-peer");
+      expect(mockNode.changeClusterConfiguration).toHaveBeenCalledWith([
+        "node-1",
+        "old-peer",
+        "new-peer",
+      ]);
+    });
+
+    it("should not duplicate an existing voting member", async () => {
+      await service.addPeer("old-peer");
+      expect(mockNode.changeClusterConfiguration).toHaveBeenCalledWith([
+        "node-1",
+        "old-peer",
+      ]);
     });
 
     it("should remove peer", async () => {
-      mockNode.removePeer.mockResolvedValue(undefined);
-
       await service.removePeer("old-peer");
 
-      expect(mockNode.removePeer).toHaveBeenCalledWith("old-peer");
+      expect(mockNode.changeClusterConfiguration).toHaveBeenCalledWith([
+        "node-1",
+      ]);
+    });
+
+    it("should reject removing the current node", async () => {
+      await expect(service.removePeer("node-1")).rejects.toThrow(
+        "Transfer leadership",
+      );
+      expect(mockNode.changeClusterConfiguration).not.toHaveBeenCalled();
+    });
+
+    it("should reject membership changes for missing nodes", async () => {
+      await expect(service.addPeer("peer", "missing")).rejects.toThrow(
+        "Node missing not found",
+      );
+      await expect(service.removePeer("peer", "missing")).rejects.toThrow(
+        "Node missing not found",
+      );
     });
 
     it("should get peers", () => {

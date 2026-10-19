@@ -52,9 +52,8 @@ export class RaftService {
   /**
    * Get the current leader ID
    */
-  getLeaderId(_nodeId?: string): string | null {
-    // TODO: Implement getLeaderId in RaftNode
-    return null;
+  getLeaderId(nodeId?: string): string | null {
+    return this.getNode(nodeId)?.getLeaderId() ?? null;
   }
 
   /**
@@ -96,9 +95,8 @@ export class RaftService {
   /**
    * Propose a value to the cluster
    */
-  async propose(_value: any, _nodeId?: string): Promise<void> {
-    // TODO: Implement propose in RaftNode
-    throw new Error("Method not implemented yet");
+  async propose(value: unknown, nodeId?: string): Promise<void> {
+    await this.requireNode(nodeId).appendLog(value);
   }
 
   /**
@@ -112,17 +110,24 @@ export class RaftService {
   /**
    * Add a peer to the cluster
    */
-  async addPeer(_peerId: string, _nodeId?: string): Promise<void> {
-    // TODO: Implement addPeer in RaftNode
-    throw new Error("Method not implemented yet");
+  async addPeer(peerId: string, nodeId?: string): Promise<void> {
+    const node = this.requireNode(nodeId);
+    await node.changeClusterConfiguration([
+      ...new Set([...node.getPeers(), peerId]),
+    ]);
   }
 
   /**
    * Remove a peer from the cluster
    */
-  async removePeer(_peerId: string, _nodeId?: string): Promise<void> {
-    // TODO: Implement removePeer in RaftNode
-    throw new Error("Method not implemented yet");
+  async removePeer(peerId: string, nodeId?: string): Promise<void> {
+    const node = this.requireNode(nodeId);
+    if (peerId === node.getNodeId()) {
+      throw new Error("Transfer leadership before removing the current node");
+    }
+    await node.changeClusterConfiguration(
+      node.getPeers().filter((peer) => peer !== peerId),
+    );
   }
 
   /**
@@ -136,16 +141,20 @@ export class RaftService {
   /**
    * Force an election
    */
-  async forceElection(_nodeId?: string): Promise<void> {
-    // TODO: Implement forceElection in RaftNode
-    throw new Error("Method not implemented yet");
+  async forceElection(nodeId?: string): Promise<void> {
+    await this.requireNode(nodeId).forceElection();
   }
 
   /**
    * Create a snapshot
    */
-  async createSnapshot(_nodeId?: string): Promise<void> {
-    // TODO: Implement createSnapshot in RaftNode
-    throw new Error("Method not implemented yet");
+  async createSnapshot(nodeId?: string): Promise<void> {
+    await this.requireNode(nodeId).createSnapshot();
+  }
+
+  private requireNode(nodeId?: string): RaftNode {
+    const node = this.getNode(nodeId);
+    if (!node) throw new Error(`Node ${nodeId ?? "default"} not found`);
+    return node;
   }
 }
