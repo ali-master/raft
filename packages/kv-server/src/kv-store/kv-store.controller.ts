@@ -1,6 +1,6 @@
 import { Post, Param, Get, Delete, Controller, Body } from "@nestjs/common";
 import { ApiTags, ApiResponse, ApiOperation } from "@nestjs/swagger";
-import type { KVStoreService } from "./kv-store.service";
+import { KVStoreService } from "./kv-store.service";
 
 @ApiTags("KV Store")
 @Controller("kv")

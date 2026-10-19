@@ -1,7 +1,7 @@
 import { QueryHandler } from "@nestjs/cqrs";
 import type { IQueryHandler, IQuery } from "@nestjs/cqrs";
 import { Injectable } from "@nestjs/common";
-import type { KVStateMachine } from "../kv-state-machine";
+import { KVStateMachine } from "../kv-state-machine";
 
 export class GetValueQuery implements IQuery {
   constructor(public readonly key: string) {}

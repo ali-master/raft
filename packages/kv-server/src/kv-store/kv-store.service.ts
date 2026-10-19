@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import type { QueryBus, EventBus, CommandBus } from "@nestjs/cqrs";
-import type { EncryptionService } from "../encryption/encryption.service";
+import { QueryBus, EventBus, CommandBus } from "@nestjs/cqrs";
+import { EncryptionService } from "../encryption/encryption.service";
 import { SetValueCommand } from "./commands/set-value.command";
 import { GetValueQuery } from "./queries/get-value.query";
 import { DeleteValueCommand } from "./commands/delete-value.command";
@@ -39,7 +39,7 @@ export class KVStoreService {
   }
 
   async isHealthy(): Promise<boolean> {
-    const { ErrorHandler } = await import("../shared");
+    const { ErrorHandler } = await import("../shared/index.js");
     return ErrorHandler.safeExecuteWithBoolean(async () => {
       const testKey = "health-check";
       const testValue = "test-value";
