@@ -2,15 +2,23 @@ import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  Zap,
   X,
   ShieldCheck,
   Send,
+  Scissors,
+  RotateCcw,
+  Radio,
+  Power,
   Orbit,
+  LoaderCircle,
   Layers,
   HeartPulse,
   Gauge,
   Database,
   CircleDot,
+  ChevronDown,
+  ArrowUpRight,
   ArrowDownToLine,
   Activity,
 } from "lucide-react";
@@ -22,6 +30,14 @@ import {
   TooltipContent,
   Tooltip,
 } from "./components/ui/tooltip";
+import {
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+  DropdownMenuItem,
+  DropdownMenuContent,
+  DropdownMenu,
+} from "./components/ui/dropdown-menu";
 
 import { useObservatory } from "./use-observatory";
 import { Topology } from "./topology";
@@ -36,6 +52,30 @@ function Hint({ children, text }: { children: ReactNode; text: string }) {
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent sideOffset={8}>{text}</TooltipContent>
     </Tooltip>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: ReactNode;
+  detail: ReactNode;
+}) {
+  return (
+    <div className="min-w-0 border-r border-border px-4 py-1 first:pl-0 last:border-0 md:px-7">
+      <p className="metric-label">{label}</p>
+      <div className="mt-2 flex items-baseline gap-2">
+        <span className="mono text-[25px] font-light tracking-tight md:text-[29px]">
+          {value}
+        </span>
+      </div>
+      <p className="mt-1.5 truncate text-[10px] text-muted-foreground">
+        {detail}
+      </p>
+    </div>
   );
 }
 
@@ -177,7 +217,7 @@ function App() {
   const { state, events, packets, connected, reducedMotion } =
     useObservatory();
   const [selected, setSelected] = useState("");
-  const [pending, ] = useState("");
+  const [pending, setPending] = useState("");
   const [notice, setNotice] = useState<{
     message: string;
     error: boolean;
@@ -185,9 +225,15 @@ function App() {
   const [navigation, setNavigation] = useState("overview");
   const nodes = state?.nodes ?? [];
   const quorum = quorumFor(nodes, state?.blockedLinks ?? []);
+  const active = nodes.filter((node) => node.running);
   const selectedNode =
     nodes.find((node) => node.id === selected) ?? quorum.leader ?? nodes[0];
   const controls = !!state?.controls;
+  const disabled = !connected || !state?.ready || !!pending || !!state?.busy;
+  const term = Math.max(0, ...nodes.map((node) => node.term));
+  const commitIndex =
+    quorum.leader?.commitIndex ??
+    Math.max(0, ...nodes.map((node) => node.commitIndex));
   const startupError =
     state?.status === "error"
       ? events.find((event) => event.type === "error")
@@ -212,7 +258,47 @@ function App() {
     setNotice(null);
   }, [state?.sessionId]);
 
+  async function action(name: string, nodeId?: string) {
+    setPending(name);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: name, nodeId }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Operation failed");
+      const messages: Record<string, string> = {
+        write: "Entry committed. Watch it reach every state machine.",
+        burst: "10 entries committed to the cluster.",
+        "fail-leader":
+          "Leader stopped. The remaining nodes will elect a successor.",
+        partition: "Network split. Watch the majority and minority diverge.",
+        heal: "All nodes reconnected. The cluster has stabilized.",
+        snapshot: "Snapshot requested. Inspect the compaction in the log.",
+        transfer: "Leadership transferred.",
+        stop: "Node stopped.",
+        start: "Node started. Catching up with the cluster.",
+      };
+      setNotice({
+        message: messages[name] ?? "Operation completed.",
+        error: false,
+      });
+    } catch (error) {
+      setNotice({
+        message: error instanceof Error ? error.message : String(error),
+        error: true,
+      });
+    } finally {
+      setPending("");
+    }
+  }
+
   const select = (id: string) => setSelected(id);
+  const onAction = (name: string, nodeId?: string) => {
+    void action(name, nodeId);
+  };
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -298,6 +384,85 @@ function App() {
       </header>
 
       <main id="overview" className="studio-shell pb-8">
+        <section className="enter flex flex-wrap items-end justify-between gap-6 pb-8 pt-10">
+          <div>
+            <p className="eyebrow mb-3 flex items-center gap-2">
+              <span className="h-px w-5 bg-primary" />A living view of
+              distributed systems
+            </p>
+            <h1 className="hero-title">
+              Consensus, <em>in motion.</em>
+            </h1>
+            <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground">
+              Every heartbeat. Every vote. One shared truth.
+            </p>
+          </div>
+          {controls ? (
+            <div className="flex items-center gap-2 pb-1">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="h-10 rounded-full px-4 text-xs"
+                    disabled={disabled}
+                  >
+                    <Zap className="size-3.5" />
+                    Experiment
+                    <ChevronDown className="size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64 p-2">
+                  <DropdownMenuLabel className="eyebrow px-2 py-2">
+                    Introduce a little chaos
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem onSelect={() => onAction("burst")}>
+                    <Layers />
+                    Append 10 entries
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onAction("fail-leader")}>
+                    <Power />
+                    Stop the leader
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onAction("partition")}>
+                    <Scissors />
+                    Split the network
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => onAction("heal")}>
+                    <RotateCcw />
+                    Reconnect all nodes
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onAction("snapshot")}>
+                    <Database />
+                    Create a snapshot
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                className="h-10 rounded-full px-5 text-xs shadow-[0_0_26px_#f2b58d14]"
+                disabled={disabled}
+                onClick={() => onAction("write")}
+              >
+                {pending === "write" ? (
+                  <LoaderCircle className="size-3.5 animate-spin" />
+                ) : (
+                  <span className="mr-1 text-lg leading-none">+</span>
+                )}
+                Append entry
+                <ArrowUpRight className="ml-1 size-3.5" />
+              </Button>
+            </div>
+          ) : (
+            <Badge
+              variant="outline"
+              className="gap-2 rounded-full px-3 py-2 font-normal text-muted-foreground"
+            >
+              <Radio className="size-3" />
+              Observing{" "}
+              {state?.clusterId.replace(/-showcase$/, "") ?? "playground"}
+            </Badge>
+          )}
+        </section>
 
         {(notice ||
           startupError ||
@@ -329,6 +494,59 @@ function App() {
             )}
           </div>
         )}
+
+        <section
+          aria-label="Live cluster metrics"
+          className="enter enter-delay mb-7 grid grid-cols-3 gap-y-5 border-y border-border py-6 md:grid-cols-5"
+        >
+          <Stat
+            label="Current term"
+            value={nodes.length ? String(term).padStart(2, "0") : "—"}
+            detail="Election generation"
+          />
+          <Stat
+            label="Commit index"
+            value={nodes.length ? `#${commitIndex}` : "—"}
+            detail="Confirmed by a voting majority"
+          />
+          <Stat
+            label="Nodes online"
+            value={
+              <>
+                {String(active.length).padStart(2, "0")}
+                <span className="text-base text-muted-foreground">
+                  {" "}
+                  / {String(nodes.length).padStart(2, "0")}
+                </span>
+              </>
+            }
+            detail={
+              quorum.total
+                ? `${quorum.required} of ${quorum.total} ${nodes[0]?.weighted ? "weight" : "votes"} required`
+                : "Establishing quorum"
+            }
+          />
+          <Stat
+            label="Message flow"
+            value={
+              <>
+                {format.format(state?.traffic.rate ?? 0)}
+                <span className="ml-1 text-xs text-muted-foreground">/s</span>
+              </>
+            }
+            detail="Actual outgoing Raft RPCs"
+          />
+          <Stat
+            label="Round trip"
+            value={
+              <>
+                {state ? state.traffic.latency.toFixed(1) : "—"}
+                <span className="ml-1 text-xs text-muted-foreground">ms</span>
+              </>
+            }
+            detail="Latest successful response"
+          />
+        </section>
 
         <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:gap-6 xl:grid-cols-[minmax(0,1fr)_344px]">
           <div className="min-w-0 space-y-5 xl:space-y-6">
