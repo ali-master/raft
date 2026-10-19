@@ -28,7 +28,7 @@ export default antfu({
     "packages/nest/playground/**/*",
   ],
 }).append({
-  files: ["./packages/**/*.ts"],
+  files: ["./packages/**/*.{ts,tsx}"],
   rules: {
     "no-console": "off",
     "ts/ban-ts-comment": "off",
@@ -47,5 +47,13 @@ export default antfu({
     "node/prefer-global/process": "off",
     "no-throw-literal": "off",
     "perfectionist/sort-named-imports": ["error", { order: "desc" }],
+  },
+}).append({
+  files: ["packages/{nest,kv-server}/src/**/*.ts"],
+  languageOptions: {
+    parserOptions: {
+      experimentalDecorators: true,
+      emitDecoratorMetadata: true,
+    },
   },
 });
