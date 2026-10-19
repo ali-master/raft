@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import type { OnApplicationShutdown } from "@nestjs/common";
 import type { StateMachine } from "@usex/raft";
 import type { EncryptionService } from "../encryption/encryption.service";
 import type { RedisConfig } from "../shared";
@@ -17,7 +18,7 @@ export interface KVSnapshot {
 }
 
 @Injectable()
-export class KVStateMachine implements StateMachine {
+export class KVStateMachine implements StateMachine, OnApplicationShutdown {
   private redis: Redis;
 
   constructor(
@@ -90,5 +91,9 @@ export class KVStateMachine implements StateMachine {
 
   async cleanup(): Promise<void> {
     await this.redis.quit();
+  }
+
+  async onApplicationShutdown(): Promise<void> {
+    await this.cleanup();
   }
 }

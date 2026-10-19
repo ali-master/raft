@@ -7,26 +7,31 @@ import { RaftModule } from "../../src/raft/raft.module";
 import { KVStoreModule } from "../../src/kv-store/kv-store.module";
 import { EncryptionModule } from "../../src/encryption/encryption.module";
 import { KVStoreService } from "../../src/kv-store/kv-store.service";
+import { KVStateMachine } from "../../src/kv-store/kv-state-machine";
 import { RaftService } from "../../src/raft/raft.service";
-import type { StartedTestContainer } from "testcontainers";
-import { GenericContainer } from "testcontainers";
-import { it, expect, describe, beforeAll, afterAll } from "vitest";
+import { RaftNode } from "@usex/raft";
+import { rm, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { vi, it, expect, describe, beforeAll, afterAll } from "vitest";
+import { getGlobalRedisContext } from "../shared/test-setup";
 
 describe("Raft-integrated KV Store", () => {
   let app: INestApplication;
   let kvStoreService: KVStoreService;
   let raftService: RaftService;
-  let redisContainer: StartedTestContainer;
+  let dataDir: string;
 
   beforeAll(async () => {
-    redisContainer = await new GenericContainer("redis:7-alpine")
-      .withExposedPorts(6379)
-      .start();
+    const { container: redisContainer } = getGlobalRedisContext();
+    dataDir = await mkdtemp(join(tmpdir(), "raft-kv-integration-"));
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({
           isGlobal: true,
+          ignoreEnvFile: true,
+          skipProcessEnv: true,
           load: [
             () => ({
               REDIS_HOST: redisContainer.getHost(),
@@ -35,6 +40,7 @@ describe("Raft-integrated KV Store", () => {
               RAFT_CLUSTER_ID: "test-cluster",
               RAFT_HTTP_HOST: "localhost",
               RAFT_HTTP_PORT: 4001,
+              RAFT_DATA_DIR: dataDir,
               ENCRYPTION_KEY: "test-encryption-key-32-characters",
             }),
           ],
@@ -51,11 +57,23 @@ describe("Raft-integrated KV Store", () => {
 
     kvStoreService = app.get<KVStoreService>(KVStoreService);
     raftService = app.get<RaftService>(RaftService);
+    await vi.waitFor(() => expect(raftService.isLeader()).toBe(true), {
+      timeout: 10000,
+    });
   });
 
   afterAll(async () => {
-    await app.close();
-    await redisContainer.stop();
+    try {
+      const stateMachine = app?.get(KVStateMachine);
+      await app?.close();
+      if (stateMachine) {
+        await expect(stateMachine.listKeys()).rejects.toThrow(
+          "Connection is closed",
+        );
+      }
+    } finally {
+      if (dataDir) await rm(dataDir, { recursive: true, force: true });
+    }
   });
 
   it("should initialize Raft node", () => {
@@ -92,15 +110,12 @@ describe("Raft-integrated KV Store", () => {
     expect(keys).toContain("list-key-2");
   });
 
-  it("should only allow leader to accept writes", async () => {
-    if (!raftService.isLeader()) {
-      await expect(
-        kvStoreService.setValue("non-leader-key", "value"),
-      ).rejects.toThrow("Only the leader can accept write operations");
-    } else {
-      await kvStoreService.setValue("leader-key", "value");
-      const value = await kvStoreService.getValue("leader-key");
-      expect(value).toBe("value");
-    }
+  it("should reject writes after the node stops being leader", async () => {
+    await app.get(RaftNode).stop();
+    expect(raftService.isLeader()).toBe(false);
+    await expect(
+      kvStoreService.setValue("non-leader-key", "value"),
+    ).rejects.toThrow("Only the leader can accept write operations");
+    expect(await kvStoreService.getValue("non-leader-key")).toBeNull();
   });
 });
