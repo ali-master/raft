@@ -49,7 +49,10 @@ export class RedisConfigFactory {
         ENV_KEYS.REDIS_DB,
         DEFAULT_CONFIG.REDIS.DB.RAFT,
       ),
-      keyPrefix: `raft:${clusterId}:`,
+      keyPrefix: configService.get<string>(
+        ENV_KEYS.RAFT_REDIS_KEY_PREFIX,
+        `raft:${clusterId}:`,
+      ),
       ttl: configService.get<number>(
         "RAFT_REDIS_TTL",
         DEFAULT_CONFIG.REDIS.TTL,
