@@ -6,8 +6,8 @@ import {
   OnLeaderElected,
 } from "@usex/raft-nestjs";
 import { LockService, LockOperation } from "./lock-service.service";
-import { LoggerService } from "@/shared/services/logger.service";
-import { MetricsService } from "@/shared/services/metrics.service";
+import { LoggerService } from "../../shared/services/logger.service";
+import { MetricsService } from "../../shared/services/metrics.service";
 
 @Injectable()
 export class LockEventHandler {

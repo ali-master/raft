@@ -5,8 +5,8 @@ import {
   OnStateChange,
 } from "@usex/raft-nestjs";
 import { GameServerService, GameOperation } from "./game-server.service";
-import { LoggerService } from "@/shared/services/logger.service";
-import { MetricsService } from "@/shared/services/metrics.service";
+import { LoggerService } from "../../shared/services/logger.service";
+import { MetricsService } from "../../shared/services/metrics.service";
 
 @Injectable()
 export class GameEventHandler {

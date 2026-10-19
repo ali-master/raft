@@ -9,10 +9,10 @@ import {
 } from "@nestjs/websockets";
 import { Server, Socket } from "socket.io";
 import { GameServerService } from "./game-server.service";
-import { EventBusService } from "@/shared/services/event-bus.service";
-import { LoggerService } from "@/shared/services/logger.service";
+import { EventBusService } from "../../shared/services/event-bus.service";
+import { LoggerService } from "../../shared/services/logger.service";
 import { UseFilters } from "@nestjs/common";
-import { WsExceptionFilter } from "@/shared/filters/ws-exception.filter";
+import { WsExceptionFilter } from "../../shared/filters/ws-exception.filter";
 
 @WebSocketGateway({
   namespace: "/game",
