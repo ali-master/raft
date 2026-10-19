@@ -1,4 +1,7 @@
-import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
+import { it, expect, describe, beforeEach, afterEach } from "vitest";
+import { rm, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createTestConfig } from "../shared/test-utils";
 import { clearRedisData } from "../shared/test-setup";
 import { RaftNode } from "../../src/core/raft-node";
@@ -11,18 +14,20 @@ describe("raftNode", () => {
   let node: RaftNode;
   let config: RaftConfiguration;
   let stateMachine: MockStateMachine;
+  let dataDir: string;
 
   beforeEach(async () => {
     await clearRedisData();
-    vi.useFakeTimers();
     config = createTestConfig();
+    dataDir = await mkdtemp(join(tmpdir(), "raft-node-test-"));
+    config.persistence.dataDir = dataDir;
     stateMachine = new MockStateMachine();
     node = new RaftNode(config, stateMachine);
   });
 
   afterEach(async () => {
     await node.stop();
-    vi.useRealTimers();
+    await rm(dataDir, { recursive: true, force: true });
   });
 
   describe("initialization", () => {
@@ -40,6 +45,59 @@ describe("raftNode", () => {
   });
 
   describe("leader operations", () => {
+    it("should reject elections on a stopped node", async () => {
+      expect(node.getLeaderId()).toBeNull();
+      await expect(node.forceElection()).rejects.toThrow("stopped node");
+    });
+
+    it("should run a real election and identify itself as leader", async () => {
+      await node.start();
+      await node.forceElection();
+      expect(node.getState()).toBe(RaftState.LEADER);
+      expect(node.getLeaderId()).toBe(config.nodeId);
+      await node.appendLog("committed");
+      expect(stateMachine.commands).toEqual(["committed"]);
+      await node.stop();
+      expect(node.getLeaderId()).toBeNull();
+    });
+
+    it("should report only a leader observed in the current term", async () => {
+      config.electionTimeout = [10000, 15000];
+      await node.start();
+      const heartbeat = {
+        term: 2,
+        leaderId: "leader-2",
+        prevLogIndex: 0,
+        prevLogTerm: 0,
+        entries: [],
+        leaderCommit: 0,
+      };
+      await node.handleAppendEntries(heartbeat);
+      expect(node.getLeaderId()).toBe("leader-2");
+      await node.handleAppendEntries({
+        ...heartbeat,
+        term: 1,
+        leaderId: "stale-leader",
+      });
+      expect(node.getLeaderId()).toBe("leader-2");
+      await node.handleVoteRequest({
+        term: 3,
+        candidateId: "candidate-3",
+        lastLogIndex: 0,
+        lastLogTerm: 0,
+      });
+      expect(node.getLeaderId()).toBeNull();
+      await node.handleAppendEntries({
+        ...heartbeat,
+        term: 3,
+        leaderId: "leader-3",
+      });
+      expect(node.getLeaderId()).toBe("leader-3");
+      await node.stop();
+      await node.start();
+      expect(node.getLeaderId()).toBeNull();
+    });
+
     it("should reject log appends when not leader", async () => {
       await node.start();
       await expect(

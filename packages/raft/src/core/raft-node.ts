@@ -85,6 +85,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   private initialized = false;
   private lastLeaderContact = 0;
   private lastLeaderId: string | undefined;
+  private lastLeaderTerm = 0;
   private messageLoop: Promise<void> | undefined;
   private electionInProgress = false;
   private readonly replications = new Map<string, Promise<void>>();
@@ -351,6 +352,29 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
 
   public getState(): RaftState {
     return this.state;
+  }
+
+  public isRunning(): boolean {
+    return this.redisListenerActive;
+  }
+
+  public getLeaderId(): string | null {
+    if (!this.isRunning()) return null;
+    if (this.state === RaftState.LEADER) return this.config.nodeId;
+    return this.state === RaftState.FOLLOWER &&
+      this.lastLeaderTerm === this.currentTerm
+      ? (this.lastLeaderId ?? null)
+      : null;
+  }
+
+  public async forceElection(): Promise<void> {
+    if (!this.isRunning()) {
+      throw new RaftValidationException(
+        "Cannot start an election on a stopped node",
+      );
+    }
+    this.clearElectionTimer();
+    await this.startElection();
   }
 
   public getCurrentTerm(): number {
@@ -2349,6 +2373,10 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       };
     }
 
+    this.lastLeaderContact = Date.now();
+    this.lastLeaderId = request.leaderId;
+    this.lastLeaderTerm = request.term;
+
     // If leader's term >= currentTerm, recognize leader and become follower
     if (request.term >= this.currentTerm) {
       if (
@@ -2373,7 +2401,12 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     // prevLogIndex <= 0 means entries start from the very beginning (no validation needed)
     if (request.prevLogIndex > 0) {
       const prevEntry = this.log.getEntry(request.prevLogIndex);
-      if (!prevEntry || prevEntry.term !== request.prevLogTerm) {
+      const previousTerm =
+        prevEntry?.term ??
+        (this.latestSnapshotMeta?.lastIncludedIndex === request.prevLogIndex
+          ? this.latestSnapshotMeta.lastIncludedTerm
+          : undefined);
+      if (previousTerm !== request.prevLogTerm) {
         this.logger.info("Rejecting AppendEntries: Log inconsistency", {
           prevLogIndex: request.prevLogIndex,
           prevLogTerm: request.prevLogTerm,
@@ -2400,12 +2433,12 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       });
     }
 
-    // Update commit index
-    if (request.leaderCommit > this.commitIndex) {
-      const newCommitIndex = Math.min(
-        request.leaderCommit,
-        this.log.getLastIndex(),
-      );
+    // Only advance through the prefix matched by this request.
+    const newCommitIndex = Math.min(
+      request.leaderCommit,
+      request.prevLogIndex + request.entries.length,
+    );
+    if (newCommitIndex > this.commitIndex) {
       this.logger.info("Updating commit index", {
         oldCommitIndex: this.commitIndex,
         newCommitIndex,
@@ -2417,7 +2450,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     return {
       term: this.currentTerm,
       success: true,
-      lastLogIndex: this.log.getLastIndex(),
+      lastLogIndex: request.prevLogIndex + request.entries.length,
     };
   }
 }
