@@ -59,6 +59,8 @@ import { quorumFor, isHeartbeat, eventFamily, describeEvent } from "./model";
 import type { EventFamily, DashboardNode } from "./model";
 import type { ObservatoryEvent } from "./journal";
 import { cn } from "./lib/utils";
+import { CommandCenterPanel } from "./command-center";
+import { NodeMetricsPanel } from "./node-metrics";
 
 const familyIcons = {
   consensus: Vote,
@@ -256,6 +258,7 @@ function App() {
     error: boolean;
   } | null>(null);
   const [navigation, setNavigation] = useState("overview");
+  const [commandTarget, setCommandTarget] = useState("followers");
   const nodes = state?.nodes ?? [];
   const quorum = quorumFor(nodes, state?.blockedLinks ?? []);
   const active = nodes.filter((node) => node.running);
@@ -298,6 +301,7 @@ function App() {
     setDetail(null);
     setSelected("");
     setNotice(null);
+    setCommandTarget("followers");
   }, [state?.sessionId]);
 
   async function action(name: string, nodeId?: string) {
@@ -659,7 +663,15 @@ function App() {
                 </Hint>
               </div>
             </section>
-
+            {controls && (
+              <CommandCenterPanel
+                key={state?.sessionId ?? "starting"}
+                state={state}
+                disabled={disabled}
+                target={commandTarget}
+                onTarget={setCommandTarget}
+              />
+            )}
             <Replication
               nodes={nodes}
               selected={selectedNode?.id ?? ""}
@@ -778,7 +790,25 @@ function App() {
                     </Button>
                   </div>
                 )}
-
+                {controls && selectedNode?.commandCapable && (
+                  <Button
+                    asChild
+                    variant="ghost"
+                    className="mt-3 h-9 w-full justify-between text-[11px] text-primary"
+                  >
+                    <a
+                      href="#commands"
+                      onClick={() => {
+                        setCommandTarget(selectedNode.id);
+                        setNavigation("commands");
+                      }}
+                    >
+                      <Send className="size-3" />
+                      Send a task to {selectedNode.id}
+                      <ArrowUpRight className="size-3" />
+                    </a>
+                  </Button>
+                )}
               </div>
             </section>
 
@@ -915,6 +945,13 @@ function App() {
             </section>
           </aside>
         </div>
+
+        <NodeMetricsPanel
+          state={state}
+          selected={selectedNode?.id ?? ""}
+          onSelect={select}
+          connected={connected}
+        />
 
         <footer className="mt-7 flex flex-wrap items-center justify-between gap-3 border-t border-border py-5 text-[10px] text-muted-foreground">
           <div className="flex items-center gap-2">
