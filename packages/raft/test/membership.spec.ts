@@ -55,7 +55,7 @@ async function createTestNode(
   const dataDir = await createTempDataDir();
   ALL_DATA_DIRS.push(dataDir);
 
-  const peers = peerPorts.map((p) => `localhost:${p}`);
+  const peers = [nodeId, ...peerPorts.map((p) => `node${p % 10}`)];
 
   const config = createTestConfig(nodeId, {
     ...baseConfig,
@@ -67,12 +67,7 @@ async function createTestNode(
       ...baseConfig.persistence,
       dataDir,
     } as PersistenceConfig,
-    peers:
-      initialPeersInConfig.length > 0
-        ? initialPeersInConfig.map(
-            (id) => `localhost:${NODES[id]?.config.httpPort || port}`,
-          )
-        : peers,
+    peers: initialPeersInConfig.length > 0 ? initialPeersInConfig : peers,
   });
 
   const stateMachine = new MockStateMachine();
@@ -375,7 +370,11 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
     const allNodes = [n1.node, n2.node, n3.node, n4.node];
     await Promise.all(allNodes.map((n) => n.start()));
 
-    const leader = await waitForLeader(allNodes, 10000); // Increased timeout for 4 nodes
+    let leader = await waitForLeader(allNodes, 10000);
+    if (leader?.getNodeId() === "node4") {
+      await leader.transferLeadership("node1");
+      leader = n1.node;
+    }
     expect(leader).not.toBeNull();
     const leaderNode = NODES[leader!.getNodeId()]!.node;
     const initialLeaderId = leaderNode.getNodeId();
@@ -461,7 +460,7 @@ describe("Cluster Membership Changes (Joint Consensus)", () => {
     console.log("Leader configuration updated to 3 nodes.");
 
     // Assertions for remaining followers (node2, node3)
-    const remainingFollowers = [n2.node, n3.node].filter(
+    const remainingFollowers = [n1.node, n2.node, n3.node].filter(
       (n) => n.getNodeId() !== initialLeaderId,
     );
     for (const follower of remainingFollowers) {

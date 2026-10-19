@@ -605,35 +605,6 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
             nodeId: this.config.nodeId,
           });
         }
-
-        // Update active configuration if needed
-        if (deadPeers.length > 0) {
-          // Remove dead peers from active configuration
-          this.activeConfiguration.newPeers =
-            this.activeConfiguration.newPeers.filter(
-              (peer) => !deadPeers.includes(peer),
-            );
-
-          // Also remove from old peers if in joint consensus
-          if (this.activeConfiguration.oldPeers) {
-            this.activeConfiguration.oldPeers =
-              this.activeConfiguration.oldPeers.filter(
-                (peer) => !deadPeers.includes(peer),
-              );
-          }
-
-          this.logger.info(
-            "Updated activeConfiguration after removing dead peers",
-            {
-              removedPeers: deadPeers,
-              newConfiguration: this.activeConfiguration.newPeers,
-              oldConfiguration: this.activeConfiguration.oldPeers,
-            },
-          );
-
-          // Persist the updated configuration
-          await this.persistState();
-        }
       }
     } catch (error) {
       this.logger.error("Failed to cleanup dead peers", {
@@ -1735,6 +1706,8 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
 
       // Replicate this entry.
       // The leader itself "stores" the entry by appending it.
+      this.activeConfiguration = jointConfigPayload;
+      await this.persistState();
       this.matchIndex.set(this.config.nodeId, jointConfigLogIndex);
       this.nextIndex.set(this.config.nodeId, jointConfigLogIndex + 1);
 
@@ -1807,6 +1780,13 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       this.logger.info(
         "C_new (final) configuration committed and applied by leader.",
         { index: newConfigLogIndex, activeConfig: this.activeConfiguration },
+      );
+
+      // Give removed members the final commit before ending replication to them.
+      await Promise.all(
+        cOld
+          .filter((peer) => !cNew.includes(peer))
+          .map((peer) => this.replicateLogToPeer(peer)),
       );
 
       // Once C_new is committed and applied by the leader, its activeConfiguration will transition to simple C_new.
