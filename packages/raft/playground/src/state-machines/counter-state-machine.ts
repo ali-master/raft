@@ -35,10 +35,10 @@ export class CounterStateMachine implements StateMachine {
 
     switch (command.type) {
       case "increment":
-        this.value += command.value || 1;
+        this.value += command.value ?? 1;
         break;
       case "decrement":
-        this.value -= command.value || 1;
+        this.value -= command.value ?? 1;
         break;
       case "set":
         if (command.value !== undefined) {
@@ -56,10 +56,10 @@ export class CounterStateMachine implements StateMachine {
 
     this.version++;
 
-    this.logger.info(
+    this.logger.debug(
       `Counter updated: ${command.type} -> ${this.value}`,
       this.nodeId,
-      { oldValue: this.value - (command.value || 1), newValue: this.value },
+      { oldValue: this.value - (command.value ?? 1), newValue: this.value },
     );
   }
 

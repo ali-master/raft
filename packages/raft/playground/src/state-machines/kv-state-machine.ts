@@ -67,9 +67,11 @@ export class KVStateMachine implements StateMachine {
         await this.redis.del(command.key);
         break;
 
-      case "clear":
-        await this.redis.flushdb();
+      case "clear": {
+        const keys = await this.keys();
+        if (keys.length) await this.redis.del(...keys);
         break;
+      }
 
       default:
         throw new Error(
@@ -79,14 +81,14 @@ export class KVStateMachine implements StateMachine {
 
     this.version++;
 
-    this.logger.info(`KV operation completed: ${command.type}`, this.nodeId, {
+    this.logger.debug(`KV operation completed: ${command.type}`, this.nodeId, {
       key: command.key,
       version: this.version,
     });
   }
 
   async getSnapshotData(): Promise<Buffer> {
-    const keys = await this.redis.keys("*");
+    const keys = await this.keys();
     const data: Record<string, string> = {};
 
     for (const key of keys) {
@@ -113,7 +115,8 @@ export class KVStateMachine implements StateMachine {
     const snapshot: KVSnapshot = JSON.parse(data.toString());
 
     // Clear existing data
-    await this.redis.flushdb();
+    const keys = await this.keys();
+    if (keys.length) await this.redis.del(...keys);
 
     // Restore data from snapshot
     for (const [key, value] of Object.entries(snapshot.data)) {
@@ -139,11 +142,13 @@ export class KVStateMachine implements StateMachine {
   }
 
   async keys(pattern: string = "*"): Promise<string[]> {
-    return await this.redis.keys(pattern);
+    const prefix = this.redis.options.keyPrefix ?? "";
+    const keys = await this.redis.keys(`${prefix}${pattern}`);
+    return keys.map((key) => key.slice(prefix.length));
   }
 
   async size(): Promise<number> {
-    return await this.redis.dbsize();
+    return (await this.keys()).length;
   }
 
   getVersion(): number {
