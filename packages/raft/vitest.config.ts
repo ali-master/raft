@@ -4,28 +4,27 @@ import * as path from "node:path";
 export default defineConfig({
   test: {
     alias: {
-      "@root": path.resolve(__dirname, "./src"),
+      "@root": path.resolve(import.meta.dirname, "./src"),
     },
     setupFiles: ["./test/setup.ts"],
     fileParallelism: false, // Disable parallel execution to share Redis container
     name: "Raft",
     typecheck: {
       enabled: true,
-      checker: "vue-tsc",
+      checker: "tsc",
       ignoreSourceErrors: true,
       tsconfig: path.resolve(process.cwd(), "./tsconfig.json"),
     },
     coverage: {
       clean: true,
-      provider: "v8",
+      provider: "istanbul",
       cleanOnRerun: true,
       reportOnFailure: true,
-      include: ["**/src/**"],
+      include: ["src/**/*.ts"],
       reporter: ["clover", "json", "html", "html-spa"],
-      reportsDirectory: path.resolve(__dirname, "./coverage"),
+      reportsDirectory: path.resolve(import.meta.dirname, "./coverage"),
     },
-    dir: path.resolve(__dirname, "./test"),
-    cache: false,
+    dir: path.resolve(import.meta.dirname, "./test"),
     globals: true,
     pool: "forks",
   },

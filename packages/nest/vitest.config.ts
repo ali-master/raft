@@ -13,36 +13,30 @@ export default defineConfig({
     name: "Raft Nest",
     typecheck: {
       enabled: true,
-      checker: "vue-tsc",
+      checker: "tsc",
       ignoreSourceErrors: true,
       tsconfig: path.resolve(process.cwd(), "./tsconfig.json"),
     },
     coverage: {
-      all: false,
       clean: true,
-      provider: "v8",
+      provider: "istanbul",
       cleanOnRerun: true,
       reportOnFailure: true,
-      include: ["**/src/**"],
+      include: ["src/**/*.ts"],
       reporter: ["clover", "json", "html", "html-spa"],
-      reportsDirectory: path.resolve(__dirname, "./coverage"),
+      reportsDirectory: path.resolve(import.meta.dirname, "./coverage"),
     },
-    dir: path.resolve(__dirname, "./test"),
-    cache: false,
+    dir: path.resolve(import.meta.dirname, "./test"),
     globals: true,
     pool: "forks",
-    poolOptions: {
-      threads: {
-        singleThread: true,
-      },
-      forks: {
-        singleFork: true,
-      },
-    },
+    maxWorkers: 1,
   },
   plugins: [
     // This is required to build the test files with SWC
     swc.vite({
+      // Istanbul also transforms uncovered files with a query string in the ID.
+      include: /\.ts(?:\?.*)?$/,
+      jsc: { parser: { syntax: "typescript", decorators: true } },
       // Explicitly set the module type to avoid inheriting this value from a `.swcrc` config file
       module: { type: "es6" },
     }),
@@ -50,7 +44,7 @@ export default defineConfig({
   resolve: {
     alias: {
       // Ensure Vitest correctly resolves TypeScript path aliases
-      src: path.resolve(__dirname, "./src"),
+      src: path.resolve(import.meta.dirname, "./src"),
     },
   },
 });
