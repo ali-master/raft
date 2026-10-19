@@ -87,6 +87,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   private electionInProgress = false;
   private readonly replications = new Map<string, Promise<void>>();
   private stateMachineTask: Promise<void> = Promise.resolve();
+  private snapshotTask: Promise<void> | undefined;
 
   constructor(config: RaftConfiguration, stateMachine: StateMachine<TCommand>) {
     super();
@@ -1187,9 +1188,27 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     }
   }
 
-  private async createSnapshot(): Promise<void> {
-    const lastIncludedIndex = this.log.getLastIndex();
-    const lastIncludedTerm = this.log.getLastTerm();
+  public createSnapshot(): Promise<void> {
+    if (this.snapshotTask) return this.snapshotTask;
+    const task = this.stateMachineTask.then(() => this.saveSnapshot());
+    this.stateMachineTask = task.catch(() => {});
+    this.snapshotTask = task.finally(() => {
+      this.snapshotTask = undefined;
+    });
+    return this.snapshotTask;
+  }
+
+  private async saveSnapshot(): Promise<void> {
+    const lastIncludedIndex = this.lastApplied;
+    if (
+      lastIncludedIndex === 0 ||
+      lastIncludedIndex <= (this.latestSnapshotMeta?.lastIncludedIndex ?? 0)
+    )
+      return;
+    const lastIncludedTerm =
+      this.log.getEntry(lastIncludedIndex)?.term ??
+      this.latestSnapshotMeta?.lastIncludedTerm ??
+      0;
 
     try {
       const snapshotData = await this.stateMachine.getSnapshotData();
@@ -1203,7 +1222,8 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         : null;
 
       await fs.mkdir(snapshotDir, { recursive: true });
-      await fs.writeFile(snapshotFilePath, snapshotData);
+      await fs.writeFile(`${snapshotFilePath}.tmp`, snapshotData);
+      await fs.rename(`${snapshotFilePath}.tmp`, snapshotFilePath);
 
       this.latestSnapshotMeta = {
         lastIncludedIndex,
@@ -1247,6 +1267,11 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       // This truncation in RaftLog might also clean up older snapshots on disk based on its own logic
       // (e.g. snapshots older than the log's new first index)
       await this.log.truncateBeforeIndex(lastIncludedIndex + 1);
+      this.publishEvent(RaftEventType.SNAPSHOT_CREATED, {
+        lastIncludedIndex,
+        lastIncludedTerm,
+        size: snapshotData.length,
+      });
 
       this.logger.info(
         "Snapshot created, log truncated, and snapshot meta updated",
@@ -1354,7 +1379,20 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     }
   }
 
-  public async handleInstallSnapshot(
+  public handleInstallSnapshot(
+    request: InstallSnapshotRequest,
+  ): Promise<InstallSnapshotResponse> {
+    const task = this.stateMachineTask.then(() =>
+      this.installSnapshot(request),
+    );
+    this.stateMachineTask = task.then(
+      () => {},
+      () => {},
+    );
+    return task;
+  }
+
+  private async installSnapshot(
     request: InstallSnapshotRequest,
   ): Promise<InstallSnapshotResponse> {
     this.logger.info("Received InstallSnapshot request", {
@@ -1383,7 +1421,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       this.currentTerm = request.term;
       this.votedFor = null; // Clear votedFor when term changes
       await this.persistState(); // Persist new term and cleared votedFor
-      void this.becomeFollower(request.term); // Ensure state transition and timer reset
+      await this.becomeFollower(request.term);
     } else {
       // If terms are the same, ensure we are a follower. A leader should not normally receive InstallSnapshot.
       if (this.state !== RaftState.FOLLOWER) {
@@ -1391,12 +1429,15 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
           "Received InstallSnapshot request while not follower, transitioning to follower",
           { state: this.state },
         );
-        void this.becomeFollower(request.term);
+        await this.becomeFollower(request.term);
       }
     }
 
-    // Reset election timer as we've received a valid communication from the leader
+    this.lastLeaderContact = Date.now();
     this.startElectionTimer();
+
+    this.lastLeaderId = request.leaderId;
+    this.lastLeaderTerm = request.term;
 
     // Placeholder: Save snapshot chunk request.data
     // For now, we assume done=true and data is the full snapshot if not chunking
@@ -1407,6 +1448,8 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       leaderId: request.leaderId,
     });
 
+    if (request.lastIncludedIndex <= this.lastApplied)
+      return { term: this.currentTerm };
     if (request.done) {
       try {
         const snapshotDir = this.config.persistence.dataDir;
@@ -1414,7 +1457,8 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         const snapshotFilePath = path.join(snapshotDir, snapshotFileName);
 
         await fs.mkdir(snapshotDir, { recursive: true });
-        await fs.writeFile(snapshotFilePath, request.data);
+        await fs.writeFile(`${snapshotFilePath}.tmp`, request.data);
+        await fs.rename(`${snapshotFilePath}.tmp`, snapshotFilePath);
 
         this.latestSnapshotMeta = {
           lastIncludedIndex: request.lastIncludedIndex,
@@ -1433,6 +1477,11 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         this.commitIndex = request.lastIncludedIndex;
         this.lastApplied = request.lastIncludedIndex;
 
+        await this.log.createSnapshot(
+          request.lastIncludedIndex,
+          request.lastIncludedTerm,
+          snapshotFilePath,
+        );
         // This call might also clean up older on-disk snapshots
         await this.log.truncateEntriesAfter(
           request.lastIncludedIndex,
@@ -1455,6 +1504,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
           nodeId: this.config.nodeId,
           lastIncludedIndex: request.lastIncludedIndex,
         });
+        throw error;
       }
     }
 
@@ -1515,7 +1565,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
           lastIncludedTerm: maxLastIncludedTerm,
         });
 
-        this.commitIndex = maxLastIncludedIndex;
+        this.commitIndex = Math.max(this.commitIndex, maxLastIncludedIndex);
         this.lastApplied = maxLastIncludedIndex;
         this.latestSnapshotMeta = {
           lastIncludedIndex: maxLastIncludedIndex,
@@ -1525,7 +1575,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
 
         // Update RaftLog's understanding of the first index
         // This method (setFirstIndex) needs to be added to RaftLog
-        this.log.setFirstIndex(maxLastIncludedIndex + 1);
+        this.log.setFirstIndex(maxLastIncludedIndex + 1, maxLastIncludedTerm);
 
         await this.persistState(); // Persist updated commitIndex and lastApplied
 
@@ -1550,7 +1600,13 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     }
   }
 
-  private async applyCommittedEntries(): Promise<void> {
+  private applyCommittedEntries(): Promise<void> {
+    const task = this.stateMachineTask.then(() => this.applyEntries());
+    this.stateMachineTask = task.catch(() => {});
+    return task;
+  }
+
+  private async applyEntries(): Promise<void> {
     let appliedSomething = false;
     while (this.lastApplied < this.commitIndex) {
       const entryToApplyIndex = this.lastApplied + 1;
@@ -1585,6 +1641,11 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       // they only serve to advance the commit index for previous-term entries.
 
       this.lastApplied = entry.index;
+      this.publishEvent(RaftEventType.LOG_APPLIED, {
+        index: entry.index,
+        term: entry.term,
+        commandType: entry.commandType,
+      });
       appliedSomething = true;
     }
 
@@ -1624,10 +1685,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         activeConfig: this.activeConfiguration,
       });
     }
-    // Persisting state after config change is crucial.
-    // Consider if persistState should be called here or by the caller of applyCommittedEntries.
-    // For safety, let's assume it's important to persist immediately after this internal state change.
-    void this.persistState();
+    // applyEntries persists the configuration together with lastApplied.
   }
 
   public async changeClusterConfiguration(newPeerIds: string[]): Promise<void> {
