@@ -3,6 +3,7 @@
   <h1>Raft</h1>
   <p>A TypeScript consensus toolkit, built and explored with Bun.</p>
   <p>
+    <a href="#watch-the-observatory">Watch</a> ·
     <a href="#quick-start">Quick start</a> ·
     <a href="#packages">Packages</a> ·
     <a href="./packages/raft/playground/README.md">Observatory</a> ·
@@ -14,6 +15,14 @@
 Raft brings together a consensus engine, a NestJS integration, a key-value server, and tools for watching a cluster work. Explore leader election, replicated logs, snapshots, membership changes, and failure recovery through executable scenarios and a live dashboard.
 
 **Status:** this workspace is under active development. The [Raft and package audit](./docs/raft-spec-audit.md) documents unresolved consensus, persistence, application-data, and API-contract failures. Passing demonstration scenarios do not establish Raft conformance or production safety. APIs may change before 1.0.
+
+## Watch the Observatory
+
+A one-minute, full-page tour of the live five-node dashboard: leadership transfer, committed commands, replicated logs, and per-node metrics. Smooth camera moves bring each detail into focus.
+
+https://github.com/user-attachments/assets/c2b09429-cc3c-4879-89f8-ac24e7407cfc
+
+**5 nodes · Live capture** · [Download the MP4](./assets/raft-observatory.mp4)
 
 ## Packages
 
