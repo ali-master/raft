@@ -11,9 +11,11 @@ import {
   Radio,
   Power,
   Orbit,
+  Network,
   LoaderCircle,
   Layers,
   HeartPulse,
+  GitBranch,
   Gauge,
   Database,
   CircleDot,
@@ -626,6 +628,119 @@ function App() {
           </div>
 
           <aside className="min-w-0 space-y-5 xl:space-y-6">
+            <section
+              aria-label="Node inspector"
+              className="panel overflow-hidden"
+            >
+              <div className="flex items-center justify-between border-b border-border px-5 py-4">
+                <h2 className="eyebrow">Under the surface</h2>
+                <CircleDot className="size-3.5 text-muted-foreground" />
+              </div>
+              <div className="px-5 pb-5 pt-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className={cn(
+                        "flex size-9 items-center justify-center rounded-xl border border-border bg-secondary",
+                        selectedNode?.role === "leader"
+                          ? "text-primary"
+                          : "text-follower",
+                      )}
+                    >
+                      <Network className="size-4" />
+                    </span>
+                    <div>
+                      <h3 className="mono text-sm font-medium">
+                        {selectedNode?.id ?? "Waiting for nodes"}
+                      </h3>
+                      <p className="mt-0.5 text-[10px] text-muted-foreground">
+                        {selectedNode?.running
+                          ? "Participating in consensus"
+                          : selectedNode
+                            ? "Offline · membership retained"
+                            : "Connecting to Redis"}
+                      </p>
+                    </div>
+                  </div>
+                  {selectedNode && (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "rounded-md border-border text-[9px] font-normal capitalize",
+                        selectedNode.role === "leader"
+                          ? "text-primary"
+                          : "text-follower",
+                      )}
+                    >
+                      {selectedNode.running ? selectedNode.role : "stopped"}
+                    </Badge>
+                  )}
+                </div>
+                {[
+                  ["Node term", selectedNode?.term ?? "—"],
+                  [
+                    "Committed / applied",
+                    selectedNode
+                      ? `${selectedNode.commitIndex} / ${selectedNode.lastApplied}`
+                      : "—",
+                  ],
+                  [
+                    "State machine value",
+                    selectedNode
+                      ? (selectedNode.value ?? "Key-value store")
+                      : "—",
+                  ],
+                  ["Voting weight", selectedNode?.weight ?? "—"],
+                  ["Outgoing RPC / sec", selectedNode?.metrics.rate ?? "—"],
+                  [
+                    "p95 response",
+                    selectedNode?.metrics.p95 == null
+                      ? "—"
+                      : `${selectedNode.metrics.p95.toFixed(1)} ms`,
+                  ],
+                  ["Failed / blocked", selectedNode?.metrics.failed ?? "—"],
+                ].map(([label, value]) => (
+                  <div key={label} className="inspector-stat">
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="mono">{String(value)}</span>
+                  </div>
+                ))}
+                {controls && selectedNode && (
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 flex-1 text-[10px]"
+                      disabled={disabled}
+                      onClick={() =>
+                        onAction(
+                          selectedNode.running ? "stop" : "start",
+                          selectedNode.id,
+                        )
+                      }
+                    >
+                      <Power className="size-3" />
+                      {selectedNode.running ? "Stop node" : "Start node"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 flex-1 text-[10px]"
+                      disabled={
+                        disabled ||
+                        !selectedNode.running ||
+                        selectedNode.role === "leader"
+                      }
+                      onClick={() => onAction("transfer", selectedNode.id)}
+                    >
+                      <GitBranch className="size-3" />
+                      Make leader
+                    </Button>
+                  </div>
+                )}
+
+              </div>
+            </section>
 
           </aside>
         </div>
