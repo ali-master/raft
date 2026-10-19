@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- **Node.js** >= 18.12.0
-- **pnpm** >= 10.11.1
+- **Bun** >= 1.4.3
+- **Bun** >= 1.4.3
 - **Docker** (optional, for containerized deployment)
 - **Kubernetes** (optional, for orchestration)
 
@@ -19,7 +19,7 @@ cd raft/packages/kv-server
 ### Install Dependencies
 
 ```bash
-pnpm install
+bun install
 ```
 
 ### Configure Environment
@@ -38,10 +38,10 @@ RATE_LIMIT_WINDOW_MS=60000
 ### Build and Start
 
 ```bash
-pnpm build
-pnpm start:dev # For development
+bun run build
+bun run start:dev # For development
 # or
-pnpm start:prod # For production
+bun run start:prod # For production
 ```
 
 ## 2. Docker Installation
@@ -69,7 +69,7 @@ See [`deployment.md`](./deployment.md) for a full Kubernetes deployment guide.
 ## Troubleshooting
 
 - Ensure all environment variables are set correctly.
-- Check logs for errors: `pnpm start:dev` or `docker logs <container>`
+- Check logs for errors: `bun run start:dev` or `docker logs <container>`
 - For port conflicts, change the `PORT` in your `.env` file.
 
 ---

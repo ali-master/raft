@@ -6,8 +6,7 @@ This guide covers the deployment of the Raft KV Server in various environments, 
 
 ## Prerequisites
 
-- Node.js >= 18.12.0
-- pnpm >= 10.11.1
+- Bun >= 1.4.3
 - Docker (for containerized deployment)
 - Kubernetes (for orchestrated deployment)
 

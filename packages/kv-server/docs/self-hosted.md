@@ -9,7 +9,7 @@ The Raft KV Server is designed for easy self-hosting in any environment—local,
 
 ## 1. Local Self-Hosting
 
-- Follow the [Installation Guide](./installation.md) to run locally with Node.js and pnpm.
+- Follow the [Installation Guide](./installation.md) to run locally with Bun.
 - Use `.env` for configuration.
 - Suitable for development, testing, and small-scale deployments.
 

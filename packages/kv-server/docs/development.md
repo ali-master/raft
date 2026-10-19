@@ -8,8 +8,7 @@ This guide provides comprehensive information for developers working on the Raft
 
 ### Prerequisites
 
-- Node.js >= 18.12.0
-- pnpm >= 10.11.1
+- Bun >= 1.4.3
 - Docker and Docker Compose
 - Git
 
@@ -23,7 +22,7 @@ This guide provides comprehensive information for developers working on the Raft
 
 2. **Install Dependencies**
    ```bash
-   pnpm install
+   bun install
    ```
 
 3. **Environment Configuration**
@@ -34,7 +33,7 @@ This guide provides comprehensive information for developers working on the Raft
 
 4. **Start Development Server**
    ```bash
-   pnpm dev
+   bun run start:dev
    ```
 
 ## Project Structure
@@ -185,13 +184,13 @@ describe('AppController (e2e)', () => {
 
 ```bash
 # Run all tests
-pnpm test
+bun run test
 
 # Run specific test file
-pnpm test src/specific.test.ts
+bun run test src/specific.test.ts
 
 # Run tests with coverage
-pnpm test:cov
+bun run test:coverage
 ```
 
 ## CQRS Pattern Implementation
@@ -437,14 +436,14 @@ Types:
 
 1. **Version Bumping**
    ```bash
-   pnpm version patch  # 0.0.x
-   pnpm version minor  # 0.x.0
-   pnpm version major  # x.0.0
+   bunx bumpp --release patch  # 0.0.x
+   bunx bumpp --release minor  # 0.x.0
+   bunx bumpp --release major  # x.0.0
    ```
 
 2. **Changelog Generation**
    ```bash
-   pnpm changelog
+   bun run changelogithub
    ```
 
 3. **Release Steps**
@@ -461,8 +460,8 @@ Types:
 ### Common Issues
 
 1. **Build Failures**
-   - Check Node.js version
-   - Clear cache: `pnpm store prune`
+   - Check Bun version
+   - Clear cache: `bun pm cache rm`
    - Remove node_modules: `rm -rf node_modules`
 
 2. **Test Failures**
