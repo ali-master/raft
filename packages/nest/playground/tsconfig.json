@@ -1,6 +1,9 @@
 {
+  "include": ["src/**/*.ts"],
   "compilerOptions": {
-    "module": "commonjs",
+    "strict": false,
+    "module": "Node20",
+    "moduleResolution": "node16",
     "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
@@ -9,18 +12,13 @@
     "target": "ES2021",
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": "./",
+    "rootDir": "./src",
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": false,
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "forceConsistentCasingInFileNames": false,
-    "noFallthroughCasesInSwitch": false,
-    "paths": {
-      "@/*": ["src/*"],
-      "@scenarios/*": ["src/scenarios/*"],
-      "@shared/*": ["src/shared/*"]
-    }
+    "noFallthroughCasesInSwitch": false
   }
 }
