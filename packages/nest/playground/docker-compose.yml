@@ -8,6 +8,8 @@ services:
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes
+    networks:
+      - raft-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -26,6 +28,8 @@ services:
       - '--storage.tsdb.path=/prometheus'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - raft-network
     depends_on:
       - node1
       - node2
@@ -42,13 +46,15 @@ services:
       - grafana-data:/var/lib/grafana
       - ./grafana/dashboards:/etc/grafana/dashboards
       - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - raft-network
     depends_on:
       - prometheus
 
   node1:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../../..
+      dockerfile: packages/nest/playground/Dockerfile
     environment:
       - NODE_ID=node-1
       - CLUSTER_ID=playground-cluster
@@ -73,8 +79,8 @@ services:
 
   node2:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../../..
+      dockerfile: packages/nest/playground/Dockerfile
     environment:
       - NODE_ID=node-2
       - CLUSTER_ID=playground-cluster
@@ -99,8 +105,8 @@ services:
 
   node3:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../../..
+      dockerfile: packages/nest/playground/Dockerfile
     environment:
       - NODE_ID=node-3
       - CLUSTER_ID=playground-cluster
@@ -134,4 +140,3 @@ volumes:
   node1-data:
   node2-data:
   node3-data:
-EOF < /dev/null
