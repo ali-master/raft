@@ -1,6 +1,6 @@
 import type { OnModuleInit, OnModuleDestroy } from "@nestjs/common";
 import { Logger, Injectable, Inject } from "@nestjs/common";
-import type { EventEmitter2 } from "@nestjs/event-emitter";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import type {
   NetworkQualityMetrics,
   ClusterPerformanceMetrics,
@@ -9,7 +9,7 @@ import type {
   AdaptiveConsensusAlgorithm,
 } from "@usex/raft";
 import { createAdaptiveConsensusAlgorithm } from "@usex/raft";
-import type { RaftService } from "./raft.service";
+import { RaftService } from "./raft.service";
 import { RAFT_MODULE_OPTIONS } from "../constants";
 import type { RaftModuleOptions } from "../interfaces";
 

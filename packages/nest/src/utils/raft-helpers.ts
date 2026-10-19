@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { DiscoveryService } from "@nestjs/core";
+import { DiscoveryService } from "@nestjs/core";
 import { RAFT_EVENT_METADATA } from "../constants";
 import type { RaftEventHandlerMetadata } from "../interfaces";
 
