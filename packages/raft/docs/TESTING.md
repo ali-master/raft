@@ -8,16 +8,16 @@ This guide explains how to run tests for the RAFT library and how to use Testcon
 
 ```bash
 # Run all tests
-pnpm test
+bun run test
 
 # Run tests in watch mode
-pnpm test:watch
+bun run test:watch
 
 # Run tests with coverage
-pnpm test:coverage
+bun run test:coverage
 
 # Run specific test file
-pnpm test peer-discovery.spec.ts
+bun run test peer-discovery.spec.ts
 ```
 
 ## Testcontainers Integration
@@ -34,7 +34,8 @@ The RAFT library uses [Testcontainers](https://testcontainers.com/) to provide r
 Here's an example of how to use Testcontainers in your tests:
 
 ```typescript
-import { setupRedisContainer, teardownRedisContainer, type RedisTestContext } from "../shared/testcontainers";
+import { teardownRedisContainer, setupRedisContainer  } from "../shared/testcontainers";
+import type {RedisTestContext} from "../shared/testcontainers";
 
 describe("MyRedisTest", () => {
   let redisContext: RedisTestContext;
@@ -91,7 +92,7 @@ Testcontainers automatically assigns random ports to avoid conflicts.
 Enable debug logging:
 
 ```bash
-DEBUG=testcontainers* pnpm test
+DEBUG=testcontainers* bun run test
 ```
 
 ### Performance Considerations
