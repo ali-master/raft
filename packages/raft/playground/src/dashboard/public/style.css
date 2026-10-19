@@ -1,0 +1,163 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@source "../**/*.{ts,tsx}";
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #0c0e12;
+  --foreground: #edeef1;
+  --card: #11141a;
+  --card-foreground: #edeef1;
+  --popover: #1b1e25;
+  --popover-foreground: #edeef1;
+  --primary: #f2b58d;
+  --primary-foreground: #281b13;
+  --secondary: #22262f;
+  --secondary-foreground: #e1e4ea;
+  --muted: #1c2028;
+  --muted-foreground: #969da9;
+  --accent: #262b35;
+  --accent-foreground: #f5f5f5;
+  --destructive: #f28588;
+  --border: #ffffff12;
+  --input: #ffffff1c;
+  --ring: #f2b58d;
+  --radius: 0.75rem;
+  --follower: #a9c6eb;
+  --candidate: #d4b4f6;
+  --healthy: #9ed9ba;
+}
+
+@theme inline {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-follower: var(--follower);
+  --color-candidate: var(--candidate);
+  --color-healthy: var(--healthy);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.5);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    outline: none;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    margin: 0;
+  }
+  button,
+  [role="button"],
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:not(:disabled),
+  [role="button"] {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 5px;
+  }
+  ::selection {
+    background: #f2b58d35;
+    color: white;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer components {
+  .studio-shell {
+    @apply mx-auto max-w-[1600px] px-5 md:px-10 xl:px-14;
+  }
+  .eyebrow {
+    @apply text-[10px] font-medium tracking-[.18em] uppercase text-muted-foreground;
+  }
+  .section-heading {
+    @apply text-[15px] font-medium tracking-tight;
+  }
+  .panel {
+    @apply rounded-2xl border border-border bg-card;
+  }
+  .metric-label {
+    @apply text-[10px] uppercase tracking-[.12em] text-muted-foreground;
+  }
+  .mono {
+    @apply font-mono tabular-nums;
+  }
+  .live-dot {
+    @apply inline-block size-1.5 rounded-full bg-healthy;
+    box-shadow: 0 0 12px #9ed9ba55;
+  }
+  .nav-link {
+    @apply flex items-center gap-2 rounded-full px-4 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground;
+  }
+  .nav-link.active {
+    @apply bg-secondary text-foreground;
+  }
+  .event-row {
+    @apply flex w-full items-start gap-3 border-b border-border px-1 py-3.5 text-left transition-colors hover:bg-accent/40;
+  }
+  .event-icon {
+    @apply mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg border border-border bg-muted;
+  }
+  .event-row:last-child {
+    @apply border-0;
+  }
+  .inspector-stat {
+    @apply flex items-center justify-between border-b border-border py-3 text-xs;
+  }
+  .inspector-stat:last-child {
+    @apply border-0;
+  }
+  .legend-dot {
+    @apply inline-block size-1.5 rounded-full;
+  }
+  .log-cell {
+    @apply relative flex h-9 min-w-0 items-center justify-center rounded-md border font-mono text-[10px] transition-all duration-300;
+  }
+}
+
+.studio-header {
+  border-bottom: 1px solid var(--border);
+}
+.brand-mark {
+  color: var(--primary);
+  filter: drop-shadow(0 0 10px #f2b58d20);
+}
+.hero-title {
+  font-size: clamp(30px, 3.2vw, 49px);
+  line-height: 1.12;
+  font-weight: 500;
+  letter-spacing: -0.048em;
+}
+.hero-title em {
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.04em;
+  color: var(--primary);
+}
