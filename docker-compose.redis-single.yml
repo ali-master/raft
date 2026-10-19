@@ -1,6 +1,6 @@
 services:
   redis-single:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-single
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:

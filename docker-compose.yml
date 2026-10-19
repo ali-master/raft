@@ -1,7 +1,7 @@
 services:
   # Single Instance (profile: single)
   redis-single:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-single
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
@@ -20,7 +20,7 @@ services:
 
   # Sentinel Mode (profile: sentinel)
   redis-master:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-master
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
@@ -38,7 +38,7 @@ services:
     profiles: ["sentinel", "all"]
 
   redis-replica-1:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-replica-1
     command: redis-server --replicaof redis-master 6379 --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
@@ -59,7 +59,7 @@ services:
     profiles: ["sentinel", "all"]
 
   redis-replica-2:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-replica-2
     command: redis-server --replicaof redis-master 6379 --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
@@ -80,7 +80,7 @@ services:
     profiles: ["sentinel", "all"]
 
   redis-sentinel-1:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-sentinel-1
     volumes:
       - ./config/sentinel.conf:/etc/redis-sentinel.conf:ro
@@ -105,7 +105,7 @@ services:
     profiles: ["sentinel", "all"]
 
   redis-sentinel-2:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-sentinel-2
     volumes:
       - ./config/sentinel.conf:/etc/redis-sentinel.conf:ro
@@ -130,7 +130,7 @@ services:
     profiles: ["sentinel", "all"]
 
   redis-sentinel-3:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-sentinel-3
     volumes:
       - ./config/sentinel.conf:/etc/redis-sentinel.conf:ro
@@ -156,7 +156,7 @@ services:
 
   # Cluster Mode (profile: cluster)
   redis-cluster-1:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-cluster-1
     command: >
       redis-server
@@ -185,7 +185,7 @@ services:
     profiles: ["cluster", "all"]
 
   redis-cluster-2:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-cluster-2
     command: >
       redis-server
@@ -214,7 +214,7 @@ services:
     profiles: ["cluster", "all"]
 
   redis-cluster-3:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-cluster-3
     command: >
       redis-server
@@ -243,7 +243,7 @@ services:
     profiles: ["cluster", "all"]
 
   redis-cluster-4:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-cluster-4
     command: >
       redis-server
@@ -272,7 +272,7 @@ services:
     profiles: ["cluster", "all"]
 
   redis-cluster-5:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-cluster-5
     command: >
       redis-server
@@ -301,7 +301,7 @@ services:
     profiles: ["cluster", "all"]
 
   redis-cluster-6:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-cluster-6
     command: >
       redis-server
@@ -330,7 +330,7 @@ services:
     profiles: ["cluster", "all"]
 
   redis-cluster-init:
-    image: redis:8
+    image: redis:8-alpine
     container_name: redis-cluster-init
     depends_on:
       redis-cluster-1:
