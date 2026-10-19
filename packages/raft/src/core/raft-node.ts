@@ -78,14 +78,11 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   private redisListenerActive = false;
   private redisListener: Redis | undefined; // Separate Redis connection for blocking operations
 
-  // Guard against heartbeat pileup: if a previous round is still in flight
-  // (e.g. waiting on brpop to dead peers), skip the current timer tick
-  private heartbeatInProgress = false; // Separate Redis connection for blocking operations
-
   private initialized = false;
   private lastLeaderContact = 0;
   private lastLeaderId: string | undefined;
   private lastLeaderTerm = 0;
+  private leadershipTransferInProgress = false;
   private messageLoop: Promise<void> | undefined;
   private electionInProgress = false;
   private readonly replications = new Map<string, Promise<void>>();
@@ -310,9 +307,14 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   public async appendLog(
     applicationCommandPayload: TCommand,
   ): Promise<boolean> {
-    if (this.state !== RaftState.LEADER) {
-      throw new RaftValidationException("Only leader can append logs");
+    if (this.state !== RaftState.LEADER || !this.redisListenerActive) {
+      throw new RaftValidationException(
+        "Only a running leader can append logs",
+      );
     }
+
+    if (this.leadershipTransferInProgress)
+      throw new RaftValidationException("Leadership transfer is in progress");
 
     try {
       // For regular app commands, commandType is APPLICATION
@@ -333,6 +335,10 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
 
       // Trigger replication to followers
       await this.replicateLogToFollowers();
+      await this.waitForLogEntryCommitment(
+        index,
+        this.config.network.requestTimeout,
+      );
 
       // After successfully appending and replicating, check for snapshotting
       // This might need to be tied to the actual commitment and application of the log entry.
@@ -951,48 +957,37 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   }
 
   private async sendHeartbeats(): Promise<void> {
-    if (this.state !== RaftState.LEADER) {
+    if (this.state !== RaftState.LEADER || !this.redisListenerActive) {
       return;
     }
 
-    // Prevent pileup: if the previous heartbeat round is still in flight
-    // (e.g. waiting on brpop timeouts to dead peers), skip this tick.
-    // Without this guard, each 50ms timer tick would queue more brpop calls
-    // on the shared Redis connection, creating cascading 300s+ latencies.
-    if (this.heartbeatInProgress) {
-      return;
-    }
+    // Per Raft spec, heartbeats are AppendEntries RPCs. When a follower is behind,
+    // the heartbeat should include pending entries to replicate. Using replicateLogToPeer
+    // handles both cases: empty entries (heartbeat) when up-to-date, or actual entries when behind.
+    const peers = this.getPeers().filter((peer) =>
+      this.peerDiscovery.getPeerInfo(peer),
+    );
+    const heartbeatPromises = peers.map(async (peerId) => {
+      if (peerId === this.config.nodeId) return;
 
-    this.heartbeatInProgress = true;
-    try {
-      // Per Raft spec, heartbeats are AppendEntries RPCs. When a follower is behind,
-      // the heartbeat should include pending entries to replicate. Using replicateLogToPeer
-      // handles both cases: empty entries (heartbeat) when up-to-date, or actual entries when behind.
-      const peers = this.peerDiscovery.getPeers();
-      const heartbeatPromises = peers.map(async (peerId) => {
-        if (peerId === this.config.nodeId) return;
+      try {
+        await this.replicateLogToPeer(peerId);
 
-        try {
-          await this.replicateLogToPeer(peerId);
+        this.metrics.incrementCounter("raft_heartbeats_total", {
+          node_id: this.config.nodeId,
+          cluster_id: this.config.clusterId,
+        });
 
-          this.metrics.incrementCounter("raft_heartbeats_total", {
-            node_id: this.config.nodeId,
-            cluster_id: this.config.clusterId,
-          });
+        this.publishEvent(RaftEventType.HEARTBEAT_RECEIVED, {
+          from: peerId,
+          success: true,
+        });
+      } catch (error) {
+        this.logger.warn("Failed to send heartbeat", { peerId, error });
+      }
+    });
 
-          this.publishEvent(RaftEventType.HEARTBEAT_RECEIVED, {
-            from: peerId,
-            success: true,
-          });
-        } catch (error) {
-          this.logger.warn("Failed to send heartbeat", { peerId, error });
-        }
-      });
-
-      await Promise.allSettled(heartbeatPromises);
-    } finally {
-      this.heartbeatInProgress = false;
-    }
+    await Promise.allSettled(heartbeatPromises);
   }
 
   private async replicateLogToFollowers(): Promise<void> {
@@ -1000,15 +995,31 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       return;
     }
 
-    const peers = this.peerDiscovery.getPeers();
-    for (const peerId of peers) {
-      if (peerId === this.config.nodeId) continue;
-      await this.replicateLogToPeer(peerId);
-    }
+    await Promise.all(
+      this.getPeers()
+        .filter(
+          (peerId) =>
+            peerId !== this.config.nodeId &&
+            this.peerDiscovery.getPeerInfo(peerId),
+        )
+        .map((peerId) => this.replicateLogToPeer(peerId)),
+    );
+    await this.advanceCommitIndex();
   }
 
-  private async replicateLogToPeer(peerId: string): Promise<void> {
-    const nextIndex = this.nextIndex.get(peerId) || 0;
+  private replicateLogToPeer(peerId: string): Promise<void> {
+    const existing = this.replications.get(peerId);
+    if (existing) return existing;
+    const operation = this.replicateToPeer(peerId).finally(() =>
+      this.replications.delete(peerId),
+    );
+    this.replications.set(peerId, operation);
+    return operation;
+  }
+
+  private async replicateToPeer(peerId: string): Promise<void> {
+    const term = this.currentTerm;
+    const nextIndex = this.nextIndex.get(peerId) ?? this.log.getLastIndex() + 1;
 
     // If nextIndex is before the log's first index, follower needs a snapshot
     if (nextIndex < this.log.getFirstIndex()) {
@@ -1022,7 +1033,11 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
 
     const prevLogIndex = nextIndex - 1;
     const prevLogTerm =
-      prevLogIndex > 0 ? this.log.getEntry(prevLogIndex)?.term || 0 : 0;
+      prevLogIndex > 0
+        ? (this.log.getEntry(prevLogIndex)?.term ??
+          this.latestSnapshotMeta?.lastIncludedTerm ??
+          0)
+        : 0;
 
     const entries = this.log.getEntries(nextIndex);
 
@@ -1043,6 +1058,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         return;
       }
 
+      if (this.state !== RaftState.LEADER || this.currentTerm !== term) return;
       if (response.success) {
         this.nextIndex.set(peerId, response.lastLogIndex + 1);
         this.matchIndex.set(peerId, response.lastLogIndex);
@@ -1052,7 +1068,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       } else {
         // If AppendEntries fails because of log inconsistency, decrement nextIndex and retry.
         // Per Raft: decrement nextIndex once per failed AppendEntries RPC.
-        const currentNext = this.nextIndex.get(peerId) || 0;
+        const currentNext = this.nextIndex.get(peerId) ?? nextIndex;
         this.nextIndex.set(peerId, Math.max(1, currentNext - 1));
         // If it falls behind the first log index, the next attempt will send a snapshot.
         this.logger.info(
@@ -1061,7 +1077,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         );
       }
     } catch (error) {
-      this.logger.warn("Failed to replicate log to peer", { peerId, error });
+      this.logger.debug("Failed to replicate log to peer", { peerId, error });
     }
   }
 
@@ -1759,12 +1775,15 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     const startTime = Date.now();
     return new Promise((resolve, reject) => {
       const checkCommit = () => {
-        if (this.commitIndex >= logIndex) {
+        if (this.lastApplied >= logIndex) {
           // Once committed, the leader should also apply it, which updates activeConfiguration.
           // We might need a slight delay or check for application if the next step depends on activeConfiguration being updated.
           // For now, resolving on commitIndex is the primary goal.
           resolve();
-        } else if (this.state !== RaftState.LEADER) {
+        } else if (
+          !this.redisListenerActive ||
+          this.state !== RaftState.LEADER
+        ) {
           reject(
             new RaftException(
               "Lost leadership or changed state while waiting for log entry commitment.",
@@ -1785,92 +1804,27 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   }
 
   private async advanceCommitIndex(): Promise<void> {
-    if (this.state !== RaftState.LEADER) {
-      return;
-    }
-
-    let newCommitIndex = this.commitIndex;
-
-    // Iterate from commitIndex + 1 up to the last log index known to the leader (its own log)
-    for (let N = this.commitIndex + 1; N <= this.log.getLastIndex(); N++) {
-      const entry = this.log.getEntry(N);
-      if (entry && entry.term === this.currentTerm) {
-        let cOldMajority = false;
-        let cNewMajority = false;
-
-        if (
-          this.activeConfiguration.oldPeers &&
-          this.activeConfiguration.oldPeers.length > 0
-        ) {
-          // Joint Consensus C_old,new
-          const oldPeersInConfig = this.getOldConfigPeers(); // Use helper
-          const newPeersInConfig = this.getNewConfigPeers(); // Use helper
-
-          const oldPeersAckCount = oldPeersInConfig.filter(
-            (peerId) => (this.matchIndex.get(peerId) || 0) >= N,
-          ).length;
-          const newPeersAckCount = newPeersInConfig.filter(
-            (peerId) => (this.matchIndex.get(peerId) || 0) >= N,
-          ).length;
-
-          const oldMajoritySize = Math.floor(oldPeersInConfig.length / 2) + 1;
-          const newMajoritySize = Math.floor(newPeersInConfig.length / 2) + 1;
-
-          cOldMajority = oldPeersAckCount >= oldMajoritySize;
-          cNewMajority = newPeersAckCount >= newMajoritySize;
-
-          if (cOldMajority && cNewMajority) {
-            newCommitIndex = N;
-          } else {
-            break;
-          }
-        } else {
-          // Simple Consensus C_old or C_new
-          const currentPeersInConfig = this.getNewConfigPeers();
-          const ackCount = currentPeersInConfig.filter(
-            (peerId) => (this.matchIndex.get(peerId) || 0) >= N,
-          ).length;
-          const majoritySize = Math.floor(currentPeersInConfig.length / 2) + 1;
-
-          if (ackCount >= majoritySize) {
-            newCommitIndex = N;
-          } else {
-            break;
-          }
-        }
-      } else if (entry && entry.term < this.currentTerm) {
-        // Per Raft: Leader cannot determine commitment of log entries from previous terms using replica counting alone.
-        // These entries are implicitly committed once an entry from the current term is committed.
-        // So, if we successfully committed an entry from currentTerm (newCommitIndex > this.commitIndex),
-        // any preceding entries from older terms up to newCommitIndex are also considered committed.
-        // The loop structure handles this naturally: if newCommitIndex advances, it covers these.
-      } else if (!entry) {
-        this.logger.warn(
-          "advanceCommitIndex: Log entry not found during commit check. This should not happen.",
-          { index: N },
-        );
+    if (this.state !== RaftState.LEADER) return;
+    let committed = this.commitIndex;
+    for (
+      let index = this.log.getLastIndex();
+      index > this.commitIndex;
+      index--
+    ) {
+      if (this.log.getEntry(index)?.term !== this.currentTerm) continue;
+      const acknowledgements = new Set(
+        this.getPeers().filter(
+          (peer) => (this.matchIndex.get(peer) ?? 0) >= index,
+        ),
+      );
+      if (this.hasQuorum(acknowledgements)) {
+        committed = index;
         break;
       }
-      // If entry.term > this.currentTerm, this is an invalid state for a leader. Stop.
-      else if (entry.term > this.currentTerm) {
-        this.logger.error(
-          "advanceCommitIndex: Leader encountered log entry from a future term. Stepping down.",
-          { entryTerm: entry.term, currentTerm: this.currentTerm },
-        );
-        void this.becomeFollower(entry.term); // Step down
-        return;
-      }
     }
-
-    if (newCommitIndex > this.commitIndex) {
-      this.logger.info(
-        `Commit index will be advanced from ${this.commitIndex} to ${newCommitIndex}`,
-        { nodeId: this.config.nodeId },
-      );
-      this.commitIndex = newCommitIndex;
-      await this.applyCommittedEntries(); // Apply newly committed entries on the leader
-      // Persist state after applying, as lastApplied and potentially activeConfiguration changed.
-      // await this.persistState(); // persistState is called within applyCommittedEntries if needed or at the end of apply loop
+    if (committed > this.commitIndex) {
+      this.commitIndex = committed;
+      await this.applyCommittedEntries();
     }
   }
 
