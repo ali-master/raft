@@ -1867,68 +1867,66 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   }
 
   public async transferLeadership(targetPeerId: string): Promise<void> {
-    this.logger.info(`Attempting to transfer leadership to ${targetPeerId}`, {
-      nodeId: this.config.nodeId,
-    });
-    if (this.state !== RaftState.LEADER) {
+    if (this.state !== RaftState.LEADER || !this.redisListenerActive) {
       throw new RaftValidationException(
         "Leadership transfer can only be initiated by the leader.",
       );
     }
-
-    const currentPeers = this.getPeers(); // Considers joint consensus
-    if (!currentPeers.includes(targetPeerId)) {
+    if (
+      targetPeerId === this.config.nodeId ||
+      !this.getPeers().includes(targetPeerId)
+    ) {
       throw new RaftValidationException(
-        `Target peer ${targetPeerId} is not part of the current active configuration.`,
+        "Leadership transfer requires another voting member.",
       );
     }
-    if (targetPeerId === this.config.nodeId) {
-      // As per test case design, throwing an error for self-transfer for consistency.
-      throw new RaftValidationException("Cannot transfer leadership to self.");
-    }
-
-    const targetMatchIndex = this.matchIndex.get(targetPeerId) || 0;
-    const lastLogIdx = this.log.getLastIndex();
-
-    if (targetMatchIndex !== lastLogIdx) {
-      this.logger.warn(`Target peer ${targetPeerId} is not fully up-to-date.`, {
-        matchIndex: targetMatchIndex,
-        lastLogIndex: lastLogIdx,
-      });
-      // For now, we proceed, but a more robust implementation might try to replicate missing entries first or fail.
-      // Raft standard is that TimeoutNow should be sent regardless of log state, target campaigns if it can.
-    }
-
-    // Optional: Stop accepting new client commands here (e.g., set a flag)
-
-    const timeoutNowRequest: TimeoutNowRequest = {
-      term: this.currentTerm,
-      leaderId: this.config.nodeId,
-    };
-
+    if (this.leadershipTransferInProgress)
+      throw new RaftValidationException(
+        "Leadership transfer is already in progress",
+      );
+    this.leadershipTransferInProgress = true;
+    const term = this.currentTerm;
+    const timeout = Math.max(
+      2000,
+      this.config.network.requestTimeout,
+      this.config.electionTimeout[1] * 2,
+    );
     try {
-      this.logger.info(`Sending TimeoutNowRequest to ${targetPeerId}`, {
-        request: timeoutNowRequest,
+      const catchupDeadline = Date.now() + timeout;
+      while (
+        (this.matchIndex.get(targetPeerId) ?? 0) < this.log.getLastIndex()
+      ) {
+        if (
+          !this.redisListenerActive ||
+          this.state !== RaftState.LEADER ||
+          Date.now() >= catchupDeadline
+        ) {
+          throw new RaftReplicationException(
+            `Failed to bring peer ${targetPeerId} up-to-date`,
+          );
+        }
+        await this.replicateLogToPeer(targetPeerId);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await this.network.sendTimeoutNowRequest(targetPeerId, {
+        term,
+        leaderId: this.config.nodeId,
       });
-      await this.network.sendTimeoutNowRequest(targetPeerId, timeoutNowRequest);
-
-      // After successfully sending, the current leader should facilitate the target winning.
-      // Resetting its own election timer is a way to yield.
-      this.logger.info(
-        `TimeoutNowRequest sent to ${targetPeerId}. Resetting own election timer.`,
-        { nodeId: this.config.nodeId },
-      );
-      this.startElectionTimer();
-      // Optionally, could also transition to Follower here, but Raft paper suggests TimeoutNow is enough.
-      // If it remains leader and target fails, it continues. If target succeeds, this node will become follower upon discovering higher term.
-    } catch (error) {
-      this.logger.error(`Failed to send TimeoutNowRequest to ${targetPeerId}`, {
-        error,
-      });
-      // If sending fails, the leader continues its term.
+      const electionDeadline = Date.now() + timeout;
+      while (Date.now() < electionDeadline && this.redisListenerActive) {
+        if (
+          this.lastLeaderId === targetPeerId &&
+          this.currentTerm > term &&
+          this.getState() === RaftState.FOLLOWER
+        )
+          return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
       throw new RaftReplicationException(
-        `Failed to send TimeoutNowRequest: ${error}`,
+        `Leadership transfer to ${targetPeerId} was not confirmed`,
       );
+    } finally {
+      this.leadershipTransferInProgress = false;
     }
   }
 
@@ -2184,16 +2182,8 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
           break;
         case MessageType.TIMEOUT_NOW_REQUEST:
           await this.handleTimeoutNowRequest(payload);
-          // TimeoutNow doesn't require a response
-          this.logger.debug(
-            "Processed TIMEOUT_NOW_REQUEST (no response needed)",
-            {
-              nodeId: this.config.nodeId,
-              from,
-              requestId,
-            },
-          );
-          return;
+          response = { term: this.currentTerm };
+          break;
         default:
           this.logger.warn("Unknown message type", {
             type,

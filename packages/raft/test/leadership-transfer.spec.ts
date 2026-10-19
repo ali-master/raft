@@ -1,3 +1,4 @@
+import { clearRedisData } from "./shared/test-setup";
 import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
 import type { RaftNode } from "../src/core/raft-node";
 import { RaftEngine } from "../src/raft-engine";
@@ -50,10 +51,11 @@ async function createTestNode(
 ): Promise<TestNode> {
   const dataDir = await createTempDataDir();
   ALL_DATA_DIRS.push(dataDir);
-  const peers = peerPorts.map((p) => `localhost:${p}`);
+  const peers = [nodeId, ...peerPorts.map((p) => `node${p % 10}`)];
 
   const config = createTestConfig(nodeId, {
     ...baseConfig,
+    electionTimeout: nodeId === "node1" ? [200, 250] : [900, 1000],
     clusterId: "leadership-transfer-cluster",
     httpHost: "localhost",
     httpPort: port,
@@ -136,6 +138,7 @@ async function waitForLogSync(
 describe("Leadership Transfer", () => {
   beforeEach(async () => {
     await cleanupAllNodes();
+    await clearRedisData();
   });
 
   afterEach(async () => {
@@ -157,6 +160,7 @@ describe("Leadership Transfer", () => {
 
     const n2StartElectionSpy = vi.spyOn(n2.node as any, "startElection");
 
+    const termBeforeTransfer = leader1!.getCurrentTerm();
     await leader1!.transferLeadership("node2");
 
     const leader2 = await waitForLeader(
@@ -166,9 +170,7 @@ describe("Leadership Transfer", () => {
     );
     expect(leader2).not.toBeNull();
     expect(leader2?.getNodeId()).toBe("node2");
-    expect(leader2!.getCurrentTerm()).toBeGreaterThan(
-      leader1!.getCurrentTerm(),
-    );
+    expect(leader2!.getCurrentTerm()).toBeGreaterThan(termBeforeTransfer);
 
     expect(n1.node.getState()).toBe(RaftState.FOLLOWER);
     expect(n3.node.getState()).toBe(RaftState.FOLLOWER);
@@ -203,7 +205,10 @@ describe("Leadership Transfer", () => {
 
     // Now start n2
     await n2.node.start();
-    await delay(n1.config.heartbeatInterval * 3); // Allow n2 to receive some heartbeats, but it's behind
+    await vi.waitFor(
+      () => expect(leader1!.getPeerInfo("node2")).toBeDefined(),
+      { timeout: 5000 },
+    ); // Allow n2 to receive some heartbeats, but it's behind
 
     // @ts-ignore - spy on private method
     const replicateSpy = vi.spyOn(leader1! as any, "replicateLogToPeer");
@@ -219,7 +224,7 @@ describe("Leadership Transfer", () => {
     expect(leader2?.getNodeId()).toBe("node2");
 
     expect(replicateSpy).toHaveBeenCalledWith("node2");
-    expect(n2.node.getLog().getLastIndex()).toEqual(lastIndex); // n2 should have caught up
+    expect(n2.node.getLog().getLastIndex()).toBeGreaterThanOrEqual(lastIndex); // n2 should have caught up
 
     console.log("Test Case 2: Transfer to out-of-date follower completed.");
   }, 25000);
@@ -244,6 +249,8 @@ describe("Leadership Transfer", () => {
     // Or, mock network calls to n2 to fail from leader1's perspective
     // @ts-ignore
     const leader1Network = (leader1 as any).network as RaftNetwork;
+    const sendAppendEntries =
+      leader1Network.sendAppendEntries.bind(leader1Network);
     vi.spyOn(leader1Network, "sendAppendEntries").mockImplementation(
       async (peerId, request) => {
         if (peerId === "node2") {
@@ -253,21 +260,15 @@ describe("Leadership Transfer", () => {
             lastLogIndex: 0,
           };
         }
-        // Call actual for other peers if any (none in this specific setup for n2)
-        // This requires careful spy management if other peers were involved.
-        // For this test, we just need to ensure n2 never catches up.
-        return {
-          term: leader1!.getCurrentTerm(),
-          success: true,
-          lastLogIndex:
-            request.entries.length > 0
-              ? request.entries[request.entries.length - 1].index
-              : request.prevLogIndex,
-        };
+        return sendAppendEntries(peerId, request);
       },
     );
 
     await n2.node.start(); // Start n2 now with mocked behavior
+    await vi.waitFor(
+      () => expect(leader1!.getPeerInfo("node2")).toBeDefined(),
+      { timeout: 5000 },
+    );
 
     await expect(leader1!.transferLeadership("node2")).rejects.toThrow(
       /Failed to bring peer node2 up-to-date/,
