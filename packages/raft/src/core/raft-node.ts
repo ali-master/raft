@@ -76,14 +76,20 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
 
   // Redis message listener control
   private redisListenerActive = false;
-  private redisListener?: Redis; // Separate Redis connection for blocking operations
+  private redisListener: Redis | undefined; // Separate Redis connection for blocking operations
 
   // Guard against heartbeat pileup: if a previous round is still in flight
   // (e.g. waiting on brpop to dead peers), skip the current timer tick
   private heartbeatInProgress = false;
 
   // Pre-vote tracking to prevent multiple simultaneous pre-votes
-  private preVoteGrantedFor: Map<number, string> = new Map(); // term -> candidateId
+  private preVoteGrantedFor: Map<number, string> = new Map(); // Separate Redis connection for blocking operations
+
+  private initialized = false;
+  private lastLeaderId: string | undefined;
+  private messageLoop: Promise<void> | undefined;
+  private readonly replications = new Map<string, Promise<void>>();
+  private stateMachineTask: Promise<void> = Promise.resolve(); // term -> candidateId
 
   constructor(config: RaftConfiguration, stateMachine: StateMachine<TCommand>) {
     super();
@@ -148,14 +154,24 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   }
 
   public async start(): Promise<void> {
+    if (this.redisListenerActive) return;
     try {
-      await this.loadPersistedState(); // Loads term, votedFor, commitIndex, lastApplied, and activeConfiguration
+      if (this.storage.status === "end") await this.storage.connect();
+      this.network.resume();
+      if (!this.initialized) await this.loadPersistedState(); // Loads term, votedFor, commitIndex, lastApplied, and activeConfiguration
 
       // Initialize WAL if enabled
       await this.log.initializeWALEngine();
 
-      await this.log.loadFromStorage();
-      await this.loadLatestSnapshotFromDisk(); // Load snapshot after log, before other services
+      if (!this.initialized) {
+        await this.log.loadFromStorage();
+        this.lastApplied = 0;
+        await this.loadLatestSnapshotFromDisk();
+        await this.applyCommittedEntries();
+      }
+      this.state = RaftState.FOLLOWER;
+      this.lastLeaderId = undefined;
+      this.initialized = true;
 
       await this.peerDiscovery.start();
       this.startRedisMessageListener();
@@ -178,30 +194,6 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
           "Initialized activeConfiguration with discovered peers",
           { peers: initialPeers },
         );
-      } else {
-        // Reconcile persistent configuration with discovered peers
-        const discoveredPeers = this.peerDiscovery.getPeers();
-        const allAvailablePeers = Array.from(
-          new Set([...discoveredPeers, this.config.nodeId]),
-        );
-
-        // Remove any peers from configuration that are no longer discovered
-        const originalPeers = [...this.activeConfiguration.newPeers];
-        this.activeConfiguration.newPeers =
-          this.activeConfiguration.newPeers.filter((peer) =>
-            allAvailablePeers.includes(peer),
-          );
-
-        if (originalPeers.length !== this.activeConfiguration.newPeers.length) {
-          this.logger.info(
-            "Reconciled activeConfiguration with discovered peers",
-            {
-              originalPeers,
-              discoveredPeers: allAvailablePeers,
-              reconciledPeers: this.activeConfiguration.newPeers,
-            },
-          );
-        }
       }
 
       this.network.initializeCircuitBreakers();
@@ -227,6 +219,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         state: this.state,
         term: this.currentTerm,
       });
+      this.publishEvent(RaftEventType.NODE_STARTED);
     } catch (error) {
       this.logger.fatal("Failed to start Raft node", {
         error: error instanceof Error ? error.message : String(error),
@@ -242,6 +235,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
   public async stop(): Promise<void> {
     this.clearTimers();
     this.redisListenerActive = false;
+    this.state = RaftState.FOLLOWER;
 
     // Shutdown network layer first - this cancels all pending brpop calls
     // via Promise.race so they resolve immediately instead of blocking
@@ -264,8 +258,9 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       }
     }
 
-    // Give any pending operations a moment to complete
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await this.messageLoop;
+    await Promise.allSettled(this.replications.values());
+    await this.stateMachineTask;
 
     try {
       await this.peerDiscovery.stop();
@@ -286,13 +281,19 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         await this.storage.del(
           `raft:cluster:${this.config.clusterId}:queue:${this.config.nodeId}`,
         );
+        const ended = new Promise<void>((resolve) =>
+          this.storage.once("end", resolve),
+        );
         await this.storage.quit();
+        this.storage.disconnect();
+        await ended;
       }
     } catch (error) {
       this.logger.warn("Error closing Redis connection", { error });
     }
 
     this.logger.info("Raft node stopped", { nodeId: this.config.nodeId });
+    this.publishEvent(RaftEventType.NODE_STOPPED);
   }
 
   // This is a simplified appendLog for application data.
@@ -2372,7 +2373,10 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     );
 
     // Start listening for messages in a separate async context
-    this.processRedisMessages(queueKey).catch((error) => {
+    this.messageLoop = this.processRedisMessages(
+      queueKey,
+      this.redisListener,
+    ).catch((error) => {
       this.logger.error("Redis message listener error", {
         error,
         nodeId: this.config.nodeId,
@@ -2380,19 +2384,26 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     });
   }
 
-  private async processRedisMessages(queueKey: string): Promise<void> {
+  private async processRedisMessages(
+    queueKey: string,
+    listener: Redis,
+  ): Promise<void> {
     this.logger.info("Started processing Redis messages", {
       nodeId: this.config.nodeId,
       queueKey,
     });
 
-    while (this.redisListenerActive && this.redisListener) {
+    while (this.redisListenerActive && this.redisListener === listener) {
       try {
         // Block for messages with 1 second timeout using dedicated connection
-        const result = await this.redisListener.brpop(queueKey, 1);
+        const result = await listener.brpop(queueKey, 1);
 
         if (result) {
-          const message = JSON.parse(result[1]);
+          const message = JSON.parse(result[1], (_key, value) =>
+            value?.type === "Buffer" && Array.isArray(value.data)
+              ? Buffer.from(value.data)
+              : value,
+          );
           this.logger.info("Received message from queue", {
             nodeId: this.config.nodeId,
             from: message.from,
@@ -2418,10 +2429,8 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     });
 
     // Clean up listener connection
-    if (this.redisListener) {
-      await this.redisListener.disconnect();
-      this.redisListener = undefined;
-    }
+    listener.disconnect();
+    if (this.redisListener === listener) this.redisListener = undefined;
   }
 
   private async handleRedisMessage(message: any): Promise<void> {
