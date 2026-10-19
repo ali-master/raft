@@ -10,7 +10,9 @@ import { HISTORY_LIMIT, EventJournal } from "./journal";
 import {
   ObservatoryStateMachine,
   CommandCenter,
+  COMMAND_PAYLOAD_BYTES,
 } from "./commands";
+import type { CommandOperation } from "./commands";
 import { DashboardMetrics } from "./metrics";
 
 export class PlaygroundDashboard {
@@ -311,6 +313,124 @@ export class PlaygroundDashboard {
           },
         },
       );
+    if (request.method === "POST" && path === "/api/action") {
+      if (!this.controls)
+        return json(403, { error: "This scenario is observation only" });
+      if (!this.ready || this.busy)
+        return json(409, { error: "Wait for the current operation to finish" });
+      if (!request.headers.get("content-type")?.startsWith("application/json"))
+        return json(415, { error: "Expected JSON" });
+      let input: unknown;
+      try {
+        input = await request.json();
+      } catch {
+        return json(400, { error: "Invalid JSON" });
+      }
+      if (!input || typeof input !== "object")
+        return json(400, { error: "Invalid action" });
+      const { action, nodeId, operation, target, payload } = input as {
+        action?: unknown;
+        nodeId?: unknown;
+        operation?: unknown;
+        target?: unknown;
+        payload?: unknown;
+      };
+      const actions = [
+        "write",
+        "burst",
+        "fail-leader",
+        "partition",
+        "heal",
+        "snapshot",
+        "transfer",
+        "stop",
+        "start",
+        "dispatch",
+      ];
+      if (
+        typeof action !== "string" ||
+        !actions.includes(action) ||
+        (nodeId !== undefined && typeof nodeId !== "string")
+      ) {
+        return json(400, { error: "Unknown action or invalid node ID" });
+      }
+      if (
+        ["stop", "start", "transfer"].includes(action) &&
+        (typeof nodeId !== "string" || !this.manager.getNode(nodeId))
+      ) {
+        return json(400, { error: "Select an existing node" });
+      }
+      if (action === "dispatch") {
+        if (
+          (operation !== "inspect" && operation !== "sha256") ||
+          typeof target !== "string" ||
+          (!["all", "followers"].includes(target) &&
+            !this.manager.getNode(target)) ||
+          typeof payload !== "string" ||
+          Buffer.byteLength(payload, "utf8") > COMMAND_PAYLOAD_BYTES
+        )
+          return json(400, {
+            error:
+              "Choose a destination and a supported task. Payload limit: 512 UTF-8 bytes.",
+          });
+      }
+      if (this.busy)
+        return json(409, { error: "Another operation is already running" });
+      this.busy = true;
+      this.journal.publish("action", "studio", {
+        message: `Running ${action}`,
+        action,
+        nodeId,
+      });
+      try {
+        if (action === "dispatch") {
+          const leader = this.manager.getLeader();
+          if (!leader) throw new Error("No running leader");
+          const peers = leader.node.getActiveConfiguration();
+          const members = new Set([
+            ...peers.newPeers,
+            ...(peers.oldPeers ?? []),
+          ]);
+          const targets = this.manager
+            .getAllNodes()
+            .filter(
+              (info) =>
+                members.has(info.nodeId) &&
+                (target === "all" ||
+                  (target === "followers" && info.nodeId !== leader.nodeId) ||
+                  target === info.nodeId),
+            );
+          if (
+            !targets.length ||
+            targets.some(
+              (info) => !(info.stateMachine instanceof ObservatoryStateMachine),
+            )
+          )
+            throw new Error(
+              "No command-capable destination in the current voting configuration",
+            );
+          const commandId = await this.commands.dispatch(
+            leader,
+            targets.map((info) => info.nodeId),
+            operation as CommandOperation,
+            payload as string,
+          );
+          return json(200, { ok: true, commandId });
+        }
+        await this.execute(action, nodeId as string | undefined);
+        this.journal.publish("action_complete", "studio", {
+          message: `${action} completed`,
+          action,
+        });
+        return json(200, { ok: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.journal.publish("error", "studio", { message, action });
+        return json(409, { error: message });
+      } finally {
+        this.busy = false;
+      }
+    }
     const asset = this.assets.get(path);
     if (request.method === "GET" && asset)
       return new Response(asset, {
@@ -323,6 +443,74 @@ export class PlaygroundDashboard {
         },
       });
     return json(404, { error: "Not found" });
+  }
+
+  private async execute(action: string, nodeId?: string) {
+    const leader = this.manager.getLeader();
+    switch (action) {
+      case "write":
+        await this.manager.appendToLeader({ type: "increment", value: 1 });
+        break;
+      case "burst":
+        await Promise.all(
+          Array.from({ length: 10 }, () =>
+            this.manager.appendToLeader({ type: "increment", value: 1 }),
+          ),
+        );
+        break;
+      case "fail-leader":
+        if (!leader) throw new Error("No running leader");
+        await this.manager.stopNode(leader.nodeId);
+        break;
+      case "partition": {
+        if (this.manager.getBlockedLinks().length)
+          throw new Error("Heal the current partition first");
+        const nodes = this.manager
+          .getAllNodes()
+          .filter((info) => info.node.isRunning())
+          .map((info) => info.nodeId);
+        const minority = [
+          leader?.nodeId,
+          ...nodes.filter((id) => id !== leader?.nodeId),
+        ]
+          .filter((id): id is string => !!id)
+          .slice(0, Math.floor(nodes.length / 2));
+        if (!minority.length)
+          throw new Error("At least two running nodes are needed");
+        await this.manager.simulateNetworkPartition(
+          minority,
+          nodes.filter((id) => !minority.includes(id)),
+        );
+        break;
+      }
+      case "heal":
+        await Promise.all(
+          this.manager
+            .getAllNodes()
+            .filter((info) => !info.node.isRunning())
+            .map((info) => this.manager.startNode(info.nodeId)),
+        );
+        await this.manager.healNetworkPartition(
+          this.manager.getAllNodes().map((info) => info.nodeId),
+        );
+        break;
+      case "snapshot":
+        if (!leader) throw new Error("No running leader");
+        await leader.node.createSnapshot();
+        break;
+      case "transfer":
+        if (!leader) throw new Error("No running leader");
+        if (!this.manager.getNode(nodeId!)?.node.isRunning())
+          throw new Error("The target node is stopped");
+        await leader.node.transferLeadership(nodeId!);
+        break;
+      case "stop":
+        await this.manager.stopNode(nodeId!);
+        break;
+      case "start":
+        await this.manager.startNode(nodeId!);
+        break;
+    }
   }
 }
 
