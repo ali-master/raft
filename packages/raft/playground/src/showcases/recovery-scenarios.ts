@@ -27,16 +27,17 @@ export class RecoveryShowcase {
       // Scenario 4: Rolling restart recovery
       await this.demonstrateRollingRestartRecovery();
 
-      // Scenario 5: Data corruption recovery
-      await this.demonstrateDataCorruptionRecovery();
+      // Scenario 5: Fresh node recovery from persisted state
+      await this.demonstratePersistedRecovery();
 
       this.logger.result(
-        true,
+        await this.verifyConsistency(),
         "All recovery scenarios completed successfully!",
       );
     } catch (_error) {
       this.logger.error("Recovery showcase failed", undefined, _error);
       this.logger.result(false, "Recovery demonstration failed");
+      throw _error;
     } finally {
       await this.cleanup();
     }
@@ -291,21 +292,22 @@ export class RecoveryShowcase {
 
     const stateMachine = new CounterStateMachine("catastrophic-recovery");
 
+    let rejectedWithoutQuorum = false;
     try {
       await this.clusterManager.appendToLeader(
         stateMachine.createIncrementCommand(1, "catastrophic-test"),
       );
-      this.logger.warn(
-        "Unexpected successful operation during catastrophic failure",
-      );
     } catch {
+      rejectedWithoutQuorum = true;
       this.logger.success(
         "Operations correctly failed during catastrophic failure",
       );
     }
 
+    this.logger.result(rejectedWithoutQuorum, "Writes require a majority");
+
     // Begin recovery process
-    this.logger.info("\\nBeginning catastrophic recovery process...");
+    this.logger.info("\nBeginning catastrophic recovery process...");
 
     // Restart nodes one by one to restore majority
     const recoveryOrder = [...nodesToFail];
@@ -323,7 +325,7 @@ export class RecoveryShowcase {
       // Check if we've restored majority
       const activeNodes = this.clusterManager
         .getAllNodes()
-        .filter((n) => n.node.getState() !== RaftState.CANDIDATE).length;
+        .filter((n) => n.node.isRunning()).length;
 
       this.logger.info(`Active nodes after restart: ${activeNodes}/5`);
 
@@ -333,13 +335,12 @@ export class RecoveryShowcase {
           this.logger.success(
             `Majority restored! New leader: ${newLeader.nodeId}`,
           );
-          break;
         }
       }
     }
 
     // Test operations after recovery
-    this.logger.info("\\nTesting operations after catastrophic recovery...");
+    this.logger.info("\nTesting operations after catastrophic recovery...");
 
     for (let i = 0; i < 3; i++) {
       try {
@@ -442,177 +443,51 @@ export class RecoveryShowcase {
     await this.displayClusterState();
   }
 
-  private async demonstrateDataCorruptionRecovery(): Promise<void> {
-    this.logger.step(6, "Data Corruption Recovery");
-    this.logger.info("Testing recovery from simulated data corruption...");
+  private async demonstratePersistedRecovery(): Promise<void> {
+    this.logger.step(6, "Persisted Node Recovery");
+    const follower = this.clusterManager.getFollowers()[0];
+    if (!follower) throw new Error("No follower available for recovery");
 
-    // This is a conceptual demonstration since we can't easily corrupt data
-    // In a real scenario, this would involve:
-    // 1. Detecting corruption
-    // 2. Isolating corrupt node
-    // 3. Rebuilding from clean nodes
-    // 4. Reintegrating repaired node
-
-    this.logger.info("Simulating data corruption scenario...");
-
-    // Pick a node to simulate corruption
-    const followers = this.clusterManager
-      .getAllNodes()
-      .filter((n) => n.node.getState() === RaftState.FOLLOWER);
-
-    if (followers.length === 0) {
-      this.logger.error("No followers available for corruption simulation");
-      return;
-    }
-
-    const corruptedNode = followers[0];
-
-    this.logger.info(`Simulating corruption on node: ${corruptedNode.nodeId}`);
-
-    // In a real scenario, corruption would be detected through:
-    // - Checksum mismatches
-    // - Log inconsistencies
-    // - State machine divergence
-
-    // Step 1: Isolate corrupted node
-    this.logger.info("Step 1: Isolating corrupted node...");
-    await this.clusterManager.stopNode(corruptedNode.nodeId);
-
-    // Step 2: Verify cluster continues to operate
-    await this.delay(2000);
-
-    const leader = this.clusterManager.getLeader();
-    if (leader) {
-      this.logger.success(
-        "Cluster continues to operate after isolating corrupted node",
-      );
-    } else {
-      this.logger.error("Cluster failed after isolating corrupted node");
-    }
-
-    // Step 3: Submit operations to establish clean state
-    this.logger.info("Step 3: Establishing clean state...");
-
-    const stateMachine = new CounterStateMachine("corruption-recovery");
-
+    await this.clusterManager.stopNode(follower.nodeId);
+    const commands = new CounterStateMachine("persisted-recovery");
     for (let i = 0; i < 5; i++) {
       await this.clusterManager.appendToLeader(
-        stateMachine.createIncrementCommand(1, `clean-state-${i}`),
-      );
-      await this.delay(200);
-    }
-
-    // Step 4: Simulate data repair and node reintegration
-    this.logger.info("Step 4: Repairing and reintegrating node...");
-
-    // In a real scenario, this would involve:
-    // - Wiping corrupted data
-    // - Restoring from snapshots
-    // - Replaying logs from clean nodes
-
-    await this.clusterManager.startNode(corruptedNode.nodeId);
-
-    // Wait for reintegration
-    await this.delay(5000);
-
-    // Step 5: Verify recovery
-    const recoveredNode = this.clusterManager.getNode(corruptedNode.nodeId);
-    if (recoveredNode) {
-      this.logger.success(
-        `Corrupted node ${corruptedNode.nodeId} reintegrated with state: ${recoveredNode.node.getState()}`,
-      );
-    } else {
-      this.logger.error(
-        `Failed to reintegrate corrupted node ${corruptedNode.nodeId}`,
+        commands.createIncrementCommand(1, `offline-${i}`),
       );
     }
 
-    // Step 6: Verify data consistency
-    await this.delay(2000);
-
-    const consistency = await this.verifyConsistency();
-    if (consistency) {
-      this.logger.success(
-        "Data consistency restored after corruption recovery",
-      );
-    } else {
-      this.logger.error("Consistency issues remain after corruption recovery");
-    }
-
-    // Step 7: Test normal operations
-    this.logger.info("Step 7: Testing normal operations after recovery...");
-
-    for (let i = 0; i < 3; i++) {
-      await this.clusterManager.appendToLeader(
-        stateMachine.createIncrementCommand(1, `post-corruption-${i}`),
-      );
-      await this.delay(300);
-    }
-
-    const finalConsistency = await this.verifyConsistency();
-    if (finalConsistency) {
-      this.logger.success(
-        "Normal operations successful after corruption recovery",
-      );
-    } else {
-      this.logger.error(
-        "Issues with normal operations after corruption recovery",
-      );
-    }
-
+    // A fresh node must restore durable state and fetch the missing suffix.
+    await this.clusterManager.restartNode(follower.nodeId);
+    this.logger.result(
+      await this.verifyConsistency(),
+      "Fresh node restored persisted state and caught up with the cluster",
+    );
     await this.displayClusterState();
   }
 
-  // private async captureClusterState(): Promise<any> {
-  //   const nodes = this.clusterManager.getAllNodes();
-  //   const metrics = await this.clusterManager.getMetrics();
-
-  //   return {
-  //     leader: metrics.leader,
-  //     term: metrics.term,
-  //     timestamp: Date.now(),
-  //     nodes: nodes.map((nodeInfo) => ({
-  //       nodeId: nodeInfo.nodeId,
-  //       state: nodeInfo.node.getState(),
-  //       term: nodeInfo.node.getCurrentTerm(),
-  //       commitIndex: nodeInfo.node.getCommitIndex(),
-  //       lastApplied: nodeInfo.node.getLastApplied(),
-  //       stateMachineState: (
-  //         nodeInfo.stateMachine as CounterStateMachine
-  //       ).getState(),
-  //     })),
-  //   };
-  // }
-
   private async verifyConsistency(): Promise<boolean> {
-    const nodes = this.clusterManager.getAllNodes();
-    const stateMachineStates = nodes.map((nodeInfo) => {
-      const sm = nodeInfo.stateMachine as CounterStateMachine;
-      return sm.getState();
-    });
-
-    const uniqueValues = new Set(stateMachineStates.map((s) => s.value));
-    const uniqueVersions = new Set(stateMachineStates.map((s) => s.version));
-
-    const isConsistent = uniqueValues.size === 1 && uniqueVersions.size === 1;
-
-    if (!isConsistent) {
-      this.logger.info("\\n🔍 Consistency Check (Issues Found):");
-      for (const state of stateMachineStates) {
-        console.log(
-          `  ${state.nodeId}: Value=${state.value}, Version=${state.version}`,
-        );
-      }
-    }
-
-    return isConsistent;
+    const deadline = Date.now() + 5000;
+    do {
+      const nodes = this.clusterManager.getAllNodes();
+      const states = nodes.map(({ stateMachine }) =>
+        (stateMachine as CounterStateMachine).getState(),
+      );
+      if (
+        nodes.every(({ node }) => node.isRunning()) &&
+        new Set(states.map((s) => s.value)).size === 1 &&
+        new Set(states.map((s) => s.version)).size === 1
+      )
+        return true;
+      await this.delay(100);
+    } while (Date.now() < deadline);
+    throw new Error("Recovered nodes did not converge within 5 seconds");
   }
 
   private async displayClusterState(): Promise<void> {
     const nodes = this.clusterManager.getAllNodes();
     const metrics = await this.clusterManager.getMetrics();
 
-    console.log(chalk.cyan("\\n  📊 Cluster State:"));
+    console.log(chalk.cyan("\n  📊 Cluster State:"));
     console.log(`    Leader: ${metrics.leader || "None"}`);
     console.log(`    Term: ${metrics.term}`);
     console.log(`    Active Nodes: ${nodes.length}`);
@@ -656,4 +531,12 @@ export class RecoveryShowcase {
   }
 }
 
-new RecoveryShowcase().run().finally(() => process.exit(0));
+if (import.meta.main) {
+  new RecoveryShowcase().run().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
+}
