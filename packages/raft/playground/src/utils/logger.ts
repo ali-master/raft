@@ -1,4 +1,5 @@
 import { RaftLogger, LogLevel } from "@usex/raft";
+import { report } from "../dashboard/telemetry";
 
 // Create a logger instance with playground-specific configuration
 const createPlaygroundLogger = (minLevel: LogLevel = LogLevel.INFO) => {
@@ -16,7 +17,7 @@ const createPlaygroundLogger = (minLevel: LogLevel = LogLevel.INFO) => {
 
 // Export the logger class and a factory function
 export { LogLevel };
-export const PlaygroundLogger = class {
+export class PlaygroundLogger {
   private logger: RaftLogger;
 
   constructor(minLevel: LogLevel = LogLevel.INFO) {
@@ -33,6 +34,7 @@ export const PlaygroundLogger = class {
   }
 
   info(message: string, nodeId?: string, data?: any) {
+    report("info", message, nodeId);
     const context = { nodeId };
     if (data instanceof Error) {
       this.logger.info(message, context, data);
@@ -42,6 +44,7 @@ export const PlaygroundLogger = class {
   }
 
   warn(message: string, nodeId?: string, data?: any) {
+    report("warning", message, nodeId);
     const context = { nodeId };
     if (data instanceof Error) {
       this.logger.warn(message, context, data);
@@ -51,6 +54,7 @@ export const PlaygroundLogger = class {
   }
 
   error(message: string, nodeId?: string, data?: any) {
+    report("error", message, nodeId);
     const context = { nodeId };
     if (data instanceof Error) {
       this.logger.error(message, context, data);
@@ -60,6 +64,7 @@ export const PlaygroundLogger = class {
   }
 
   success(message: string, nodeId?: string, data?: any) {
+    report("success", message, nodeId);
     const context = { nodeId };
     if (data instanceof Error) {
       this.logger.success(message, context, data);
@@ -69,22 +74,27 @@ export const PlaygroundLogger = class {
   }
 
   section(title: string) {
+    report("section", title);
     this.logger.section(title);
   }
 
   step(stepNumber: number, description: string) {
+    report("step", `${stepNumber}. ${description}`);
     this.logger.step(stepNumber, description);
   }
 
   result(success: boolean, message: string) {
+    report(success ? "success" : "error", message);
     this.logger.result(success, message);
+    if (!success) throw new Error(message);
   }
 
   metric(name: string, value: string | number, unit?: string) {
+    report("metric", `${name}: ${value}${unit ? ` ${unit}` : ""}`);
     this.logger.metric(name, value, unit);
   }
 
   progress(current: number, total: number, description?: string) {
     this.logger.progress(current, total, description);
   }
-};
+}
