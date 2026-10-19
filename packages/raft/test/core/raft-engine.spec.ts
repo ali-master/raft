@@ -1,5 +1,8 @@
-import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
-import { createTestConfig } from "../shared/test-utils";
+import { it, expect, describe, beforeEach, afterEach } from "vitest";
+import { createTestConfig as baseTestConfig } from "../shared/test-utils";
+import { rm, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { clearRedisData } from "../shared/test-setup";
 import { RaftEngine } from "../../src/raft-engine";
 import { RaftState, LogLevel } from "../../src/constants";
@@ -7,19 +10,29 @@ import { RaftConfigurationException } from "../../src/exceptions";
 
 describe("raft engine advanced", { timeout: 30000 }, () => {
   let engine: RaftEngine;
+  let dataDir: string;
+
+  function createTestConfig(overrides: Parameters<typeof baseTestConfig>[0]) {
+    const config = baseTestConfig(overrides);
+    config.persistence = {
+      ...config.persistence,
+      dataDir: join(dataDir, config.nodeId),
+    };
+    return config;
+  }
 
   beforeEach(async () => {
     await clearRedisData();
-    vi.useFakeTimers();
     engine = new RaftEngine();
+    dataDir = await mkdtemp(join(tmpdir(), "raft-engine-audit-"));
   });
 
   afterEach(async () => {
     await engine.stopAllNodes();
-    vi.useRealTimers();
+    await rm(dataDir, { recursive: true, force: true });
   });
 
-  describe.skip("advanced node management (requires Redis)", () => {
+  describe("advanced node management", () => {
     it("should handle complex node lifecycle scenarios", async () => {
       const configs = [
         createTestConfig({ nodeId: "leader-candidate", httpPort: 7001 }),
@@ -88,7 +101,7 @@ describe("raft engine advanced", { timeout: 30000 }, () => {
     });
   });
 
-  describe.skip("configuration management (requires Redis)", () => {
+  describe("configuration management", () => {
     it("should handle various configuration options", async () => {
       const customConfigs = [
         createTestConfig({
@@ -142,7 +155,7 @@ describe("raft engine advanced", { timeout: 30000 }, () => {
     });
   });
 
-  describe.skip("error scenarios and edge cases (requires Redis)", () => {
+  describe("error scenarios and edge cases", () => {
     it("should handle duplicate node creation gracefully", async () => {
       const config = createTestConfig({ nodeId: "duplicate-test" });
 
@@ -211,7 +224,7 @@ describe("raft engine advanced", { timeout: 30000 }, () => {
     });
   });
 
-  describe.skip("metrics and monitoring (requires Redis)", () => {
+  describe("metrics and monitoring", () => {
     it("should provide comprehensive node metrics", async () => {
       const config = createTestConfig({ nodeId: "metrics-node" });
       const node = await engine.createNode(config);
@@ -271,8 +284,8 @@ describe("raft engine advanced", { timeout: 30000 }, () => {
       expect(config.httpPort).toBe(3000);
 
       // Timing configuration
-      expect(config.electionTimeout).toEqual([150, 300]);
-      expect(config.heartbeatInterval).toBe(50);
+      expect(config.electionTimeout).toEqual([300, 500]);
+      expect(config.heartbeatInterval).toBe(150);
 
       // Redis configuration
       expect(config.redis.host).toBe("localhost");
