@@ -41,6 +41,7 @@ export class LeadershipTransferShowcase {
         _error,
       );
       this.logger.result(false, "Leadership transfer demonstration failed");
+      throw _error;
     } finally {
       await this.cleanup();
     }
@@ -89,14 +90,10 @@ export class LeadershipTransferShowcase {
     const targetNode = followers[0];
     this.logger.info(`Initiating leadership transfer to: ${targetNode}`);
 
-    // In a real implementation, this would send a TimeoutNow RPC
-    // For simulation, we'll stop the current leader to trigger election
-    this.logger.info(
-      "Simulating leadership transfer (stopping current leader)...",
-    );
+    this.logger.info("Transferring leadership using TimeoutNow...");
 
     const preTransferTerm = currentLeader.node.getCurrentTerm();
-    await this.clusterManager.stopNode(currentLeader.nodeId);
+    await currentLeader.node.transferLeadership(targetNode);
 
     // Track the election process
     await this.trackElection(10000);
@@ -170,7 +167,9 @@ export class LeadershipTransferShowcase {
         `Transferring leadership from ${currentLeader.nodeId} during active operations...`,
       );
 
-      await this.clusterManager.stopNode(currentLeader.nodeId);
+      await currentLeader.node.transferLeadership(
+        this.clusterManager.getFollowers()[0]!.nodeId,
+      );
       await this.trackElection(8000);
 
       const newLeader = this.clusterManager.getLeader();
@@ -235,13 +234,12 @@ export class LeadershipTransferShowcase {
     this.logger.info(`Target node: ${targetNode.nodeId}`);
 
     // Display pre-transfer state
-    this.logger.info("\\nPre-transfer cluster state:");
+    this.logger.info("\nPre-transfer cluster state:");
     await this.displayClusterState();
 
-    // In a real implementation, this would use TimeoutNow RPC to specific node
-    // For simulation, we'll use a more sophisticated approach
+    // TimeoutNow asks the selected follower to start an election immediately.
     this.logger.info(
-      `\\nInitiating targeted transfer to ${targetNode.nodeId}...`,
+      `\nInitiating targeted transfer to ${targetNode.nodeId}...`,
     );
 
     // First, ensure target is up-to-date
@@ -252,8 +250,8 @@ export class LeadershipTransferShowcase {
 
     await this.delay(1000); // Wait for replication
 
-    // Stop current leader to trigger election
-    await this.clusterManager.stopNode(currentLeader.nodeId);
+    // Transfer to the selected follower
+    await currentLeader.node.transferLeadership(targetNode.nodeId);
 
     // Track who becomes leader
     await this.trackElection(8000);
@@ -267,9 +265,7 @@ export class LeadershipTransferShowcase {
           "Targeted transfer successful - desired node became leader",
         );
       } else {
-        this.logger.info(
-          "Different node became leader (normal in election-based transfer)",
-        );
+        throw new Error(`Expected ${targetNode.nodeId} to become leader`);
       }
     } else {
       this.logger.error("Targeted transfer failed - no new leader");
@@ -280,7 +276,7 @@ export class LeadershipTransferShowcase {
     await this.delay(2000);
 
     // Display post-transfer state
-    this.logger.info("\\nPost-transfer cluster state:");
+    this.logger.info("\nPost-transfer cluster state:");
     await this.displayClusterState();
   }
 
@@ -323,7 +319,9 @@ export class LeadershipTransferShowcase {
 
     // Now initiate leadership transfer
     this.logger.info("Initiating leadership transfer with reduced cluster...");
-    await this.clusterManager.stopNode(currentLeader.nodeId);
+    await currentLeader.node.transferLeadership(
+      this.clusterManager.getFollowers()[0]!.nodeId,
+    );
 
     // Track election with reduced cluster
     await this.trackElection(12000);
@@ -387,27 +385,21 @@ export class LeadershipTransferShowcase {
     this.logger.info("Capturing pre-shutdown state...");
     const preShutdownState = await this.captureStateMachineStates();
 
-    // In a real implementation, graceful shutdown would:
-    // 1. Stop accepting new operations
-    // 2. Wait for pending operations to complete
-    // 3. Ensure all followers are up-to-date
-    // 4. Send TimeoutNow to a follower
-    // 5. Wait for transfer confirmation
-    // 6. Shut down
-
     this.logger.info(
-      `\\nInitiating graceful shutdown of leader ${currentLeader.nodeId}...`,
+      `\nInitiating graceful shutdown of leader ${currentLeader.nodeId}...`,
     );
 
-    // Simulate graceful shutdown steps
-    this.logger.info("Step 1: Stop accepting new operations (simulated)");
+    this.logger.info("Step 1: All submitted operations have completed");
 
     this.logger.info("Step 2: Ensure followers are caught up...");
     await this.delay(1000); // Wait for any pending replication
 
     this.logger.info("Step 3: Transfer leadership...");
-    await this.clusterManager.stopNode(currentLeader.nodeId);
+    await currentLeader.node.transferLeadership(
+      this.clusterManager.getFollowers()[0]!.nodeId,
+    );
 
+    await this.clusterManager.stopNode(currentLeader.nodeId);
     this.logger.info("Step 4: Wait for new leader election...");
     await this.trackElection(8000);
 
@@ -425,7 +417,7 @@ export class LeadershipTransferShowcase {
     const postShutdownState = await this.captureStateMachineStates();
 
     // Compare states (in a real scenario, we'd check all committed operations are preserved)
-    this.logger.info("\\nVerifying operation preservation...");
+    this.logger.info("\nVerifying operation preservation...");
 
     const statesMatch = this.compareStateMachineStates(
       preShutdownState,
@@ -533,7 +525,7 @@ export class LeadershipTransferShowcase {
     const nodes = this.clusterManager.getAllNodes();
     const metrics = await this.clusterManager.getMetrics();
 
-    console.log(chalk.cyan("\\n  📊 Cluster State:"));
+    console.log(chalk.cyan("\n  📊 Cluster State:"));
     console.log(`    Leader: ${metrics.leader || "None"}`);
     console.log(`    Term: ${metrics.term}`);
     console.log(`    Active Nodes: ${nodes.length}`);
@@ -576,4 +568,12 @@ export class LeadershipTransferShowcase {
   }
 }
 
-new LeadershipTransferShowcase().run().finally(() => process.exit(0));
+if (import.meta.main) {
+  new LeadershipTransferShowcase().run().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
+}
