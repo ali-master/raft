@@ -4,6 +4,6 @@
   },
   "github": {
     "release": true,
-    "releaseNotes": "npx lerna-changelog --from ${latestTag}"
+    "releaseNotes": "bunx --bun lerna-changelog --from ${latestTag}"
   }
 }
