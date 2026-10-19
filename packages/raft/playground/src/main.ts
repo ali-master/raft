@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import chalk from "chalk";
 import { InteractiveOption, InteractiveCommand } from "interactive-commander";
@@ -19,6 +19,7 @@ import { StressTestShowcase } from "./showcases/stress-test";
 import { InteractiveCLI } from "./interactive/cli";
 import { ClusterVisualizer } from "./visualization/cluster-visualizer";
 import { version as RaftVersion } from "../../package.json";
+import { runDashboard } from "./dashboard/main";
 
 console.log(
   chalk.cyan.bold(`
@@ -26,7 +27,7 @@ console.log(
 ║                                                           ║
 ║                🚀 RAFT CONSENSUS PLAYGROUND 🚀            ║
 ║                                                           ║
-║           Complete 100% Coverage of Raft Use Cases        ║
+║           Interactive Raft Scenarios and Recovery        ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
 `),
@@ -68,6 +69,11 @@ const cli = new InteractiveCommand()
     }
     throw err;
   });
+
+cli
+  .command("dashboard")
+  .description("Open the live Raft Observatory")
+  .action(runDashboard);
 
 // Main showcase command with interactive options
 cli
@@ -159,17 +165,20 @@ async function runShowcase(showcase: string) {
 
 // Handle Ctrl+C gracefully
 process.on("SIGINT", () => {
+  if (process.argv[2] === "dashboard") return;
   console.log("\n");
   console.log(chalk.green("👋 Thanks for exploring Raft! Goodbye!"));
   console.log("\n");
   process.exit(0);
 });
 
-// Default action - run showcase command if no command is provided
+// Open the live dashboard by default; showcase retains the terminal selector.
 if (process.argv.length === 2) {
-  // No arguments provided, run showcase command in interactive mode
-  process.argv.push("showcase");
+  process.argv.push("dashboard");
 }
 
 // Parse command line arguments
-void cli.parseAsync(process.argv);
+void cli.parseAsync(process.argv).catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});
