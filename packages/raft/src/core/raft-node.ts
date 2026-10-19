@@ -1055,7 +1055,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
 
   private async loadPersistedState(): Promise<void> {
     try {
-      const stateKey = `${this.config.nodeId}:state`;
+      const stateKey = `${this.config.redis.keyPrefix ?? ""}${this.config.nodeId}:state`;
       const stateData = await this.storage.get(stateKey);
 
       if (stateData) {
@@ -1103,7 +1103,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
 
   private async persistState(): Promise<void> {
     try {
-      const stateKey = `${this.config.nodeId}:state`;
+      const stateKey = `${this.config.redis.keyPrefix ?? ""}${this.config.nodeId}:state`;
       const state = {
         currentTerm: this.currentTerm,
         votedFor: this.votedFor,
