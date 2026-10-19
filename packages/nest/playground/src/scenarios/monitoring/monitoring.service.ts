@@ -1,8 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { RaftService } from "@usex/raft-nestjs";
-import { EventBusService } from "@/shared/services/event-bus.service";
-import { MetricsService } from "@/shared/services/metrics.service";
-import { LoggerService } from "@/shared/services/logger.service";
+import { EventBusService } from "../../shared/services/event-bus.service";
+import { MetricsService } from "../../shared/services/metrics.service";
+import { LoggerService } from "../../shared/services/logger.service";
 import { DistributedCacheService } from "../distributed-cache/distributed-cache.service";
 import { TaskQueueService } from "../task-queue/task-queue.service";
 import { LockService } from "../lock-service/lock-service.service";

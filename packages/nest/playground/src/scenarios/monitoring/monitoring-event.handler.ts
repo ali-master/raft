@@ -12,8 +12,8 @@ import {
   OnPeerDiscovered,
   OnPeerLost,
 } from "@usex/raft-nestjs";
-import { LoggerService } from "@/shared/services/logger.service";
-import { MetricsService } from "@/shared/services/metrics.service";
+import { LoggerService } from "../../shared/services/logger.service";
+import { MetricsService } from "../../shared/services/metrics.service";
 
 @Injectable()
 export class MonitoringEventHandler {

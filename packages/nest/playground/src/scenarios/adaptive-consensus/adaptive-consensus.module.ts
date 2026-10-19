@@ -2,7 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { EventEmitterModule } from "@nestjs/event-emitter";
 import { ScheduleModule } from "@nestjs/schedule";
-import { SharedModule } from "@shared/shared.module";
+import { SharedModule } from "../../shared/shared.module";
 import { AdaptiveConsensusService } from "@usex/raft-nestjs";
 import { AdaptiveConsensusController } from "./adaptive-consensus.controller";
 import { AdaptiveConsensusPlaygroundService } from "./adaptive-consensus-playground.service";
