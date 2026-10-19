@@ -2,7 +2,7 @@
   "name": "@usex/raft",
   "type": "module",
   "version": "0.0.0",
-  "packageManager": "pnpm@10.30.3",
+  "packageManager": "bun@1.4.3",
   "description": "Production-ready Raft consensus for Node.js. Build distributed systems with leader election, fault tolerance, and data replication.",
   "author": {
     "name": "Ali Torki",
@@ -49,17 +49,18 @@
     "dist"
   ],
   "engines": {
-    "node": ">=18.12.0"
+    "node": ">=22.22.3",
+    "bun": ">=1.4.3"
   },
   "scripts": {
     "build": "unbuild",
-    "test": "cross-env CI=true TESTCONTAINERS_RYUK_DISABLED=true vitest --typecheck",
-    "test:watch": "pnpm run test --watch",
-    "test:ui": "pnpm run test:watch --ui --coverage.enabled=true",
-    "test:bench": "pnpm run test bench",
-    "test:coverage": "pnpm run test run --coverage",
-    "test:debug": "vitest --inspect-brk --pool forks --poolOptions.forks.singleFork",
-    "test:debug:watch": "pnpm run test:debug --watch --poolOptions.threads.isolate false",
+    "test": "CI=true TESTCONTAINERS_RYUK_DISABLED=true bun --bun vitest",
+    "test:watch": "bun run test --watch",
+    "test:ui": "bun run test:watch --ui --coverage.enabled=true",
+    "test:bench": "bun run test bench",
+    "test:coverage": "bun run test run --coverage",
+    "test:debug": "vitest --inspect-brk --pool forks --maxWorkers 1",
+    "test:debug:watch": "bun run test:debug --watch --no-isolate",
     "test:types": "tsc --noEmit",
     "inspect": "node-modules-inspector",
     "test:knip": "knip",
@@ -67,26 +68,26 @@
     "format": "prettier --write \"**/*.ts\"",
     "lint": "eslint \"**/*.ts\"",
     "lint:fix": "eslint \"**/*.ts\" --fix",
-    "prepublishOnly": "pnpm lint && pnpm test",
-    "release": "pnpm test && bumpp && pnpm publish",
-    "preinstall": "npx is-ci || npx only-allow pnpm",
-    "prepack": "unbuild"
+    "prepublishOnly": "bun run lint && bun run test",
+    "release": "bun run test && bumpp && bun publish",
+    "prepack": "unbuild",
+    "test:unit": "bun run test run --exclude \"**/integration/**\" --exclude \"**/integration.spec.ts\""
   },
   "peerDependencies": {
-    "ioredis": "^5",
-    "opossum": "^8",
-    "prom-client": "^15"
+    "ioredis": "^6.0.0",
+    "opossum": "^10.0.0",
+    "prom-client": "^15.1.3"
   },
   "dependencies": {
-    "chalk": "^5.6.2",
-    "ioredis": "^5.10.0",
-    "opossum": "^9.0.0",
+    "chalk": "^6.0.1",
+    "ioredis": "^6.0.0",
+    "opossum": "^10.0.0",
     "prom-client": "^15.1.3"
   },
   "devDependencies": {
-    "@testcontainers/redis": "^11.12.0",
+    "@testcontainers/redis": "^12.2.1",
     "@types/opossum": "^8.1.9",
-    "testcontainers": "^11.12.0"
+    "testcontainers": "^12.2.1"
   },
   "publishConfig": {
     "access": "public"
