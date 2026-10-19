@@ -1,3 +1,4 @@
+import { clearRedisData } from "./shared/test-setup";
 import { vi, it, expect, describe, beforeEach, afterEach } from "vitest";
 import type { RaftNode } from "../src/core/raft-node";
 import { RaftEngine } from "../src/raft-engine";
@@ -51,7 +52,7 @@ async function createTestNode(
   const dataDir = await createTempDataDir();
   ALL_DATA_DIRS.push(dataDir);
 
-  const peers = peerPorts.map((p) => `localhost:${p}`);
+  const peers = [nodeId, ...peerPorts.map((p) => `node${p % 10}`)];
 
   const config = createTestConfig(nodeId, {
     ...baseConfig,
@@ -120,7 +121,8 @@ async function _triggerElection(node: RaftNode) {
 
 describe("Pre-Vote Protocol", () => {
   beforeEach(async () => {
-    await cleanupAllNodes(); // Ensure clean state before each test
+    await cleanupAllNodes();
+    await clearRedisData();
   });
 
   afterEach(async () => {
@@ -165,9 +167,16 @@ describe("Pre-Vote Protocol", () => {
         throw new Error("Simulated network partition: cannot reach peer");
       });
 
+    vi.spyOn(n3.node, "handleAppendEntries").mockImplementation(async () => ({
+      term: n3.node.getCurrentTerm(),
+      success: false,
+      lastLogIndex: 0,
+    }));
+    // Block both heartbeats and outgoing votes so this is a real isolated candidate.
     // Start n3 *after* its network is "partitioned" for outgoing requests
     await n3.node.start();
-    await delay(n3.config.electionTimeout[1] * 2); // Wait for n3's election timer to likely expire
+    const isolatedTerm = n3.node.getCurrentTerm();
+    await delay(3000); // Wait for n3's election timer to likely expire
 
     // 2. Action: Trigger election on node3 (or wait for its timer)
     // Since n3 cannot communicate, its pre-vote should fail.
@@ -185,7 +194,8 @@ describe("Pre-Vote Protocol", () => {
     // A better spy might be on the caller within startElection if needed.
     // For now, we check the outcome: term and state.
 
-    expect(n3.node.getCurrentTerm()).toBe(initialTerm); // Term should NOT have incremented
+    expect(_sendPreVoteSpyN3).toHaveBeenCalled();
+    expect(n3.node.getCurrentTerm()).toBe(isolatedTerm); // Term should NOT have incremented
     expect(n3.node.getState()).toBe(RaftState.FOLLOWER); // Should remain follower or return to it
 
     // node1 and node2 should be undisturbed

@@ -80,20 +80,28 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
 
   // Guard against heartbeat pileup: if a previous round is still in flight
   // (e.g. waiting on brpop to dead peers), skip the current timer tick
-  private heartbeatInProgress = false;
-
-  // Pre-vote tracking to prevent multiple simultaneous pre-votes
-  private preVoteGrantedFor: Map<number, string> = new Map(); // Separate Redis connection for blocking operations
+  private heartbeatInProgress = false; // Separate Redis connection for blocking operations
 
   private initialized = false;
+  private lastLeaderContact = 0;
   private lastLeaderId: string | undefined;
   private messageLoop: Promise<void> | undefined;
+  private electionInProgress = false;
   private readonly replications = new Map<string, Promise<void>>();
-  private stateMachineTask: Promise<void> = Promise.resolve(); // term -> candidateId
+  private stateMachineTask: Promise<void> = Promise.resolve();
 
   constructor(config: RaftConfiguration, stateMachine: StateMachine<TCommand>) {
     super();
     this.config = config;
+    if (
+      Object.values(config.voting.weights ?? {}).some(
+        (weight) => !Number.isFinite(weight) || weight <= 0,
+      )
+    ) {
+      throw new RaftValidationException(
+        "Voting weights must be positive finite numbers",
+      );
+    }
     this.stateMachine = stateMachine;
     this.logger = new RaftLogger(config.logging);
     this.retry = new RetryStrategy(config.retry);
@@ -512,40 +520,27 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       nodeId: this.config.nodeId,
     });
 
-    setTimeout(() => {
+    this.electionTimer = setTimeout(() => {
+      if (!this.redisListenerActive) return;
       // Check if we discovered any peers during grace period
       const discoveredPeers = this.peerDiscovery
         .getPeers()
         .filter((p) => p !== this.config.nodeId);
-
-      if (discoveredPeers.length === 0) {
-        this.logger.info(
-          "No peers discovered during grace period, checking configuration",
-          {
-            configPeers: this.config.peers?.length ?? 0,
-            nodeId: this.config.nodeId,
-          },
-        );
-
-        // If we have configured peers but haven't discovered them yet, wait a bit more
-        if (this.config.peers && this.config.peers.length > 1) {
-          this.logger.info("Configured peers exist, extending grace period", {
-            configuredPeers: this.config.peers.length,
-            nodeId: this.config.nodeId,
-          });
-
-          setTimeout(() => {
-            this.startElectionTimer();
-          }, 3000); // Additional 3 seconds for slow peer discovery
-          return;
-        }
-      }
 
       this.logger.info("Starting election timer after grace period", {
         discoveredPeers: discoveredPeers.length,
         nodeId: this.config.nodeId,
       });
 
+      if (
+        this.currentTerm === 0 &&
+        this.commitIndex === 0 &&
+        !this.config.peers?.length
+      ) {
+        this.activeConfiguration = {
+          newPeers: [...new Set([this.config.nodeId, ...discoveredPeers])],
+        };
+      }
       this.startElectionTimer();
     }, startupGracePeriod);
   }
@@ -657,386 +652,122 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 
-  private async startElection(
-    triggeredByTimeoutNow: boolean = false,
-  ): Promise<void> {
-    // Don't start elections if the node is shutting down
-    if (!this.redisListenerActive) {
-      this.logger.debug("Skipping election - node is shutting down", {
-        nodeId: this.config.nodeId,
-      });
-      return;
+  private async startElection(triggeredByTimeoutNow = false): Promise<void> {
+    if (this.electionInProgress && !triggeredByTimeoutNow) return;
+    while (this.electionInProgress && this.redisListenerActive)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    if (!this.redisListenerActive || this.state === RaftState.LEADER) return;
+    this.electionInProgress = true;
+    try {
+      await this.runElection(triggeredByTimeoutNow);
+    } finally {
+      this.electionInProgress = false;
+      if (this.redisListenerActive && this.getState() !== RaftState.LEADER)
+        this.startElectionTimer();
     }
+  }
 
+  private hasQuorum(voters: Set<string>): boolean {
+    const weights = this.config.voting.enableWeighting
+      ? this.config.voting.weights
+      : undefined;
+    const majority = (peers: string[]) => {
+      const total = peers.reduce(
+        (sum, peer) => sum + (weights?.[peer] ?? 1),
+        0,
+      );
+      const received = peers.reduce(
+        (sum, peer) => sum + (voters.has(peer) ? (weights?.[peer] ?? 1) : 0),
+        0,
+      );
+      return total > 0 && received > total / 2;
+    };
+    return (
+      majority(this.getNewConfigPeers()) && majority(this.getOldConfigPeers())
+    );
+  }
+
+  private async runElection(triggeredByTimeoutNow: boolean): Promise<void> {
+    if (!this.getPeers().includes(this.config.nodeId)) return;
+    const startingTerm = this.currentTerm;
+    const peers = this.getPeers().filter(
+      (peer) =>
+        peer !== this.config.nodeId && this.peerDiscovery.getPeerInfo(peer),
+    );
     if (!triggeredByTimeoutNow) {
-      this.logger.info("Election timer elapsed, starting Pre-Vote phase.", {
-        nodeId: this.config.nodeId,
-        currentTerm: this.currentTerm,
-      });
-      // Pre-Vote Phase logic (already implemented)
-      const prospectiveTermPreVote = this.currentTerm + 1;
-      const preVoteRequest: PreVoteRequest = {
-        term: prospectiveTermPreVote,
+      const request: PreVoteRequest = {
+        term: startingTerm + 1,
         candidateId: this.config.nodeId,
         lastLogIndex: this.log.getLastIndex(),
         lastLogTerm: this.log.getLastTerm(),
       };
-
-      // Use dynamic peer discovery to get actual live peers
-      const discoveredPeers = this.peerDiscovery.getPeers();
-      const otherPeers = discoveredPeers.filter(
-        (p) => p !== this.config.nodeId,
-      );
-
-      // Check if this is truly a single node cluster based on actual discovered peers
-      // Allow single-node election even during cleanup if no peers are discovered
-      if (otherPeers.length === 0 && discoveredPeers.length === 0) {
-        this.logger.info(
-          "Single node cluster detected, proceeding directly to election (no Pre-Vote needed).",
-          {
-            nodeId: this.config.nodeId,
-            redisListenerActive: this.redisListenerActive,
-            discoveredPeers: discoveredPeers.length,
-            otherPeers: otherPeers.length,
-          },
-        );
-      } else if (otherPeers.length > 0) {
-        const preVotePromises = otherPeers.map((peerId) =>
-          this.network
-            .sendPreVoteRequest(peerId, preVoteRequest)
-            .catch((err) => {
-              this.logger.warn("PreVoteRequest failed to send or errored", {
-                peerId,
-                error: err,
-              });
-              return { term: this.currentTerm, voteGranted: false };
-            }),
-        );
-        const preVoteResponses = await Promise.all(preVotePromises);
-        let grantedPreVotes = this.getPeers().includes(this.config.nodeId)
-          ? 1
-          : 0;
-
-        for (const response of preVoteResponses) {
-          if (response.voteGranted) grantedPreVotes++;
-          if (response.term > this.currentTerm) {
-            this.logger.info(
-              "Discovered higher term during Pre-Vote. Transitioning to follower.",
-              { peerTerm: response.term, myTerm: this.currentTerm },
+      const votes = new Set([this.config.nodeId]);
+      await Promise.all(
+        peers.map(async (peer) => {
+          try {
+            const response = await this.network.sendPreVoteRequest(
+              peer,
+              request,
             );
-            await this.becomeFollower(response.term);
-            return;
+            if (response.term > this.currentTerm)
+              await this.becomeFollower(response.term);
+            if (response.voteGranted) votes.add(peer);
+          } catch {
+            /* Unreachable members still count toward the required quorum. */
           }
-        }
-
-        let preVoteMajorityAchieved = false;
-        if (
-          this.activeConfiguration.oldPeers &&
-          this.activeConfiguration.oldPeers.length > 0
-        ) {
-          const oldConfigPeers = this.getOldConfigPeers();
-          const newConfigPeers = this.getNewConfigPeers();
-          let preVotesFromOld = oldConfigPeers.includes(this.config.nodeId)
-            ? 1
-            : 0;
-          let preVotesFromNew = newConfigPeers.includes(this.config.nodeId)
-            ? 1
-            : 0;
-
-          preVoteResponses.forEach((response, index) => {
-            if (response.voteGranted) {
-              const peerId = otherPeers[index];
-              if (oldConfigPeers.includes(peerId!)) preVotesFromOld++;
-              if (newConfigPeers.includes(peerId!)) preVotesFromNew++;
-            }
-          });
-          preVoteMajorityAchieved =
-            preVotesFromOld >= Math.floor(oldConfigPeers.length / 2) + 1 &&
-            preVotesFromNew >= Math.floor(newConfigPeers.length / 2) + 1;
-          this.logger.info("Pre-Vote counts (Joint Consensus):", {
-            preVotesFromOld,
-            oldConfigSize: oldConfigPeers.length,
-            preVotesFromNew,
-            newConfigSize: newConfigPeers.length,
-            achieved: preVoteMajorityAchieved,
-          });
-        } else {
-          const currentConfigPeers = this.getNewConfigPeers();
-          const requiredPreVotes =
-            Math.floor(currentConfigPeers.length / 2) + 1;
-          preVoteMajorityAchieved = grantedPreVotes >= requiredPreVotes;
-          this.logger.info("Pre-Vote counts (Simple Consensus):", {
-            grantedPreVotes,
-            required: requiredPreVotes,
-            configSize: currentConfigPeers.length,
-            achieved: preVoteMajorityAchieved,
-          });
-        }
-
-        if (!preVoteMajorityAchieved) {
-          this.logger.info(
-            "Pre-Vote majority not achieved. Remaining Follower and resetting election timer.",
-            { nodeId: this.config.nodeId },
-          );
-          this.startElectionTimer();
-          return;
-        }
-        this.logger.info(
-          "Pre-Vote majority achieved. Proceeding to actual election.",
-          { nodeId: this.config.nodeId },
-        );
-      }
-    } else {
-      this.logger.info(
-        "Election triggered by TimeoutNow, bypassing Pre-Vote.",
-        { nodeId: this.config.nodeId },
-      );
-    }
-
-    // Actual Election Phase
-    const prospectiveTerm = this.currentTerm + 1;
-    const preVoteRequest: PreVoteRequest = {
-      term: prospectiveTerm,
-      candidateId: this.config.nodeId,
-      lastLogIndex: this.log.getLastIndex(),
-      lastLogTerm: this.log.getLastTerm(),
-    };
-
-    // Send PreVoteRequests to all *other* peers in the current configuration
-    // Use dynamic peer discovery to get actual live peers
-    const discoveredPeers = this.peerDiscovery.getPeers();
-    const otherPeers = discoveredPeers.filter((p) => p !== this.config.nodeId);
-
-    // Check if this is truly a single node cluster based on actual discovered peers
-    // Allow single-node election even during cleanup if no peers are discovered
-    if (otherPeers.length === 0 && discoveredPeers.length === 0) {
-      this.logger.info(
-        "Single node cluster detected, proceeding directly to election (no Pre-Vote needed).",
-        {
-          nodeId: this.config.nodeId,
-          redisListenerActive: this.redisListenerActive,
-          discoveredPeers: discoveredPeers.length,
-          otherPeers: otherPeers.length,
-        },
-      );
-      // Fall through to actual election phase for single node cluster
-    } else if (otherPeers.length > 0) {
-      const preVotePromises = otherPeers.map((peerId) =>
-        this.network.sendPreVoteRequest(peerId, preVoteRequest).catch((err) => {
-          this.logger.warn("PreVoteRequest failed to send or errored", {
-            peerId,
-            error: err,
-          });
-          return { term: this.currentTerm, voteGranted: false }; // Treat errors as non-votes
         }),
       );
-      const preVoteResponses = await Promise.all(preVotePromises);
-
-      let grantedPreVotes = 0;
-      // Self-vote is implicitly granted for pre-vote counting if node is part of config
-      if (this.getPeers().includes(this.config.nodeId)) {
-        grantedPreVotes = 1;
-      }
-
-      for (const response of preVoteResponses) {
-        if (response.voteGranted) {
-          grantedPreVotes++;
-        }
-        if (response.term > this.currentTerm) {
-          // A peer is in a higher term. We should not proceed with election.
-          // Become follower with that term.
-          this.logger.info(
-            "Discovered higher term during Pre-Vote. Transitioning to follower.",
-            { peerTerm: response.term, myTerm: this.currentTerm },
-          );
-          await this.becomeFollower(response.term); // This will also reset the election timer.
-          return;
-        }
-      }
-
-      // Check for majority based on activeConfiguration (joint or simple)
-      let preVoteMajorityAchieved = false;
-      if (
-        this.activeConfiguration.oldPeers &&
-        this.activeConfiguration.oldPeers.length > 0
-      ) {
-        // Joint Consensus
-        const oldConfigPeers = this.getOldConfigPeers();
-        const newConfigPeers = this.getNewConfigPeers();
-        let preVotesFromOld =
-          this.config.nodeId && oldConfigPeers.includes(this.config.nodeId)
-            ? 1
-            : 0;
-        let preVotesFromNew =
-          this.config.nodeId && newConfigPeers.includes(this.config.nodeId)
-            ? 1
-            : 0;
-
-        preVoteResponses.forEach((response, index) => {
-          if (response.voteGranted) {
-            const peerId = otherPeers[index];
-            if (oldConfigPeers.includes(peerId!)) preVotesFromOld++;
-            if (newConfigPeers.includes(peerId!)) preVotesFromNew++;
-          }
-        });
-        preVoteMajorityAchieved =
-          preVotesFromOld >= Math.floor(oldConfigPeers.length / 2) + 1 &&
-          preVotesFromNew >= Math.floor(newConfigPeers.length / 2) + 1;
-        this.logger.info("Pre-Vote counts (Joint Consensus):", {
-          preVotesFromOld,
-          oldConfigSize: oldConfigPeers.length,
-          preVotesFromNew,
-          newConfigSize: newConfigPeers.length,
-          achieved: preVoteMajorityAchieved,
-        });
-      } else {
-        // Simple Consensus
-        const currentConfigPeers = this.getNewConfigPeers();
-        const requiredPreVotes = Math.floor(currentConfigPeers.length / 2) + 1;
-        preVoteMajorityAchieved = grantedPreVotes >= requiredPreVotes;
-        this.logger.info("Pre-Vote counts (Simple Consensus):", {
-          grantedPreVotes,
-          required: requiredPreVotes,
-          configSize: currentConfigPeers.length,
-          achieved: preVoteMajorityAchieved,
-        });
-      }
-
-      if (!preVoteMajorityAchieved) {
-        this.logger.info(
-          "Pre-Vote majority not achieved. Remaining Follower and resetting election timer.",
-          { nodeId: this.config.nodeId },
-        );
-        this.startElectionTimer(); // Reset timer and remain follower
-        return;
-      }
-      this.logger.info(
-        "Pre-Vote majority achieved. Proceeding to actual election.",
-        { nodeId: this.config.nodeId },
-      );
+      if (!this.hasQuorum(votes)) return;
     }
-
+    if (
+      !this.redisListenerActive ||
+      this.currentTerm !== startingTerm ||
+      this.state === RaftState.LEADER
+    )
+      return;
     try {
       this.state = RaftState.CANDIDATE;
-      // Per Raft spec: a candidate always increments its current term before starting an election.
-      // This applies regardless of whether triggered by election timeout or TimeoutNow.
-      this.currentTerm = this.currentTerm + 1;
-
+      const electionTerm = ++this.currentTerm;
       this.votedFor = this.config.nodeId;
-      await this.persistState(); // Persist new term and votedFor
+      await this.persistState();
       await this.peerDiscovery.updatePeerState(
         this.config.nodeId,
         this.state,
-        this.currentTerm,
+        electionTerm,
       );
-      this.startElectionTimer(); // Reset election timer for the actual election phase
-
-      this.logger.info("Starting actual election", {
-        term: this.currentTerm,
-        nodeId: this.config.nodeId,
-      });
-
       this.metrics.incrementCounter("raft_elections_total", {
         node_id: this.config.nodeId,
         cluster_id: this.config.clusterId,
       });
-
       this.publishEvent(RaftEventType.STATE_CHANGE, {
         state: this.state,
-        term: this.currentTerm,
+        term: electionTerm,
       });
-
-      const votes = await this.requestVotes();
-
+      const responses = await this.requestVotes();
+      const higherTerm = Math.max(
+        electionTerm,
+        ...Array.from(responses.values(), (vote) => vote.term),
+      );
+      if (higherTerm > this.currentTerm) await this.becomeFollower(higherTerm);
       if (
-        this.activeConfiguration.oldPeers &&
-        this.activeConfiguration.oldPeers.length > 0
-      ) {
-        // Joint Consensus: C_old,new
-        // Candidate needs to win majority in C_old AND C_new
-        const oldConfigPeers = this.getOldConfigPeers();
-        const newConfigPeers = this.getNewConfigPeers();
-
-        // Important: The VoteWeightCalculator needs to be aware of these specific peer lists
-        // or we need a way to filter/calculate weights based on these lists.
-        // For unweighted votes (defaultWeight = 1, enableWeighting = false), it's simpler:
-        let votesFromOld = 0;
-        let votesFromNew = 0;
-        if (this.votedFor === this.config.nodeId) {
-          // Self-vote
-          if (oldConfigPeers.includes(this.config.nodeId)) votesFromOld++;
-          if (newConfigPeers.includes(this.config.nodeId)) votesFromNew++;
-        }
-
-        for (const [voterId, voteResponse] of Array.from(votes.entries())) {
-          if (voteResponse.voteGranted) {
-            if (oldConfigPeers.includes(voterId)) votesFromOld++;
-            if (newConfigPeers.includes(voterId)) votesFromNew++;
-          }
-        }
-
-        const oldMajorityAchieved =
-          votesFromOld >= Math.floor(oldConfigPeers.length / 2) + 1;
-        const newMajorityAchieved =
-          votesFromNew >= Math.floor(newConfigPeers.length / 2) + 1;
-
-        this.logger.info("Election vote counts in joint consensus:", {
-          votesFromOld,
-          oldConfigSize: oldConfigPeers.length,
-          oldMajorityAchieved,
-          votesFromNew,
-          newConfigSize: newConfigPeers.length,
-          newMajorityAchieved,
-        });
-
-        if (oldMajorityAchieved && newMajorityAchieved) {
-          await this.becomeLeader();
-        } else {
-          void this.becomeFollower();
-        }
-      } else {
-        // Simple Consensus: C_old or C_new
-        const currentPeers = this.getNewConfigPeers(); // This is the single active configuration
-
-        // Use weighted voting calculations
-        const totalWeight = this.calculateTotalWeight(votes);
-        const receivedWeight = this.calculateReceivedWeight(votes);
-        const majorityWeight = Math.floor(totalWeight / 2) + 1;
-
-        // Fallback to simple vote counting if weights are not being used
-        let receivedVotes = 0;
-        if (this.votedFor === this.config.nodeId) receivedVotes++; // Self-vote
-        for (const voteResponse of Array.from(votes.values())) {
-          if (voteResponse.voteGranted) receivedVotes++;
-        }
-        const majorityCount = Math.floor(currentPeers.length / 2) + 1;
-        this.logger.info("Election vote counts in simple consensus:", {
-          receivedVotes,
-          currentConfigSize: currentPeers.length,
-          majorityCount,
-          receivedWeight,
-          totalWeight,
-          majorityWeight,
-        });
-
-        // Use weighted voting if weights are meaningful, otherwise fall back to simple counting
-        const useWeightedVoting = totalWeight > currentPeers.length;
-        if (
-          useWeightedVoting
-            ? receivedWeight >= majorityWeight
-            : receivedVotes >= majorityCount
-        ) {
-          await this.becomeLeader();
-        } else {
-          void this.becomeFollower();
-        }
-      }
+        !this.redisListenerActive ||
+        this.getState() !== RaftState.CANDIDATE ||
+        this.currentTerm !== electionTerm
+      )
+        return;
+      const granted = new Set([this.config.nodeId]);
+      for (const [peer, response] of responses)
+        if (response.voteGranted) granted.add(peer);
+      if (this.hasQuorum(granted)) await this.becomeLeader();
+      else await this.becomeFollower();
     } catch (error) {
-      this.logger.error("Election failed", {
-        error,
-        nodeId: this.config.nodeId,
-      });
-      void this.becomeFollower();
+      if (this.redisListenerActive) {
+        this.logger.error("Election failed", {
+          error,
+          nodeId: this.config.nodeId,
+        });
+        await this.becomeFollower();
+      }
     }
   }
 
@@ -1050,7 +781,10 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     };
 
     const votes = new Map<string, VoteResponse>();
-    const peers = this.peerDiscovery.getPeers();
+    const peers = this.getPeers().filter(
+      (peer) =>
+        peer !== this.config.nodeId && this.peerDiscovery.getPeerInfo(peer),
+    );
 
     const votePromises = peers.map(async (peerId) => {
       try {
@@ -1085,31 +819,15 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
     return votes;
   }
 
-  private calculateTotalWeight(votes: Map<string, VoteResponse>): number {
-    let totalWeight = this.weightCalculator.calculateWeight(this.config.nodeId); // Self vote
-
-    for (const response of Array.from(votes.values())) {
-      totalWeight += response.voterWeight;
-    }
-
-    return totalWeight;
-  }
-
-  private calculateReceivedWeight(votes: Map<string, VoteResponse>): number {
-    let receivedWeight = this.weightCalculator.calculateWeight(
-      this.config.nodeId,
-    ); // Self vote
-
-    for (const response of Array.from(votes.values())) {
-      if (response.voteGranted) {
-        receivedWeight += response.voterWeight;
-      }
-    }
-
-    return receivedWeight;
-  }
-
   private async becomeLeader(): Promise<void> {
+    // Don't become leader if the node is shutting down
+    if (!this.redisListenerActive) {
+      this.logger.debug("Skipping becomeLeader - node is shutting down", {
+        nodeId: this.config.nodeId,
+      });
+      return;
+    }
+
     this.state = RaftState.LEADER;
     this.clearElectionTimer();
     this.startHeartbeatTimer();
@@ -1168,6 +886,7 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       });
     }
 
+    await this.advanceCommitIndex();
     // Send initial heartbeat (which will also replicate the no-op entry)
     await this.sendHeartbeats();
   }
@@ -2263,6 +1982,13 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       request,
     });
 
+    if (
+      this.state === RaftState.LEADER ||
+      Date.now() - this.lastLeaderContact < this.config.electionTimeout[0]
+    ) {
+      return { term: this.currentTerm, voteGranted: false };
+    }
+
     // Reply false if candidate's term is less than current term.
     // This is a strict check: pre-vote is for a *future* term.
     if (request.term < this.currentTerm) {
@@ -2288,28 +2014,10 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
       return { term: this.currentTerm, voteGranted: false };
     }
 
-    // Check if we already granted a pre-vote for this term
-    const existingPreVote = this.preVoteGrantedFor.get(request.term);
-    if (existingPreVote && existingPreVote !== request.candidateId) {
-      this.logger.info(
-        "Rejecting PreVote: Already granted pre-vote for this term",
-        {
-          candidateId: request.candidateId,
-          existingCandidate: existingPreVote,
-          term: request.term,
-        },
-      );
-      return { term: this.currentTerm, voteGranted: false };
-    }
-
-    // If we already granted pre-vote to this candidate, return granted
-    if (existingPreVote === request.candidateId) {
-      this.logger.debug("Already granted pre-vote to this candidate", {
-        candidateId: request.candidateId,
-        term: request.term,
-      });
-      return { term: this.currentTerm, voteGranted: true };
-    }
+    // Pre-votes are advisory and non-binding — they do NOT affect real voting.
+    // Unlike real votes, pre-votes should be freely grantable to any candidate
+    // with an up-to-date log. Restricting pre-votes to one candidate per term
+    // causes election deadlocks when multiple candidates compete.
 
     // Check if candidate's log is at least as up-to-date as receiver's log.
     const localLastLogTerm = this.log.getLastTerm();
@@ -2331,17 +2039,6 @@ export class RaftNode<TCommand = unknown> extends EventEmitter {
         },
       );
       return { term: this.currentTerm, voteGranted: false };
-    }
-
-    // Grant pre-vote and track it
-    this.preVoteGrantedFor.set(request.term, request.candidateId);
-
-    // Clean up old pre-vote tracking (keep only recent terms)
-    for (const [term, _candidateId] of this.preVoteGrantedFor.entries()) {
-      if (term < request.term - 5) {
-        // Keep last 5 terms
-        this.preVoteGrantedFor.delete(term);
-      }
     }
 
     // Importantly, DO NOT change this.currentTerm or this.votedFor.

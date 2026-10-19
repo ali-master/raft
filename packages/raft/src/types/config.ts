@@ -54,6 +54,8 @@ export interface PeerDiscoveryConfig {
 }
 
 export interface VotingConfig {
+  /** Fixed cluster-wide weights; every member must use the same mapping. */
+  weights?: Record<string, number>;
   enableWeighting: boolean;
   weightMetrics: string[];
   defaultWeight: number;
