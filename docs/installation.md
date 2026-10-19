@@ -1,20 +1,21 @@
 # Installation Guide
 
-This guide walks you through installing and setting up the RAFT library in your Node.js or NestJS project.
+This guide walks you through installing and setting up the RAFT library in your Bun, Node.js, or NestJS project.
 
 ## Prerequisites
 
 Before installing RAFT, ensure you have the following:
 
-- **Node.js**: Version 18.12.0 or higher
+- **Node.js**: Version 22.22.3 or higher (optional for Node.js consumers)
 - **Redis**: Version 6.0 or higher (for state persistence and peer discovery)
-- **Package Manager**: npm, yarn, or pnpm
+- **Bun**: Version 1.4.3 or higher for this monorepo
 
 ### Verifying Prerequisites
 
 ```bash
-# Check Node.js version
-node --version  # Should output v18.12.0 or higher
+# Check runtime versions
+bun --version   # 1.4.3 or higher
+node --version  # 22.22.3 or higher, when using Node.js
 
 # Check Redis installation
 redis-cli --version  # Should output redis-cli 6.0.0 or higher
@@ -37,10 +38,10 @@ npm install @usex/raft
 yarn add @usex/raft
 ```
 
-### Using pnpm
+### Using Bun
 
 ```bash
-pnpm add @usex/raft
+bun add @usex/raft
 ```
 
 ## Redis Setup
@@ -112,14 +113,14 @@ Ensure your `tsconfig.json` includes:
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "commonjs",
+    "module": "Node20",
     "lib": ["ES2020"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node"
+    "moduleResolution": "node16"
   }
 }
 ```
@@ -182,70 +183,30 @@ Run the test:
 
 ```bash
 # Using TypeScript directly
-npx ts-node test-raft.ts
+bun test-raft.ts
 
 # Or compile and run
-npx tsc test-raft.ts
+bun run tsc test-raft.ts
 node test-raft.js
 ```
 
 ## Docker Setup (Optional)
 
-For containerized environments, here's a sample `Dockerfile`:
+Build the maintained Bun images from the repository root. Both Dockerfiles use a frozen lockfile, separate build and production dependencies, and run as the `bun` user.
 
-```dockerfile
-FROM node:18-alpine
-
-WORKDIR /app
-
-# Install dependencies
-COPY package*.json ./
-RUN npm ci --only=production
-
-# Copy application
-COPY . .
-
-# Build TypeScript (if needed)
-RUN npm run build
-
-# Expose ports
-EXPOSE 3000
-
-# Start the application
-CMD ["node", "dist/index.js"]
+```bash
+docker build -f packages/kv-server/Dockerfile -t raft-kv-server .
+docker build -f packages/nest/playground/Dockerfile -t raft-nest-playground .
 ```
 
-And a `docker-compose.yml` for local development:
+The Compose examples include Redis and application configuration:
 
-```yaml
-version: '3.8'
-
-services:
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    command: redis-server --appendonly yes
-
-  app:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - NODE_ENV=development
-    depends_on:
-      - redis
-    volumes:
-      - .:/app
-      - /app/node_modules
-
-volumes:
-  redis-data:
+```bash
+docker compose -f packages/kv-server/docker-compose.cluster.yml up --build
+docker compose -f packages/nest/playground/docker-compose.yml up --build
 ```
+
+Review the [migration validation and known limitations](./bun-migration.md) before deploying.
 
 ## Common Installation Issues
 
@@ -270,18 +231,19 @@ docker start redis
 ### Issue: TypeScript compilation errors
 
 **Solution:**
-Ensure you have the correct TypeScript version:
+The monorepo uses TypeScript 7 for `tsc` and the TypeScript 6 compiler API for Nest CLI and build tools. Install the locked versions from the repository root:
 ```bash
-npm install --save-dev typescript@^5.0.0
+bun install --frozen-lockfile
+bun run test:types
 ```
 
 ### Issue: Module resolution errors
 
 **Solution:**
-Clear your node_modules and reinstall:
+Install the workspace dependencies and build local package exports from the repository root:
 ```bash
-rm -rf node_modules package-lock.json
-npm install
+bun install --frozen-lockfile
+bun run build
 ```
 
 ## Next Steps
@@ -295,9 +257,10 @@ Now that you have RAFT installed, proceed to:
 
 | Component | Minimum Version | Recommended Version |
 |-----------|----------------|-------------------|
-| Node.js   | 18.12.0       | 20.x or latest LTS |
+| Bun       | 1.4.3         | 1.4.3 (pinned)    |
+| Node.js (optional) | 22.22.3 | Supported Node.js release |
 | Redis     | 6.0           | 7.x              |
-| TypeScript| 5.0           | 5.8+             |
+| TypeScript (monorepo) | 7.0.2 | 7.0.2 with TypeScript 6 API compatibility |
 | Memory    | 512MB         | 2GB+             |
 | CPU       | 1 core        | 2+ cores         |
 
