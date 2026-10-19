@@ -92,20 +92,20 @@ class BandwidthCalculator {
     replicationFactor: number;
   }): BandwidthRequirements {
     // Replication bandwidth
-    const replicationBandwidth = 
-      config.logEntriesPerSecond * 
-      config.avgEntrySize * 
+    const replicationBandwidth =
+      config.logEntriesPerSecond *
+      config.avgEntrySize *
       (config.nodeCount - 1);
-    
+
     // Heartbeat bandwidth (small but frequent)
-    const heartbeatBandwidth = 
-      (1000 / config.heartbeatInterval) * 
+    const heartbeatBandwidth =
+      (1000 / config.heartbeatInterval) *
       100 * // bytes per heartbeat
       (config.nodeCount - 1);
-    
+
     // Add 50% overhead for protocol overhead
     const totalBandwidth = (replicationBandwidth + heartbeatBandwidth) * 1.5;
-    
+
     return {
       perNode: totalBandwidth,
       total: totalBandwidth * config.nodeCount,
@@ -131,7 +131,7 @@ topology:
     - us-east-1a: node-1
     - us-east-1b: node-2
     - us-east-1c: node-3
-  
+
 configuration:
   electionTimeout: [150, 300]
   heartbeatInterval: 50
@@ -200,51 +200,14 @@ class HybridDeployment {
 
 #### Dockerfile
 
-```dockerfile
-FROM node:20-alpine AS builder
+Use the maintained [KV server Dockerfile](../packages/kv-server/Dockerfile) or [Nest playground Dockerfile](../packages/nest/playground/Dockerfile). They pin Bun 1.4.3, install from `bun.lock`, separate build dependencies from production dependencies, and run as the non-root `bun` user. The root `.dockerignore` excludes local secrets, dependencies, build output, and persisted data.
 
-WORKDIR /app
-
-# Install dependencies
-COPY package*.json ./
-RUN npm ci --only=production
-
-# Copy application
-COPY . .
-
-# Build TypeScript
-RUN npm run build
-
-# Production image
-FROM node:20-alpine
-
-RUN apk add --no-cache tini
-
-WORKDIR /app
-
-# Copy built application
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package*.json ./
-
-# Create non-root user
-RUN addgroup -g 1001 -S raft && \
-    adduser -S raft -u 1001
-
-# Set ownership
-RUN chown -R raft:raft /app
-
-USER raft
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD node healthcheck.js || exit 1
-
-# Use tini for proper signal handling
-ENTRYPOINT ["/sbin/tini", "--"]
-
-CMD ["node", "dist/index.js"]
+```bash
+# Run from the repository root
+docker build -f packages/kv-server/Dockerfile -t raft-kv-server .
 ```
+
+See the [migration validation and known limitations](./bun-migration.md) before deployment.
 
 #### Docker Compose
 
@@ -253,7 +216,7 @@ version: '3.8'
 
 services:
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     command: redis-server --appendonly yes
     volumes:
       - redis-data:/data
@@ -351,7 +314,7 @@ class ContainerConfig {
           memory: '4G'
         }
       },
-      
+
       // Security
       security: {
         readOnlyRootFilesystem: true,
@@ -362,7 +325,7 @@ class ContainerConfig {
           add: ['NET_BIND_SERVICE']
         }
       },
-      
+
       // Health checks
       healthcheck: {
         test: ['CMD', 'wget', '--spider', 'http://localhost:3000/health'],
@@ -371,7 +334,7 @@ class ContainerConfig {
         retries: 3,
         startPeriod: '40s'
       },
-      
+
       // Logging
       logging: {
         driver: 'json-file',
@@ -875,10 +838,10 @@ class ConfigurationManager {
     const env = process.env.NODE_ENV || 'development';
     const baseConfig = this.loadBaseConfig();
     const envConfig = this.loadEnvConfig(env);
-    
+
     return this.mergeConfigs(baseConfig, envConfig);
   }
-  
+
   private loadEnvConfig(env: string): Partial<RaftConfiguration> {
     switch (env) {
       case 'production':
@@ -908,7 +871,7 @@ class ConfigurationManager {
 class SecretManager {
   async loadSecrets(): Promise<Secrets> {
     const provider = process.env.SECRET_PROVIDER || 'env';
-    
+
     switch (provider) {
       case 'aws':
         return this.loadFromAWSSecretsManager();
@@ -920,13 +883,13 @@ class SecretManager {
         return this.loadFromEnv();
     }
   }
-  
+
   private async loadFromAWSSecretsManager(): Promise<Secrets> {
     const client = new AWS.SecretsManager();
     const secret = await client.getSecretValue({
       SecretId: 'raft-cluster-secrets'
     }).promise();
-    
+
     return JSON.parse(secret.SecretString);
   }
 }
@@ -940,14 +903,14 @@ class SecretManager {
 class RaftClient {
   private nodes: string[];
   private currentIndex: number = 0;
-  
+
   async execute(command: any): Promise<any> {
     // Try to find leader first
     const leader = await this.findLeader();
     if (leader) {
       return this.sendToNode(leader, command);
     }
-    
+
     // Round-robin through nodes
     const maxAttempts = this.nodes.length;
     for (let i = 0; i < maxAttempts; i++) {
@@ -961,10 +924,10 @@ class RaftClient {
         }
       }
     }
-    
+
     throw new Error('No available nodes');
   }
-  
+
   private getNextNode(): string {
     const node = this.nodes[this.currentIndex];
     this.currentIndex = (this.currentIndex + 1) % this.nodes.length;
@@ -979,28 +942,28 @@ class RaftClient {
 global
     maxconn 4096
     log stdout local0
-    
+
 defaults
     mode http
     timeout connect 5s
     timeout client 30s
     timeout server 30s
     option httplog
-    
+
 frontend raft_frontend
     bind *:80
     default_backend raft_backend
-    
+
 backend raft_backend
     balance roundrobin
     option httpchk GET /health
-    
+
     # Retry on connection failure
     retries 3
-    
+
     # Prefer leader for writes
     http-request set-header X-Raft-Preferred-Role leader
-    
+
     server node1 raft-node-1:3000 check
     server node2 raft-node-2:3000 check
     server node3 raft-node-3:3000 check
@@ -1018,39 +981,39 @@ class BackupManager {
       timestamp: new Date(),
       nodes: []
     };
-    
+
     // 1. Create snapshots on each node
     for (const node of this.cluster.getAllNodes()) {
       const snapshot = await node.createSnapshot();
       const s3Key = await this.uploadToS3(snapshot);
-      
+
       backup.nodes.push({
         nodeId: node.id,
         snapshotKey: s3Key,
         lastIndex: snapshot.lastIncludedIndex
       });
     }
-    
+
     // 2. Backup Redis state
     backup.redisBackup = await this.backupRedis();
-    
+
     // 3. Store metadata
     await this.storeBackupMetadata(backup);
-    
+
     return backup;
   }
-  
+
   private async uploadToS3(snapshot: Buffer): Promise<string> {
     const s3 = new AWS.S3();
     const key = `backups/${Date.now()}/snapshot.gz`;
-    
+
     await s3.putObject({
       Bucket: 'raft-backups',
       Key: key,
       Body: snapshot,
       ServerSideEncryption: 'AES256'
     }).promise();
-    
+
     return key;
   }
 }
@@ -1063,18 +1026,18 @@ class DisasterRecovery {
   async restoreCluster(backupId: string): Promise<void> {
     // 1. Retrieve backup metadata
     const backup = await this.getBackupMetadata(backupId);
-    
+
     // 2. Provision new infrastructure
     const infrastructure = await this.provisionInfrastructure();
-    
+
     // 3. Restore Redis
     await this.restoreRedis(backup.redisBackup);
-    
+
     // 4. Deploy nodes with restored data
     for (const nodeBackup of backup.nodes) {
       await this.restoreNode(nodeBackup, infrastructure);
     }
-    
+
     // 5. Verify cluster health
     await this.verifyClusterHealth();
   }
@@ -1128,7 +1091,7 @@ groups:
           severity: critical
         annotations:
           summary: "No leader in RAFT cluster"
-          
+
       - alert: MultipleLeaders
         expr: sum(raft_node_state == 2) > 1
         for: 1m
@@ -1136,7 +1099,7 @@ groups:
           severity: critical
         annotations:
           summary: "Multiple leaders detected"
-          
+
       - alert: HighElectionRate
         expr: rate(raft_elections_total[5m]) > 0.1
         for: 5m
@@ -1204,7 +1167,7 @@ class TLSConfig {
       honorCipherOrder: true,
       minVersion: 'TLSv1.2'
     };
-    
+
     return https.createServer(options, app);
   }
 }
@@ -1232,19 +1195,19 @@ class MaintenanceManager {
   async performMaintenance(nodeId: string): Promise<void> {
     // 1. Notify monitoring systems
     await this.notifyMonitoring('maintenance_start', nodeId);
-    
+
     // 2. Drain node
     await this.drainNode(nodeId);
-    
+
     // 3. Perform maintenance
     await this.executeMaintenance(nodeId);
-    
+
     // 4. Rejoin cluster
     await this.rejoinCluster(nodeId);
-    
+
     // 5. Verify health
     await this.verifyNodeHealth(nodeId);
-    
+
     // 6. Notify completion
     await this.notifyMonitoring('maintenance_complete', nodeId);
   }
@@ -1257,7 +1220,7 @@ class MaintenanceManager {
 class CapacityPlanner {
   analyzeGrowth(): GrowthProjection {
     const metrics = this.collectHistoricalMetrics();
-    
+
     return {
       currentUsage: {
         cpu: metrics.avgCpu,
