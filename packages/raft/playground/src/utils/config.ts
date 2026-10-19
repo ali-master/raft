@@ -35,8 +35,8 @@ export const DEFAULT_PLAYGROUND_CONFIG: PlaygroundConfig = {
   cluster: {
     size: 5,
     basePort: 3000,
-    redisPort: 6379,
-    redisHost: "localhost",
+    redisPort: Number(process.env.REDIS_PORT || 6379),
+    redisHost: process.env.REDIS_HOST || "localhost",
   },
   timing: {
     electionTimeoutMin: 150,
@@ -50,7 +50,7 @@ export const DEFAULT_PLAYGROUND_CONFIG: PlaygroundConfig = {
     jitter: 0,
   },
   logging: {
-    level: LogLevel.INFO,
+    level: LogLevel.WARN,
     showTimestamps: true,
     showNodeIds: true,
   },
@@ -66,7 +66,7 @@ export function createRaftConfig(
   clusterId: string,
   playgroundConfig: PlaygroundConfig = DEFAULT_PLAYGROUND_CONFIG,
 ): RaftConfiguration {
-  const nodeIndex = parseInt(nodeId.split("-").pop() || "0");
+  const nodeIndex = Number(nodeId.match(/\d+/)?.[0] ?? 0);
   const httpPort = playgroundConfig.cluster.basePort + nodeIndex;
 
   return {
