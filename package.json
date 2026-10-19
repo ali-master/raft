@@ -2,7 +2,7 @@
   "name": "raft-monorepo",
   "preview": true,
   "type": "module",
-  "packageManager": "pnpm@10.30.3",
+  "packageManager": "bun@1.4.3",
   "description": "A monorepo of Raft implementation for NodeJS and NestJS for building distributed systems.",
   "author": {
     "name": "Ali Torki",
@@ -11,46 +11,61 @@
   },
   "license": "MIT",
   "scripts": {
-    "build": "pnpm -r build",
-    "lint": "pnpm -r lint",
-    "lint:fix": "pnpm -r lint:fix",
-    "format": "pnpm -r format",
-    "test:unit": "pnpm -r test:unit",
-    "test:types": "pnpm -r test:types",
-    "test:knip": "pnpm -r test:knip",
-    "test:coverage": "pnpm -r test:coverage",
+    "build": "bun run --workspaces --if-present build",
+    "lint": "bun run --workspaces --if-present lint",
+    "lint:fix": "bun run --workspaces --if-present lint:fix",
+    "format": "bun run --workspaces --if-present format",
+    "test:unit": "bun run --workspaces --sequential --if-present test:unit",
+    "test:types": "bun run --workspaces --if-present test:types",
+    "test:knip": "bun run --workspaces --if-present test:knip",
+    "test:coverage": "bun run --workspaces --sequential --if-present test:coverage",
     "postinstall": "simple-git-hooks install",
-    "preinstall": "npx is-ci || npx only-allow pnpm"
+    "test": "bun run --workspaces --sequential --if-present test"
   },
   "devDependencies": {
-    "@antfu/eslint-config": "7.6.1",
-    "@types/node": "25.3.3",
-    "@vitest/coverage-v8": "^4.0.18",
-    "@vitest/ui": "^4.0.18",
-    "bumpp": "10.4.1",
-    "changelogithub": "14.0.0",
+    "@antfu/eslint-config": "9.5.1",
+    "@types/node": "26.6.5",
+    "@vitest/ui": "^5.0.5",
+    "bumpp": "12.3.0",
+    "changelogithub": "15.0.5",
     "cross-env": "^10.1.0",
-    "eslint": "10.0.2",
+    "eslint": "10.13.0",
     "eslint-plugin-format": "^2.0.1",
-    "installed-check": "10.0.1",
-    "knip": "5.85.0",
-    "lint-staged": "16.3.1",
-    "node-modules-inspector": "^1.3.2",
-    "prettier": "^3.8.1",
-    "simple-git-hooks": "2.13.1",
-    "typescript": "5.9.3",
+    "installed-check": "11.0.0",
+    "knip": "6.42.0",
+    "lint-staged": "17.6.0",
+    "node-modules-inspector": "^2.7.0",
+    "prettier": "^3.9.10",
+    "simple-git-hooks": "2.14.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
     "unbuild": "^3.6.1",
-    "vitest": "4.0.18"
-  },
-  "resolutions": {
-    "@usex/raft": "workspace:*"
+    "vitest": "5.0.5",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "@vitest/coverage-istanbul": "^5.0.5",
+    "release-it": "^21.1.1"
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm lint-staged"
+    "pre-commit": "bun run lint-staged"
   },
   "lint-staged": {
-    "*.{js,ts,mjs,cjs,json,.*rc}": [
-      "pnpm eslint --fix"
+    "*.{js,ts,tsx,mjs,cjs,json,.*rc}": [
+      "bun run eslint --fix"
     ]
+  },
+  "engines": {
+    "bun": ">=1.4.3"
+  },
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "packages/*/playground"
+  ],
+  "trustedDependencies": [
+    "@swc/core",
+    "esbuild",
+    "simple-git-hooks"
+  ],
+  "overrides": {
+    "fastify": "5.12.7"
   }
 }
