@@ -43,7 +43,7 @@ export class AdaptiveConsensusAlgorithm {
   private readonly logger: RaftLogger;
   private readonly metricsCollector: RaftMetricsCollector;
 
-  private adaptationTimer?: NodeJS.Timeout;
+  private adaptationTimer: NodeJS.Timeout | undefined;
   private currentParameters: AdaptiveParameters;
   private historicalMetrics: Array<{
     timestamp: number;
@@ -425,8 +425,7 @@ export class AdaptiveConsensusAlgorithm {
   public getAdaptationStats(): {
     totalAdaptations: number;
     averagePerformanceScore: number;
-    // @ts-ignore
-    parameterHistory: typeof this.historicalMetrics;
+    parameterHistory: AdaptiveConsensusAlgorithm["historicalMetrics"];
     currentEffectiveness: Map<string, number>;
   } {
     const averageScore =

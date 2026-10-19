@@ -1,5 +1,4 @@
-import type { Type } from "@nestjs/common";
-import type { ModuleMetadata } from "@nestjs/common/interfaces";
+import type { Type, ModuleMetadata } from "@nestjs/common";
 import type { RaftConfiguration } from "@usex/raft";
 import type { RaftEventType } from "../constants";
 

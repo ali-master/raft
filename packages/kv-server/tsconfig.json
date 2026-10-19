@@ -1,7 +1,10 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
+    "strict": false,
+    "module": "Node20",
+    "moduleResolution": "node16",
     "declaration": true,
+    "skipLibCheck": true,
     "noImplicitAny": false,
     "noUnusedLocals": false,
     "removeComments": false,
