@@ -1,221 +1,84 @@
-# RAFT Brand Assets
+# Raft visual identity
 
-A comprehensive collection of brand assets for the RAFT distributed consensus library.
+**Many nodes. One shared state.**
 
-## 📋 Table of Contents
+The **Quorum mark** brings three independent shapes into one recognizable R: an upright, an open bowl, and an ember-colored diagonal. Their separation suggests independent members; their alignment suggests agreement. It is a brand metaphor, not a topology diagram or a claim about a three-node quorum.
 
-- [Logos](#-logos)
-- [Colors](#-colors)
-- [Typography](#-typography)
-- [Usage Guidelines](#-usage-guidelines)
-- [Asset Downloads](#-asset-downloads)
-- [Social Media Assets](#-social-media-assets)
-- [Contact](#-contact)
+![Raft social preview](./social-preview.png)
 
-## 🎨 Logos
+## Files
 
-### Primary Logo Collection
+| Asset                                            | Format / size           | Use                                                                  |
+| ------------------------------------------------ | ----------------------- | -------------------------------------------------------------------- |
+| [Primary logo](./logo.svg)                       | SVG · 512 × 512 viewBox | Graphite tile; works on light and dark pages                         |
+| [Primary logo PNG](./logo.png)                   | PNG · 512 × 512         | Exact raster export of the primary SVG; transparent outside the tile |
+| [Mark for light backgrounds](./logo-alt.svg)     | SVG · transparent       | Graphite and ember mark                                              |
+| [Mark for dark backgrounds](./logo-abstract.svg) | SVG · transparent       | Porcelain and ember mark                                             |
+| [Single-color mark](./logo-creative.svg)         | SVG · transparent       | Ember mark for one-color applications                                |
+| [KV compatibility logo](./kv-server-logo.svg)    | SVG · 512 × 512 viewBox | Same primary mark; keeps existing KV documentation links working     |
+| [Social preview](./social-preview.png)           | PNG · 1280 × 640        | Finished studio-rendered repository/share cover                      |
+| [Social vector companion](./social-preview.svg)  | SVG · 1280 × 640        | Editable flat composition with the same mark and copy                |
 
-We provide multiple logo variations to suit different use cases and backgrounds:
+The older variant filenames remain available to preserve links. They now belong to one identity; they are no longer unrelated alternate logo concepts. All package README headers use the primary mark. The root README uses the social preview.
 
-| Logo | Description | Best Use |
-|------|-------------|----------|
-| ![Primary Logo](./logo-alt.svg) | **Primary Logo** - Clean hexagonal design representing distributed nodes | Websites, documentation, presentations |
-| ![Creative Logo](./logo-creative.svg) | **Creative Logo** - Artistic raft metaphor with flowing elements | Marketing materials, blog posts |
-| ![Network Logo](./logo.svg) | **Network Logo** - Traditional network topology visualization | Technical documentation, diagrams |
-| ![Abstract Logo](./logo-abstract.svg) | **Abstract Logo** - Dynamic geometric design with energy flow | Modern applications, tech conferences |
+The PNG social cover includes generated three-dimensional materials and light. The SVG companion is native vector artwork rather than an embedded bitmap; it deliberately uses a flat rendition. Neither file depends on external images, stylesheets, or fonts. The SVG's live text uses a local system font stack, so letterforms may vary between renderers. Use the PNG when exact typography is required.
 
-### Logo Specifications
+## Palette
 
-- **Format**: SVG (scalable vector graphics)
-- **Minimum Size**: 32x32px
-- **Maximum Size**: Unlimited (vector format)
-- **Recommended Sizes**: 150x150px, 300x300px, 512x512px
+| Color     | Hex       | Role                            |
+| --------- | --------- | ------------------------------- |
+| Graphite  | `#1B1C1E` | Primary mark, text, icon tile   |
+| Porcelain | `#F5F2EB` | Light surface and reversed mark |
+| Ember     | `#ED805E` | The diagonal decision stroke    |
 
-## 🎨 Colors
+Use the supplied two-color mark for primary communication. Use the single-color variant where color reproduction is limited. The geometry does not rely on a gradient, blur, or shadow to remain recognizable.
 
-### Primary Color Palette
+## Scale and space
 
-Our brand uses a modern, tech-forward color scheme that conveys reliability and innovation:
+- Display the tile at **32 px or larger**. README headers use 88 px.
+- Keep clear space around a standalone mark of at least one stroke width: **64 units in its 512-unit viewBox**.
+- Preserve the gaps between the three parts and scale proportionally.
+- Use graphite on light surfaces and porcelain on dark surfaces. Avoid low-contrast backgrounds.
+- Keep the social image at its **2:1 aspect ratio**. Use the PNG for repository social-preview uploads and raster-only consumers.
+- Do not add crowns, network connectors, extra nodes, gradients, or a fourth piece to the logo.
 
-| Color | Hex Code | RGB | Usage |
-|-------|----------|-----|-------|
-| **Primary Blue** | `#3b82f6` | `59, 130, 246` | Primary branding, CTAs, links |
-| **Deep Blue** | `#1d4ed8` | `29, 78, 216` | Accents, gradients |
-| **Purple** | `#8b5cf6` | `139, 92, 246` | Highlights, gradients |
-| **Cyan** | `#06b6d4` | `6, 182, 212` | Success states, highlights |
-| **Orange** | `#f97316` | `249, 115, 22` | Warnings, energy elements |
+## Typography and copy
 
-### Secondary Colors
+Use a quiet system sans-serif stack for documentation: `-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`. The vector social composition uses Helvetica Neue, Helvetica, and Arial; installation commands use a monospace stack.
 
-| Color | Hex Code | RGB | Usage |
-|-------|----------|-----|-------|
-| **Dark Gray** | `#1e293b` | `30, 41, 59` | Text, backgrounds |
-| **Medium Gray** | `#64748b` | `100, 116, 139` | Secondary text |
-| **Light Gray** | `#94a3b8` | `148, 163, 184` | Borders, dividers |
-| **White** | `#ffffff` | `255, 255, 255` | Backgrounds, text on dark |
+- Product name: **Raft**; the social wordmark is lowercase **raft**.
+- Brand line: **Many nodes. One shared state.**
+- Description: **A TypeScript consensus toolkit.**
+- Developer entry point: **bun add @usex/raft**.
+- Package family: **Core / NestJS / KV / Observatory**.
 
-### Gradient Combinations
+The brand line describes the project's purpose. It is not a durability or conformance guarantee. Documentation links to the [current audit](../docs/raft-spec-audit.md); avoid unverified production-readiness, performance, or coverage claims.
 
-```css
-/* Primary Gradient */
-background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #8b5cf6 100%);
+## Creation and source
 
-/* Sunset Gradient (Creative Logo) */
-background: linear-gradient(135deg, #f97316 0%, #ec4899 33%, #8b5cf6 66%, #6366f1 100%);
+The logo and vector companion are editable SVG source. `logo.png` is rendered from `logo.svg`. The three-dimensional social cover was created with the built-in **imagegen** tool, using the primary mark as the identity reference, and exported at 1280 × 640. No runtime or package dependency was added.
 
-/* Dark Gradient */
-background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+The prompt used for the social cover is included below so future revisions preserve the same art direction and constraints.
+
+## License
+
+These assets are distributed under the repository's [MIT license](../LICENCE). Use the supplied files when referring to this project; do not imply an endorsement by Apple or another company.
+
+Updated October 19, 2026.
+
+<details>
+<summary>Social cover generation prompt</summary>
+
+```text
+Use case: logo-brand
+Asset type: final repository social preview for the Raft TypeScript consensus toolkit, landscape 2:1 composition, 1280 by 640.
+Primary request: Create an exceptionally refined minimal technology brand cover. Use the attached new Raft mark exactly as the brand identity. This is a professional identity system, premium industrial design and immaculate editorial typography.
+Input image: The supplied image is the exact Raft emblem. It has THREE disconnected solid components: a tall rounded upright, a thick rounded right bowl opening left, and a short diagonal orange leg, together reading as R. Preserve the number, silhouette, roundness and relative placement of these three pieces. Do not introduce a different logo. Remove its enclosing app-icon tile in the 3D rendition.
+Scene/backdrop: seamless very pale warm ivory studio, #F5F2EB. A very soft warm-gray contact shadow, generous empty space, no seams.
+Subject: on the RIGHT, the exact three-part R mark rendered as a large freestanding precision sculpture. Stem and upper bowl are matte graphite ceramic (#1B1C1E); diagonal leg is satin anodized copper-orange (#ED805E). Very shallow extrusion and tiny rounded bevels, crisp silhouette, gentle camera perspective, fully visible, with no overlaps between parts. Quiet soft directional light, realistic material, no chrome, no rainbow.
+Composition: exact wide 2:1 canvas. Left 54 percent reserved for typography, right 40 percent contains the sculpture. Broad 72px safe margin all around. No part touches the edges.
+Text verbatim on LEFT: lowercase wordmark "raft" near upper left, elegant large confident sans-serif with tight professional kerning. Below, large two-line headline "Many nodes." then "One shared state." Under that, smaller readable "A TypeScript consensus toolkit." At bottom left, small monospace "bun add @usex/raft". At bottom right, small text "CORE / NESTJS / KV / OBSERVATORY".
+Typography: exceptional precision, dark graphite, contemporary Swiss grotesk, no decorative fonts. The tagline is prominent and uncluttered. Exact spelling and casing, no extra text, no watermark, no Apple logo, no UI controls, no badges, no border, no mesh gradients, no circuit lines or network dots. The result is the finished social card, not a mockup shown on a device.
 ```
 
-## 📝 Typography
-
-### Recommended Fonts
-
-**Primary Font Stack:**
-```css
-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-```
-
-**Headings:**
-- **Font Weight**: 700-800 (Bold/ExtraBold)
-- **Letter Spacing**: Normal to -0.025em
-
-**Body Text:**
-- **Font Weight**: 400 (Regular)
-- **Line Height**: 1.6
-
-**Code/Technical:**
-```css
-font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-```
-
-## 📏 Usage Guidelines
-
-### Logo Usage
-
-#### ✅ **DO:**
-- Maintain adequate clear space around the logo (minimum 32px)
-- Use on contrasting backgrounds for optimal readability
-- Scale proportionally when resizing
-- Use provided color versions on appropriate backgrounds
-- Download high-resolution versions for print materials
-
-#### ❌ **DON'T:**
-- Distort or stretch the logo
-- Change the colors outside the brand palette
-- Place on busy or low-contrast backgrounds
-- Recreate or modify the logo elements
-- Use pixelated or low-resolution versions
-
-### Clear Space Requirements
-
-Maintain a minimum clear space around all logos equal to the height of the "R" in "RAFT" in the logo.
-
-### Background Usage
-
-| Background | Recommended Logo |
-|------------|------------------|
-| Light backgrounds (#ffffff, #f8fafc) | Primary colored logos |
-| Dark backgrounds (#1e293b, #0f172a) | White/light versions |
-| Colored backgrounds | High contrast versions |
-| Photography/complex imagery | White logo with subtle shadow |
-
-## 📥 Asset Downloads
-
-### Logo Formats Available
-
-- **SVG**: Perfect for web use, scalable
-- **PNG**: High-resolution raster format
-- **PDF**: Vector format for print
-- **ICO**: Favicon format for websites
-
-### Sizes Available
-
-- **Favicon**: 16x16px, 32x32px, 48x48px
-- **Web**: 150x150px, 300x300px
-- **Social**: 512x512px, 1024x1024px
-- **Print**: Vector formats (SVG, PDF)
-
-## 📱 Social Media Assets
-
-### Social Media Preview
-
-![Social Preview](./social-preview.svg)
-
-**Specifications:**
-- **Size**: 1280x640px (2:1 ratio)
-- **Format**: SVG/PNG
-- **Usage**: Open Graph, Twitter Cards, LinkedIn sharing
-
-### Platform-Specific Recommendations
-
-| Platform | Size | Format | Notes |
-|----------|------|--------|-------|
-| **GitHub** | 1280x640px | PNG/SVG | Repository social preview |
-| **Twitter/X** | 1200x675px | PNG | Cards and headers |
-| **LinkedIn** | 1200x627px | PNG | Post sharing |
-| **Discord** | 1280x640px | PNG | Server/embed previews |
-| **Dev.to** | 1000x420px | PNG | Article covers |
-
-## 🎯 Brand Voice & Messaging
-
-### Key Brand Attributes
-- **Reliable**: Production-ready, battle-tested
-- **Modern**: TypeScript-first, cutting-edge
-- **Developer-Friendly**: Comprehensive docs, great DX
-- **Professional**: Enterprise-grade quality
-
-### Messaging Framework
-- **Tagline**: "Production-ready Raft consensus for Node.js"
-- **Value Proposition**: "Build bulletproof distributed systems"
-- **Technical Focus**: Consensus, reliability, fault tolerance
-
-## 🚀 Examples in Use
-
-### Website Header
-```html
-<header>
-  <img src="./assets/logo-alt.svg" alt="RAFT" width="150" height="150" />
-  <h1>RAFT</h1>
-  <p>Production-ready Raft consensus implementation for Node.js</p>
-</header>
-```
-
-### Social Meta Tags
-```html
-<meta property="og:image" content="./assets/social-preview.svg" />
-<meta property="og:title" content="RAFT - Production-ready Consensus for Node.js" />
-<meta property="og:description" content="Build bulletproof distributed systems with leader election, fault tolerance & TypeScript support." />
-```
-
-## 🤝 License & Usage Rights
-
-All brand assets are provided under the same license as the RAFT library (MIT License). You may use these assets when:
-
-- Creating content about RAFT
-- Building applications that use RAFT
-- Writing tutorials or documentation
-- Speaking at conferences about RAFT
-
-### Attribution
-
-When using RAFT brand assets, please provide appropriate attribution:
-```
-"RAFT logo and brand assets © RAFT Team"
-```
-
-## 📞 Contact
-
-For brand-related questions or custom asset requests:
-
-- **GitHub Issues**: [Report brand issues](https://github.com/ali-master/raft/issues)
-- **Discussions**: [Brand feedback](https://github.com/ali-master/raft/discussions)
-- **Documentation**: [Brand guidelines](./BRAND_ASSETS.md)
-
----
-
-*Last updated: June 02, 2025*
-*Version: 1.0.0*
-
-**Made with ❤️ by [Ali Torki](https://github.com/ali-master)**
+</details>
