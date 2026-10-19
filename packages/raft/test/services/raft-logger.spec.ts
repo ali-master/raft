@@ -73,3 +73,26 @@ describe("raftLogger", () => {
     spy.mockRestore();
   });
 });
+
+describe("playground progress reporting", () => {
+  it("clamps elapsed time beyond the deadline and handles empty totals", () => {
+    const output = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const logger = new RaftLogger({
+        level: LogLevel.INFO,
+        enableConsole: true,
+      });
+      for (const [current, total] of [
+        [31000, 30000],
+        [-1, 10],
+        [0, 0],
+        [Infinity, 1],
+      ]) {
+        expect(() => logger.progress(current!, total!)).not.toThrow();
+      }
+      expect(output.mock.calls[0]?.[0]).toContain("100%");
+    } finally {
+      output.mockRestore();
+    }
+  });
+});

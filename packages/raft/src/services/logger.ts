@@ -474,7 +474,10 @@ export class RaftLogger {
 
   public progress(current: number, total: number, description?: string): void {
     if (this.shouldLog(LogLevel.INFO)) {
-      const percentage = Math.round((current / total) * 100);
+      const ratio = total > 0 ? current / total : 0;
+      const percentage = Number.isFinite(ratio)
+        ? Math.max(0, Math.min(100, Math.round(ratio * 100)))
+        : 0;
       const progressBar =
         "█".repeat(Math.floor(percentage / 5)) +
         "░".repeat(20 - Math.floor(percentage / 5));
