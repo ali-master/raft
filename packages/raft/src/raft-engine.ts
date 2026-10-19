@@ -102,8 +102,8 @@ export class RaftEngine {
       clusterId,
       httpHost: "localhost",
       httpPort: 3000,
-      electionTimeout: [150, 300],
-      heartbeatInterval: 50,
+      electionTimeout: [300, 500],
+      heartbeatInterval: 150,
       maxLogEntries: 10000,
       snapshotThreshold: 1000,
       redis: {

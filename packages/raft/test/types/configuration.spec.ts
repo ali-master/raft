@@ -25,8 +25,8 @@ describe("configurationValidation", () => {
       expect(config.httpPort).toBe(3000);
 
       // Timing configurations
-      expect(config.electionTimeout).toEqual([150, 300]);
-      expect(config.heartbeatInterval).toBe(50);
+      expect(config.electionTimeout).toEqual([300, 500]);
+      expect(config.heartbeatInterval).toBe(150);
       expect(config.maxLogEntries).toBe(10000);
       expect(config.snapshotThreshold).toBe(1000);
 
