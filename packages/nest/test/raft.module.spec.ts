@@ -1,5 +1,6 @@
 import type { TestingModule } from "@nestjs/testing";
 import { Test } from "@nestjs/testing";
+import { Module } from "@nestjs/common";
 import { vi, it, expect, describe, afterEach } from "vitest";
 import { RaftModule } from "../src/modules/raft.module";
 import { RaftService } from "../src/services/raft.service";
@@ -113,22 +114,22 @@ describe("RaftModule", () => {
 
     it("should inject dependencies into factory", async () => {
       const mockDep = { getValue: () => "injected-value" };
+      @Module({
+        providers: [{ provide: "MOCK_DEP", useValue: mockDep }],
+        exports: ["MOCK_DEP"],
+      })
+      class DependencyModule {}
 
       module = await Test.createTestingModule({
         imports: [
           RaftModule.forRootAsync({
+            imports: [DependencyModule],
             useFactory: (dep: any) => ({
               nodeId: dep.getValue(),
               clusterId: "test-cluster",
             }),
             inject: ["MOCK_DEP"],
           }),
-        ],
-        providers: [
-          {
-            provide: "MOCK_DEP",
-            useValue: mockDep,
-          },
         ],
       }).compile();
 
@@ -141,48 +142,43 @@ describe("RaftModule", () => {
   describe("lifecycle hooks", () => {
     it("should start node on application bootstrap", async () => {
       const mockStart = vi.fn().mockResolvedValue(undefined);
-      const mockNode = { start: mockStart } as any;
+      const mockNode = { start: mockStart, stop: vi.fn(), on: vi.fn() };
 
       module = await Test.createTestingModule({
-        imports: [RaftModule],
-        providers: [
-          {
-            provide: RAFT_ENGINE,
-            useValue: new RaftEngine(),
-          },
-          {
-            provide: RAFT_NODE,
-            useValue: mockNode,
-          },
+        imports: [
+          RaftModule.forRoot({
+            nodeId: "test-node",
+            clusterId: "test-cluster",
+          }),
         ],
-      }).compile();
+      })
+        .overrideProvider(RAFT_NODE)
+        .useValue(mockNode)
+        .compile();
 
-      const raftModule = module.get(RaftModule);
-      await raftModule.onApplicationBootstrap();
+      await module.init();
 
       expect(mockStart).toHaveBeenCalled();
     });
 
     it("should stop node on application shutdown", async () => {
       const mockStop = vi.fn().mockResolvedValue(undefined);
-      const mockNode = { stop: mockStop } as any;
+      const mockNode = { start: vi.fn(), stop: mockStop, on: vi.fn() };
 
       module = await Test.createTestingModule({
-        imports: [RaftModule],
-        providers: [
-          {
-            provide: RAFT_ENGINE,
-            useValue: new RaftEngine(),
-          },
-          {
-            provide: RAFT_NODE,
-            useValue: mockNode,
-          },
+        imports: [
+          RaftModule.forRoot({
+            nodeId: "test-node",
+            clusterId: "test-cluster",
+          }),
         ],
-      }).compile();
+      })
+        .overrideProvider(RAFT_NODE)
+        .useValue(mockNode)
+        .compile();
 
-      const raftModule = module.get(RaftModule);
-      await raftModule.onApplicationShutdown();
+      await module.init();
+      await module.close();
 
       expect(mockStop).toHaveBeenCalled();
     });

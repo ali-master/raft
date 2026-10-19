@@ -106,7 +106,10 @@ describe("Providers", () => {
 
       const calledConfig = mockCreateNode.mock.calls[0]?.[0];
       expect(calledConfig.httpPort).toBe(4000);
-      expect(calledConfig.electionTimeout).toEqual([150, 300]); // Default value
+      expect(calledConfig.electionTimeout).toEqual(
+        RaftEngine.createDefaultConfiguration("test-node", "test-cluster")
+          .electionTimeout,
+      );
     });
   });
 
