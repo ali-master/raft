@@ -14,6 +14,9 @@ Use this package when your application needs several nodes to agree on an ordere
 - [Install](#install)
 - [Run a replicated counter](#run-a-replicated-counter)
 - [Application state and snapshots](#application-state-and-snapshots)
+- [Engine API](#engine-api)
+- [Node API](#node-api)
+- [Configuration reference](#configuration-reference)
 
 ## Install
 
@@ -163,6 +166,134 @@ type ApplicationState = StateMachine<SetCommand>;
 - Reads from your state machine are local reads. There is no public read-index/quorum-barrier API establishing linearizable reads.
 
 `await node.createSnapshot()` requests a snapshot. Snapshot errors can currently be logged and swallowed, so a resolved call is not sufficient proof that a usable snapshot exists. Snapshot/WAL recovery has additional known defects; test your application's restore path before relying on it.
+
+## Engine API
+
+`new RaftEngine()` creates a manager for nodes in the current process. `RaftConsensusLibrary` is an alias for the same class.
+
+| Method                                                     | Returns                 | Behavior                                                                                                             |
+| ---------------------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `RaftEngine.createDefaultConfiguration(nodeId, clusterId)` | `RaftConfiguration`     | New configuration with the defaults below.                                                                           |
+| `createNode(config, stateMachine?)`                        | `Promise<RaftNode>`     | Registers an unstarted node. Duplicate IDs throw `RaftConfigurationException`.                                       |
+| `startNode(nodeId)`                                        | `Promise<void>`         | Starts an existing node. Missing ID throws.                                                                          |
+| `stopNode(nodeId)`                                         | `Promise<void>`         | Stops a node but keeps it registered, allowing restart. Missing ID throws.                                           |
+| `removeNode(nodeId)`                                       | `void`                  | Removes the local registry entry only. Stop it first; this neither stops the process nor changes cluster membership. |
+| `getNode(nodeId)`                                          | `RaftNode \| undefined` | Looks up a local managed node.                                                                                       |
+| `getAllNodes()`                                            | `Map<string, RaftNode>` | Copy of the local registry; not a remote-cluster inventory.                                                          |
+| `stopAllNodes()`                                           | `Promise<void>`         | Stops managed nodes and clears the registry.                                                                         |
+
+For a long-running service, call `stopAllNodes()` from its shutdown hook. Stopping nodes preserves their Redis/WAL/snapshot data; it is not a reset operation.
+
+## Node API
+
+### Proposals and lifecycle
+
+| Method                                  | Returns            | Requirements and result                                                                                                      |
+| --------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `start()` / `stop()`                    | `Promise<void>`    | Starts/stops this node's transport, timers and persistence lifecycle.                                                        |
+| `isRunning()`                           | `boolean`          | Whether the node is running. A stopped node can still report its last Raft role.                                             |
+| `appendLog(command)`                    | `Promise<boolean>` | Running leader only; resolves `true` after waiting for commitment. Rejects during leadership transfer or failed replication. |
+| `forceElection()`                       | `Promise<void>`    | Requests an election; does not guarantee leadership.                                                                         |
+| `changeClusterConfiguration(memberIds)` | `Promise<void>`    | Leader proposes joint and final configurations; current leader is automatically included. Serialize calls.                   |
+| `transferLeadership(targetPeerId)`      | `Promise<void>`    | Running leader catches up another voting member and waits for confirmed handover.                                            |
+| `createSnapshot()`                      | `Promise<void>`    | Requests snapshot/compaction; observe the snapshot limitation above.                                                         |
+
+`appendLog` is the write API; there is no `node.propose()`. A successful call does not mean every follower has already applied the entry. Wait for your state-machine result or applied positions when an operation needs that assurance. If a request times out, its outcome can be uncertain: it may still commit later. Do not blindly retry non-idempotent commands.
+
+To add a node, start that node with a compatible configuration, then call `leader.changeClusterConfiguration([...leader.getPeers(), "node-4"])`. To remove a member, pass the desired remaining member IDs. Transfer leadership first if you want to remove the current leader. Concurrent configuration changes and interrupted joint transitions have unresolved safety defects.
+
+### Inspection
+
+| Method                                  | Returns / meaning                                                                                      |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `getNodeId()`                           | `string`                                                                                               |
+| `getState()`                            | `RaftState`: `"follower"`, `"candidate"`, or `"leader"`                                                |
+| `getLeaderId()`                         | `string \| null`; last known leader                                                                    |
+| `getCurrentTerm()`                      | Current term number                                                                                    |
+| `getCommitIndex()` / `getLastApplied()` | Committed / application-applied log positions                                                          |
+| `getPeers()`                            | Voting member IDs, including self; union of old/new members during a joint configuration               |
+| `getActiveConfiguration()`              | `{ oldPeers?: string[]; newPeers: string[] }`                                                          |
+| `getPeerInfo(nodeId)`                   | `PeerInfo \| undefined`: identity, endpoint, role, term, last-seen `Date`, weight, system metrics      |
+| `getConfiguration()`                    | Configuration object; treat it as read-only. Mutating it is not a supported reconfiguration procedure. |
+| `getMetrics()`                          | `RaftMetrics \| undefined`; may be absent before collection                                            |
+| `getPrometheusMetrics()`                | `Promise<string>`; Prometheus exposition, empty if disabled                                            |
+| `getMetricsCollector()`                 | `RaftMetricsCollector`                                                                                 |
+| `getLogger()`                           | `RaftLogger`                                                                                           |
+| `getLog()`                              | Internal log handle; do not mutate it to bypass commitment or application ordering                     |
+
+### Protocol integration
+
+These methods are for transport adapters, not application writes. The corresponding request/response types are exported from `@usex/raft`.
+
+| Method                             | Input                    | Output                             |
+| ---------------------------------- | ------------------------ | ---------------------------------- |
+| `handleVoteRequest(request)`       | `VoteRequest`            | `Promise<VoteResponse>`            |
+| `handlePreVoteRequest(request)`    | `PreVoteRequest`         | `Promise<PreVoteResponse>`         |
+| `handleAppendEntries(request)`     | `AppendEntriesRequest`   | `Promise<AppendEntriesResponse>`   |
+| `handleInstallSnapshot(request)`   | `InstallSnapshotRequest` | `Promise<InstallSnapshotResponse>` |
+| `handleTimeoutNowRequest(request)` | `TimeoutNowRequest`      | `Promise<void>`                    |
+
+Request and response fields:
+
+| Type                      | Fields                                                                                                     |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `VoteRequest`             | `term`, `candidateId`, `lastLogIndex`, `lastLogTerm`, optional numeric `weight`                            |
+| `VoteResponse`            | `term`, boolean `voteGranted`, numeric `voterWeight`                                                       |
+| `PreVoteRequest`          | Prospective `term`, `candidateId`, `lastLogIndex`, `lastLogTerm`                                           |
+| `PreVoteResponse`         | Responder's `term`, boolean `voteGranted`                                                                  |
+| `AppendEntriesRequest`    | `term`, `leaderId`, `prevLogIndex`, `prevLogTerm`, `entries: LogEntry[]`, `leaderCommit`                   |
+| `AppendEntriesResponse`   | `term`, boolean `success`, `lastLogIndex`                                                                  |
+| `InstallSnapshotRequest`  | `term`, `leaderId`, `lastIncludedIndex`, `lastIncludedTerm`, byte `offset`, `data: Buffer`, boolean `done` |
+| `InstallSnapshotResponse` | `term`                                                                                                     |
+| `TimeoutNowRequest`       | `term`, `leaderId`                                                                                         |
+
+Terms and indices are numbers; IDs are strings. `LogEntry<TCommand>` contains `term`, `index`, `commandType: RaftCommandType`, `commandPayload`, `timestamp: Date`, and `checksum: string`. The node constructs these entries when you call `appendLog`; ordinary applications should not manufacture entries or checksums. A transport adapter must preserve Buffer and Date semantics when serializing protocol messages.
+
+`RaftCommandType` values are `APPLICATION`, `CHANGE_CONFIG`, and `NO_OP`. `MessageType` identifies transport envelopes: `vote_request`, `vote_response`, `pre_vote_request`, `pre_vote_response`, `append_entries`, `append_entries_response`, `install_snapshot`, `install_snapshot_response`, and `timeout_now_request`. Their enum member names are uppercase versions of those strings.
+
+Do not expose protocol handlers as unauthenticated application endpoints. The current snapshot path expects a complete snapshot buffer; chunk assembly is not implemented.
+
+## Configuration reference
+
+Start with `createDefaultConfiguration`, then override fields. Nested objects are not automatically deep-merged by callers; use `{ ...config.redis, port: 6389 }` to retain sibling fields.
+
+All intervals/timeouts below are **milliseconds**, except `redis.ttl`, which is **seconds**. Byte sizes are stated explicitly.
+
+| Field                                                                | Default                                                                | Purpose                                                                                              |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `nodeId`, `clusterId`                                                | Required arguments                                                     | Stable node identity and cluster namespace.                                                          |
+| `httpHost`, `httpPort`                                               | `localhost`, `3000`                                                    | Advertised endpoint; does not create a listener.                                                     |
+| `peers`                                                              | Unset                                                                  | Complete initial voting membership, including self. Keep the same list across nodes.                 |
+| `electionTimeout`                                                    | `[300, 500]`                                                           | Randomized election timeout range.                                                                   |
+| `heartbeatInterval`                                                  | `150`                                                                  | Leader heartbeat interval; keep below election timeout.                                              |
+| `maxLogEntries`, `snapshotThreshold`                                 | `10000`, `1000`                                                        | Log/snapshot thresholds.                                                                             |
+| `redis.host`, `redis.port`, `redis.db`                               | `REDIS_HOST` or `localhost`; `REDIS_PORT` or `6379`; `REDIS_DB` or `0` | Redis connection.                                                                                    |
+| `redis.password`                                                     | `REDIS_PASSWORD`, if set                                               | Optional password.                                                                                   |
+| `redis.keyPrefix`                                                    | Unset, effectively `""`                                                | Prefix for Raft state/log keys; explicitly set one for a new isolated application.                   |
+| `redis.ttl`                                                          | Storage fallback `3600`                                                | State/log expiry. This version uses expiring persistence keys; `0` does not mean permanent storage.  |
+| `peerDiscovery.registrationInterval`                                 | `5000`                                                                 | Discovery registration cadence.                                                                      |
+| `peerDiscovery.healthCheckInterval`, `peerDiscovery.peerTimeout`     | `10000`, `30000`                                                       | Discovery health/expiry windows.                                                                     |
+| `voting.enableWeighting`, `voting.defaultWeight`                     | `true`, `1`                                                            | Weighted voting switch and fallback weight. Set weighting to `false` for ordinary majority voting.   |
+| `voting.weights`                                                     | Unset                                                                  | Fixed `Record<string, number>` shared by all members.                                                |
+| `voting.weightMetrics`                                               | `cpuUsage`, `memoryUsage`, `networkLatency`, `uptime`                  | Legacy/configuration field; not automatic safe quorum-weight updates.                                |
+| `network.requestTimeout`, `network.maxRetries`, `network.retryDelay` | `5000`, `3`, `100`                                                     | RPC timeout and retries.                                                                             |
+| `network.circuitBreakerThreshold`, `network.circuitBreakerTimeout`   | `5`, `30000`                                                           | Network breaker configuration.                                                                       |
+| `retry.maxAttempts`, `retry.backoffFactor`, `retry.initialDelay`     | `3`, `2`, `100`                                                        | Retry configuration.                                                                                 |
+| `circuitBreaker.timeout`, `errorThresholdPercentage`, `resetTimeout` | `3000`, `50`, `30000`                                                  | Breaker timeout, percentage threshold, reset delay.                                                  |
+| `metrics.enablePrometheus`, `metrics.enableInternal`                 | `true`, `true`                                                         | Metrics options.                                                                                     |
+| `metrics.collectionInterval`, `metrics.retentionPeriod`              | `5000`, unset                                                          | Collection cadence and optional retention option.                                                    |
+| `persistence.enableSnapshots`, `persistence.snapshotInterval`        | `true`, `300000`                                                       | Snapshot options.                                                                                    |
+| `persistence.dataDir`                                                | `/var/lib/raft`                                                        | Set a writable, separate directory for each node.                                                    |
+| `persistence.walEnabled`, `persistence.walSizeLimit`                 | `true`, `104857600` bytes                                              | WAL options. WAL presence does not guarantee crash-safe recovery in this release.                    |
+| `logging.level`                                                      | `LogLevel.INFO`                                                        | `debug`, `info`, `warn`, `error`, `fatal`.                                                           |
+| `logging.redactedFields`, `logging.enableStructured`                 | `["password", "token", "secret"]`, `true`                              | Structured logging and field redaction.                                                              |
+| `adaptiveConsensus`                                                  | Unset                                                                  | Optional adaptive settings; supplying this object alone does not attach an algorithm to a core node. |
+
+Additional logging options: `enableConsole`, `enableFile`, `filePath`, `enableColors`, `showTimestamps`, `showNodeIds`, and `pretty`. `pretty` accepts a boolean or `{ enabled, indent, showTypes?, maxObjectDepth?, maxArrayLength?, sortKeys?, showFunctions?, colorizeJson? }`.
+
+### Existing Redis data
+
+A prefix change does not rename existing keys. The core's legacy layout is `<nodeId>:state` and `<nodeId>:log:<index>`. An explicit empty `redis.keyPrefix` retains it. To migrate, stop every member, back up Redis and each data directory, then move only that cluster's keys without overwriting destination keys. Keep identities and encryption/application formats unchanged. The KV server has a different default prefix; its README documents that separately.
 
 ## License
 
