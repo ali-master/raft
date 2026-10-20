@@ -16,6 +16,11 @@ For a complete working custom state-machine integration, use the [NestJS package
 - [Start the application](#start-the-application)
 - [Configuration](#configuration)
 - [HTTP conventions and current validation behavior](#http-conventions-and-current-validation-behavior)
+- [Cluster API](#cluster-api)
+- [Cache API](#cache-api)
+- [Task queue API](#task-queue-api)
+- [Lock API](#lock-api)
+- [Game API](#game-api)
 - [CLI and package commands](#cli-and-package-commands)
 - [Troubleshooting and tests](#troubleshooting-and-tests)
 
@@ -123,6 +128,128 @@ This is not an invalid payload according to the intended cache contract. The DTO
 After a mutation succeeds, read the record back on the serving node and other replicas. Current `@OnLogCommitted()` handlers subscribe through a broken event bridge and the default Raft module has no application state machine. A returned task/lock/game object can therefore describe a proposal whose record was never added to application state. TTL replay and serialized `Date` handling have additional limitations.
 
 Several Swagger success annotations differ from runtime defaults. Tables below use Nest's actual handler status: a POST without `@HttpCode` returns 201; a DELETE without it returns 200.
+
+## Cluster API
+
+| Method and path             | Body                                   | Success response                                                         |
+| --------------------------- | -------------------------------------- | ------------------------------------------------------------------------ |
+| `GET /cluster`              | —                                      | `{ clusterId, nodes, leaderId, term, commitIndex, lastApplied }`         |
+| `GET /cluster/nodes`        | —                                      | Locally registered node summaries                                        |
+| `GET /cluster/nodes/:id`    | —                                      | `{ found: true, node }`, or `{ found: false, node: null }` with HTTP 200 |
+| `GET /cluster/leader`       | —                                      | `{ hasLeader, leader }`                                                  |
+| `GET /cluster/health`       | —                                      | `{ healthy, hasLeader, nodeCount, minimumNodes: 3, status }`             |
+| `POST /cluster/nodes`       | `{ nodeId: string, endpoint: string }` | 201, `{ success: true, nodeId }`                                         |
+| `DELETE /cluster/nodes/:id` | —                                      | 200, `{ success: true }`                                                 |
+
+A node summary has `id`, `state`, `isLeader`, `endpoint`, `lastSeen`, and `status`. Remote states may be `unknown`. `lastSeen` is generated when the request is handled, not a measured heartbeat timestamp; generated endpoints can differ from actual HTTP ports. The cluster's `term`, `commitIndex`, and `lastApplied` fields are currently hardcoded to zero.
+
+**Add/remove only change an endpoint map and emit application events. They do not call Raft membership reconfiguration, launch a process, or stop a node.** Use the core membership API when implementing actual membership changes.
+
+## Cache API
+
+`value` accepts JSON. `ttl` is optional and measured in **seconds**; omit it for no expiry. Use positive TTLs. Expiration is calculated from local application time, so replay currently does not preserve an original absolute expiry.
+
+| Method and path      | Body / query                      | Success response                                                                      |
+| -------------------- | --------------------------------- | ------------------------------------------------------------------------------------- |
+| `POST /cache/:key`   | `{ value: any, ttl?: number }`    | 201, `{ success: true, key }`                                                         |
+| `GET /cache/:key`    | —                                 | 200, `{ found, value }`; absent value is `null`                                       |
+| `DELETE /cache/:key` | —                                 | 204, empty body                                                                       |
+| `DELETE /cache/all`  | —                                 | 204, clears all cache entries                                                         |
+| `GET /cache/keys`    | Optional `pattern`, e.g. `user:*` | 200, key array                                                                        |
+| `GET /cache/size`    | —                                 | 200, `{ size }`                                                                       |
+| `GET /cache/stats`   | —                                 | Node/leader identity, size, memory estimate, expiry/TTL counts, oldest/newest entries |
+
+Reserve route names `stats`, `keys`, `size`, and `all` rather than using them as application keys. The intended flow is set → read → list → delete → verify `found: false`; the write example above currently stops at DTO validation. A `null` value is not a useful way to distinguish presence because the read wrapper uses null to represent absence.
+
+```bash
+curl -sS "$API/cache/readme:greeting"
+curl -sS --get "$API/cache/keys" --data-urlencode 'pattern=readme:*'
+curl -sS "$API/cache/size"
+```
+
+## Task queue API
+
+Priority values: `LOW=0`, `NORMAL=1`, `HIGH=2`, `CRITICAL=3`. Creation defaults to priority 1 and `maxRetries: 3`. Status strings are `PENDING`, `ASSIGNED`, `PROCESSING`, `COMPLETED`, `FAILED`, and `CANCELLED`.
+
+| Method and path                | JSON body                                                                | Success response                                                           |
+| ------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `POST /tasks`                  | `{ type: string, payload: any, priority?: number, maxRetries?: number }` | 201, task object                                                           |
+| `GET /tasks/:id`               | —                                                                        | `{ found, task }`; missing task is `null`, HTTP 200                        |
+| `GET /tasks/status/:status`    | —                                                                        | Tasks with the given uppercase status                                      |
+| `GET /tasks/worker/:workerId`  | —                                                                        | Tasks assigned to that worker                                              |
+| `POST /tasks/assign/:workerId` | —                                                                        | 201, `{ assigned, task }`; `task: null` when none is pending               |
+| `PUT /tasks/:id/status`        | `{ status: string, workerId: string }`                                   | 200, `{ success: true }`                                                   |
+| `POST /tasks/:id/complete`     | `{ workerId: string, result: any }`                                      | 201, `{ success: true }`                                                   |
+| `POST /tasks/:id/fail`         | `{ workerId: string, error: string }`                                    | 201, `{ success: true }`                                                   |
+| `DELETE /tasks/:id`            | —                                                                        | 204, cancels the task                                                      |
+| `GET /tasks/stats`             | —                                                                        | `totalTasks`, `tasksByStatus`, `tasksByType`, `workerStats`, node identity |
+
+A task contains `id`, `type`, `payload`, `priority`, `status`, `retries`, `maxRetries`, `createdAt`, and `updatedAt`. Later states can add `assignedTo`, `startedAt`, `completedAt`, `failedAt`, `result`, and `error`.
+
+The intended worker sequence is create → assign next pending task → mark `PROCESSING` → complete or fail. Assignment chooses the highest pending priority. Failure requeues while retries remain, then marks the task failed. This package does not execute arbitrary task payloads: a worker application must perform the work. Because state delivery/replay is incomplete, do not rely on it for durable delivery or exactly-once processing.
+
+Example creation body (currently subject to the validation issue above):
+
+```json
+{
+  "type": "send-report",
+  "payload": { "reportId": "r-42" },
+  "priority": 2,
+  "maxRetries": 3
+}
+```
+
+```bash
+curl -sS "$API/tasks/status/PENDING"
+curl -sS "$API/tasks/worker/worker-1"
+curl -sS "$API/tasks/stats"
+```
+
+## Lock API
+
+`resource` is the lock key; `owner` identifies its caller. `ttl` is in **seconds**, not milliseconds. Omit it for no expiry. Metadata can be any JSON value.
+
+| Method and path              | JSON body                                         | Success response                                                         |
+| ---------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------ |
+| `POST /locks/:resource`      | `{ owner: string, ttl?: number, metadata?: any }` | 201, lock object                                                         |
+| `PUT /locks/:resource/renew` | `{ owner: string, ttl?: number }`                 | 200, updated lock                                                        |
+| `DELETE /locks/:resource`    | `{ owner: string }`                               | 204, empty body                                                          |
+| `GET /locks/:resource`       | —                                                 | `{ found, lock }`; absent/expired lock is `null`                         |
+| `GET /locks`                 | —                                                 | Active locks                                                             |
+| `GET /locks/owner/:owner`    | —                                                 | Active locks for an owner                                                |
+| `GET /locks/stats`           | —                                                 | Active/expired/total counts, per-owner counts, oldest/most-renewed locks |
+
+A lock has `resource`, `owner`, `acquiredAt`, optional `expiresAt`, optional `ttl`/`metadata`, and `renewCount`. An existing active lock produces 409; missing locks or mismatched owners in release/renew produce 400. Reserve `stats` as a resource name.
+
+Intended acquisition body:
+
+```json
+{ "owner": "worker-1", "ttl": 30, "metadata": { "jobId": "job-42" } }
+```
+
+The intended flow is acquire → verify ownership → do work → renew if needed → release with the same owner. Release requires a JSON body even though its method is DELETE. The DTO/event-delivery limitations prevent treating this example as a distributed mutual-exclusion guarantee. It also has no fencing token for external resources. A renewal response without a new TTL can retain an old displayed expiry even when the operation reuses the previous TTL.
+
+## Game API
+
+Game states are `WAITING`, `STARTING`, `IN_PROGRESS`, `PAUSED`, and `FINISHED`. New games default to four players and empty settings. Starting requires a waiting game with at least two players. Joining is allowed while waiting or in progress, subject to capacity and a player not already belonging to a game.
+
+| Method and path                   | JSON body                                                                  | Success response                                                 |
+| --------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `POST /games`                     | `{ name: string, maxPlayers?: number, settings?: any }`                    | 201, `{ id, name, state, maxPlayers, createdAt }`                |
+| `GET /games`                      | —                                                                          | Active-game summaries with `playerCount`; finished games omitted |
+| `GET /games/:id`                  | —                                                                          | `{ found, game }`; HTTP 200 with `game: null` when absent        |
+| `GET /games/player/:playerId`     | —                                                                          | `{ found, game }` for the player's current game                  |
+| `POST /games/:id/join`            | `{ playerId: string, playerName: string }`                                 | 201, player object                                               |
+| `POST /games/:id/leave/:playerId` | —                                                                          | 204, empty body                                                  |
+| `POST /games/:id/start`           | —                                                                          | 201, `{ success: true }`                                         |
+| `PUT /games/:id/player/:playerId` | `{ position?: { x: number, y: number }, health?: number, score?: number }` | 200, `{ success: true }`                                         |
+| `PUT /games/:id/world`            | `{ objects?: any[], powerups?: any[], events?: any[], time?: number }`     | 200, `{ success: true }`                                         |
+| `POST /games/:id/finish`          | `{ winnerId?: string }`                                                    | 201, `{ success: true }`                                         |
+| `GET /games/stats`                | —                                                                          | Game-state/player counts and duration/popularity summaries       |
+
+Detailed games include `players` as a JSON array, `settings`, `worldState`, and optional start/finish/winner fields. A player has `id`, `name`, `score`, `position`, `health`, `joinedAt`, `lastSeen`, and `isActive`. Initial score is 0 and health is 100.
+
+Intended flow: create a game → join two players → start → update players/world → finish. Verify the game after creation before continuing: the current service can return a created object without an applied game record. Missing games in join/start produce 404; invalid state, capacity, or insufficient players produce 400. Create/join/update DTOs also have the validation limitation described above.
 
 ## CLI and package commands
 
