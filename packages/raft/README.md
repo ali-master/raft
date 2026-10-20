@@ -1,13 +1,19 @@
 <div align="center">
   <img src="../../assets/logo.svg" alt="Raft Quorum mark" width="88" height="88" />
   <h1>@usex/raft</h1>
-  <p>The consensus engine behind the Raft toolkit.</p>
-  <p><a href="../../README.md">Workspace</a> · <a href="./playground/README.md">Observatory</a> · <a href="../../docs/raft-spec-audit.md">Validation</a></p>
+  <p>Leader election, replicated commands, and application state machines in TypeScript.</p>
+  <p><a href="../../README.md">Workspace</a> · <a href="./playground/README.md">Observatory</a> · <a href="../nest/README.md">NestJS integration</a></p>
 </div>
 
-A TypeScript implementation of Raft with Redis transport and storage, pluggable state machines, snapshots, a write-ahead log, structured events, and metrics. Bun is the workspace runtime and toolchain; the package also exports ESM and CommonJS entry points for Node.js consumers.
+Use this package when your application needs several nodes to agree on an ordered sequence of commands. The leader appends commands; each member applies committed commands to its own state machine. Redis provides transport, discovery, and log/state storage. Local files provide WAL and snapshot storage.
 
-**Status:** active development. The [spec audit](../../docs/raft-spec-audit.md) documents unresolved persistence, log-matching, membership, and snapshot failures. This implementation is not yet verified as Raft-conformant or safe for authoritative production data.
+**Development status:** normal-path examples work, but persistence, concurrent membership changes, and snapshot recovery have known correctness failures. Use disposable data while evaluating this version. It is not yet verified for authoritative production data. The limitations relevant to each API are described below; the [audit](../../docs/raft-spec-audit.md) contains the regression results.
+
+## Contents
+
+- [Install](#install)
+- [Run a replicated counter](#run-a-replicated-counter)
+- [Application state and snapshots](#application-state-and-snapshots)
 
 ## Install
 
@@ -15,101 +21,148 @@ A TypeScript implementation of Raft with Redis transport and storage, pluggable 
 bun add @usex/raft ioredis opossum prom-client
 ```
 
-The workspace requires Bun >= 1.4.3. Node.js consumers require >= 22.22.3. A reachable Redis instance is required. For source development, run `bun install --frozen-lockfile` and `bun run build` from the repository root.
+Use Bun >= 1.4.3. ESM and CommonJS consumers on Node.js >= 22.22.3 are also supported by the package exports. The examples below run with Bun.
 
-## Quick start
+For a checkout of this repository, build the package before running an example; workspace imports resolve its compiled output:
 
-This example starts a node and observes its lifecycle. Use a disposable Redis instance and a writable data directory:
+```bash
+bun install --frozen-lockfile
+bun run --cwd packages/raft build
+```
+
+Start a dedicated development Redis in a separate terminal:
+
+```bash
+docker run --rm --name raft-redis -p 127.0.0.1:6389:6379 redis:7-alpine
+```
+
+## Run a replicated counter
+
+Save the following as `counter.ts` in your application. It creates three local nodes, waits for a leader, commits one increment, checks that every state machine applied it, and shuts down. A fresh data directory prints `[1, 1, 1]`.
 
 ```typescript
-import { RaftEngine } from "@usex/raft";
+import { RaftEngine, RaftState, type StateMachine } from "@usex/raft";
+
+class Counter implements StateMachine {
+  value = 0;
+
+  async apply(command: unknown): Promise<void> {
+    if (
+      typeof command !== "object" ||
+      command === null ||
+      !("type" in command) ||
+      command.type !== "increment" ||
+      !("amount" in command) ||
+      typeof command.amount !== "number" ||
+      !Number.isSafeInteger(command.amount) ||
+      !Number.isSafeInteger(this.value + command.amount)
+    )
+      throw new Error("Invalid counter command");
+    this.value += command.amount;
+  }
+
+  async getSnapshotData(): Promise<Buffer> {
+    return Buffer.from(JSON.stringify({ value: this.value }));
+  }
+
+  async applySnapshot(data: Buffer): Promise<void> {
+    const snapshot = JSON.parse(data.toString());
+    if (!Number.isSafeInteger(snapshot.value))
+      throw new Error("Invalid snapshot");
+    this.value = snapshot.value;
+  }
+}
+
+async function waitFor(
+  check: () => boolean,
+  timeoutMs = 10_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!check()) {
+    if (Date.now() >= deadline) throw new Error("Cluster did not become ready");
+    await Bun.sleep(50);
+  }
+}
 
 const engine = new RaftEngine();
-const config = RaftEngine.createDefaultConfiguration("node-1", "example");
-config.redis = { ...config.redis, host: "127.0.0.1", port: 6379 };
-config.persistence = { ...config.persistence, dataDir: "./data/node-1" };
-config.voting = { ...config.voting, enableWeighting: false };
+const clusterId = process.env.CLUSTER_ID ?? "readme-counter";
+const ids = ["node-1", "node-2", "node-3"];
+const counters = ids.map(() => new Counter());
 
-const node = await engine.createNode(config);
-node.on("stateChange", ({ state, term }) => {
-  console.log({ state, term });
-});
-node.on("raftEvent", (event) => console.log(event));
+try {
+  const nodes = await Promise.all(
+    ids.map((id, index) => {
+      const config = RaftEngine.createDefaultConfiguration(id, clusterId);
+      config.peers = ids;
+      config.httpPort = 4101 + index;
+      config.redis = {
+        ...config.redis,
+        host: process.env.REDIS_HOST ?? "127.0.0.1",
+        port: Number(process.env.REDIS_PORT ?? 6389),
+        keyPrefix: `raft:${clusterId}:`,
+      };
+      config.voting = { ...config.voting, enableWeighting: false };
+      config.persistence = {
+        ...config.persistence,
+        dataDir: `./data/${clusterId}/${id}`,
+      };
+      return engine.createNode(config, counters[index]);
+    }),
+  );
 
-await engine.startNode("node-1");
-// At application shutdown:
-// await engine.stopAllNodes();
+  await Promise.all(ids.map((id) => engine.startNode(id)));
+  await waitFor(
+    () =>
+      nodes.filter((node) => node.getState() === RaftState.LEADER).length === 1,
+  );
+  const leader = nodes.find((node) => node.getState() === RaftState.LEADER)!;
+  const leaderIndex = nodes.indexOf(leader);
+  const expected = counters[leaderIndex]!.value + 1;
+
+  await leader.appendLog({ type: "increment", amount: 1 });
+  await waitFor(() => counters.every((counter) => counter.value === expected));
+  console.log(
+    "Replicated values:",
+    counters.map((counter) => counter.value),
+  );
+} finally {
+  await engine.stopAllNodes();
+}
 ```
-
-A node created without a state machine uses a no-op implementation. To maintain application data, implement [`StateMachine`](./src/types/state-machine.ts) and pass it as the second argument to `engine.createNode(config, stateMachine)`. The core invokes `apply(command)` after commitment; implement `getSnapshotData()` and `applySnapshot(data)` to preserve and restore application state. See the working [counter](./playground/src/state-machines/counter-state-machine.ts) and [key-value](./playground/src/state-machines/kv-state-machine.ts) examples.
-
-The leader proposes commands with `await node.appendLog(command)`. `RaftNode` does not expose a `propose` method; the NestJS service provides that facade. An appended/replicated event is not evidence that application state has been applied.
-
-## Capabilities
-
-| Area          | Implementation                                                         |
-| ------------- | ---------------------------------------------------------------------- |
-| Elections     | Follower/candidate/leader states, pre-vote, election timeouts          |
-| Replication   | AppendEntries, commit/application positions, state-machine application |
-| Membership    | Joint configuration changes and leadership transfer                    |
-| Storage       | Redis-backed state/logs, WAL, snapshots, recovery paths                |
-| Networking    | Redis transport, peer discovery, retries, circuit breakers             |
-| Observability | Structured `raftEvent` stream, state aliases, metrics                  |
-| Extensions    | Static weighted quorums and adaptive-consensus components              |
-
-Read the [audit](../../docs/raft-spec-audit.md) before relying on these mechanisms. Weighted voting requires a consistent positive weight map on every member; the [weighted-voting scenario](./playground/README.md#scenarios) explains its constraints.
-
-## Core API
-
-| Entry point                                                        | Purpose                                         |
-| ------------------------------------------------------------------ | ----------------------------------------------- |
-| `RaftEngine.createDefaultConfiguration(nodeId, clusterId)`         | Start with the library's configuration defaults |
-| `engine.createNode(config, stateMachine?)`                         | Create and register a node                      |
-| `engine.startNode(nodeId)` / `engine.stopAllNodes()`               | Manage node lifecycle                           |
-| `engine.getNode(nodeId)` / `engine.getAllNodes()`                  | Access managed nodes                            |
-| `node.appendLog(command)`                                          | Propose an application command on the leader    |
-| `node.getState()` / `node.getLeaderId()` / `node.getCurrentTerm()` | Inspect local consensus state                   |
-| `node.changeClusterConfiguration(members)`                         | Propose a membership change                     |
-| `node.createSnapshot()`                                            | Request a snapshot                              |
-| `node.getMetrics()`                                                | Read node metrics                               |
-
-Configuration uses `redis`, `httpHost`, `httpPort`, `logging`, `network`, `voting`, and `persistence`. See the current [`RaftConfiguration`](./src/types/config.ts); earlier `storageAdapter`, `logger`, and `port` examples do not match this interface.
-
-## Observatory and commands
-
-From the repository root:
 
 ```bash
-bun run build
-bun run --cwd packages/raft/playground dashboard
+REDIS_PORT=6389 bun counter.ts
 ```
 
-The Bun dashboard visualizes real RPC traffic, replication, elections, failures, and recovery over SSE. Its command center adds read-only node reports and SHA-256 probes through application log entries, with destination receipts and per-node metrics. This is a playground state-machine extension, not a general-purpose remote execution API.
+Each node needs a unique `nodeId` and writable `persistence.dataDir`. Members share the same `clusterId`, Redis connection, voting map, and Raft key prefix. **`peers` is the complete initial voting membership, including the local node itself.** Omitting self prevents that node from starting elections. For separate processes, create one node in each process and configure the same complete membership. Redis discovery can find peers, but do not treat discovery alone as an atomic cluster membership change.
 
-See [Raft Playground](./playground/README.md) for the configurable node count, 14 scenarios, CLI, metrics definitions, and command-delivery limits.
+A `RaftNode` does not start an HTTP listener. `httpHost`/`httpPort` describe its advertised endpoint; the default transport uses Redis. The HTTP KV server and the Observatory start their own listeners.
 
-## Testing
+## Application state and snapshots
 
-From this directory:
+The public contract is:
 
-```bash
-bun run test run
-bun run test:unit
-bun run test:watch
-bun run test:coverage
-bun run test:types
-bun run lint
+```typescript
+import type { StateMachine } from "@usex/raft";
+
+type SetCommand = { type: "set"; key: string; value: string };
+
+// Contract illustration; the Counter above is a complete implementation.
+type ApplicationState = StateMachine<SetCommand>;
+// apply(command: SetCommand): Promise<void>
+// getSnapshotData(): Promise<Buffer>
+// applySnapshot(data: Buffer): Promise<void>
 ```
 
-Redis integration tests require Docker. Known failing regressions are retained in [`spec-compliance.spec.ts`](./test/integration/spec-compliance.spec.ts). Test commands are not a claim that all checks pass. Read the [testing guide](./docs/TESTING.md), [audit](../../docs/raft-spec-audit.md), and [playground report](../../docs/raft-playground-validation.md) for measured results.
+`new RaftNode<TCommand>(config, stateMachine)` preserves your command type. `engine.createNode(config, stateMachine?)` is the lifecycle-managed convenience API. Omitting its state machine installs a no-op implementation: proposals can commit without changing application data.
 
-## Documentation
+- **`apply`** receives the application payload, not a `LogEntry` wrapper. Keep it deterministic: put timestamps, IDs, and intended values in the proposed command instead of generating them independently on each replica. Validate input before proposing; an exception during apply can prevent later application progress.
+- **`getSnapshotData`** serializes the complete application state into bytes. Include your own format version when the application schema evolves.
+- **`applySnapshot`** replaces local application state with the supplied snapshot. Validate the entire payload before replacing existing state. Restore JSON dates/maps explicitly when your state uses them.
+- An application must implement its own command IDs/deduplication if retrying a write could repeat a side effect. The library does not provide a persistent distributed job queue or exactly-once external execution.
+- Reads from your state machine are local reads. There is no public read-index/quorum-barrier API establishing linearizable reads.
 
-- [Architecture](../../docs/architecture.md) and [state-machine interfaces](../../docs/interfaces-guide.md)
-- [Configuration](../../docs/configuration.md) and [monitoring](../../docs/monitoring.md)
-- [Adaptive consensus](./docs/adaptive-consensus.md)
-- [Bun migration and compatibility](../../docs/bun-migration.md)
-- [Brand assets](../../assets/BRAND_ASSETS.md)
+`await node.createSnapshot()` requests a snapshot. Snapshot errors can currently be logged and swallowed, so a resolved call is not sufficient proof that a usable snapshot exists. Snapshot/WAL recovery has additional known defects; test your application's restore path before relying on it.
 
 ## License
 
