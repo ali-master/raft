@@ -16,6 +16,9 @@ This package provides `RaftModule`, `RaftService`, injection decorators, event-d
 - [RaftService API](#raftservice-api)
 - [Injection decorators and tokens](#injection-decorators-and-tokens)
 - [Events and decorators](#events-and-decorators)
+- [Use your own state machine](#use-your-own-state-machine)
+- [AdaptiveConsensusService](#adaptiveconsensusservice)
+- [Troubleshooting](#troubleshooting)
 
 ## Install and run
 
@@ -359,6 +362,193 @@ This is valid decorator syntax, **not a working automatic event subscription in 
 There is no `OnLogApplied` convenience export; use `RaftEvent(RaftEventType.LOG_APPLIED)` for metadata or the direct subscription above. Not every enum category is emitted on every path.
 
 Advanced metadata exports are `RAFT_EVENT_METADATA`, `RAFT_METADATA`, `RaftEventHandlerMetadata`, `RaftNodeMetadata`, and `RaftEventHandler`. `new RaftEventScanner(discoveryService).scanForEventHandlers()` returns registered handler metadata, not bound listeners. `createRaftEventHandler(eventType, handler)` creates a method decorator; its `handler` argument is currently ignored and the decorated method is recorded instead. Neither helper repairs automatic delivery.
+
+## Use your own state machine
+
+`forRoot` currently has no `stateMachine` option. For application data, the following **alternative module** wires the public engine/node tokens explicitly. Use it instead of `RaftModule.forRoot()` in this example. It exposes `RaftService` and supports `@InjectRaftNode()` without relying on event decorators.
+
+Save as `data-module.ts`:
+
+```typescript
+import "reflect-metadata";
+import {
+  Inject,
+  Injectable,
+  Module,
+  type OnApplicationBootstrap,
+  type OnApplicationShutdown,
+} from "@nestjs/common";
+import { RaftEngine, type StateMachine } from "@usex/raft";
+import { RAFT_ENGINE, RAFT_NODE, RaftService } from "@usex/raft-nestjs";
+
+@Injectable()
+export class Values implements StateMachine {
+  private values = new Map<string, string>();
+  get(key: string) {
+    return this.values.get(key);
+  }
+
+  async apply(command: unknown): Promise<void> {
+    if (
+      typeof command !== "object" ||
+      command === null ||
+      !("key" in command) ||
+      typeof command.key !== "string" ||
+      !("value" in command) ||
+      typeof command.value !== "string"
+    ) {
+      throw new Error("Expected { key: string, value: string }");
+    }
+    this.values.set(command.key, command.value);
+  }
+
+  async getSnapshotData(): Promise<Buffer> {
+    return Buffer.from(JSON.stringify([...this.values]));
+  }
+
+  async applySnapshot(bytes: Buffer): Promise<void> {
+    const rows: unknown = JSON.parse(bytes.toString());
+    if (
+      !Array.isArray(rows) ||
+      !rows.every(
+        (row) =>
+          Array.isArray(row) &&
+          row.length === 2 &&
+          row.every((value) => typeof value === "string"),
+      )
+    ) {
+      throw new Error("Invalid values snapshot");
+    }
+    this.values = new Map(rows as [string, string][]);
+  }
+}
+
+@Module({
+  providers: [
+    Values,
+    { provide: RAFT_ENGINE, useFactory: () => new RaftEngine() },
+    {
+      provide: RAFT_NODE,
+      inject: [RAFT_ENGINE, Values],
+      useFactory: (engine: RaftEngine, state: Values) => {
+        const config = RaftEngine.createDefaultConfiguration(
+          "data-1",
+          "nest-data",
+        );
+        config.redis = {
+          ...config.redis,
+          host: process.env.REDIS_HOST ?? "127.0.0.1",
+          port: Number(process.env.REDIS_PORT ?? 6389),
+          keyPrefix: "raft:nest-data:",
+        };
+        config.voting = { ...config.voting, enableWeighting: false };
+        config.persistence = {
+          ...config.persistence,
+          dataDir: "./data/nest-data/data-1",
+        };
+        return engine.createNode(config, state);
+      },
+    },
+    RaftService,
+  ],
+  exports: [RaftService, Values, RAFT_NODE],
+})
+export class DataModule
+  implements OnApplicationBootstrap, OnApplicationShutdown
+{
+  constructor(@Inject(RAFT_ENGINE) private readonly engine: RaftEngine) {}
+  async onApplicationBootstrap() {
+    await this.engine.startNode("data-1");
+  }
+  async onApplicationShutdown() {
+    await this.engine.stopAllNodes();
+  }
+}
+```
+
+Save this runner alongside it as `data-main.ts`:
+
+```typescript
+import { NestFactory } from "@nestjs/core";
+import { RaftService } from "@usex/raft-nestjs";
+import { DataModule, Values } from "./data-module";
+
+const app = await NestFactory.createApplicationContext(DataModule);
+try {
+  const raft = app.get(RaftService);
+  const state = app.get(Values);
+  const deadline = Date.now() + 10_000;
+  while (!raft.isLeader()) {
+    if (Date.now() > deadline) throw new Error("Leader election timed out");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  await raft.propose({ key: "greeting", value: "hello" });
+  if (state.get("greeting") !== "hello")
+    throw new Error("Command was not applied");
+
+  const restored = new Values();
+  await restored.applySnapshot(await state.getSnapshotData());
+  if (restored.get("greeting") !== "hello")
+    throw new Error("Snapshot round trip failed");
+  console.log(state.get("greeting")); // hello
+} finally {
+  await app.close();
+}
+```
+
+Run `REDIS_PORT=6389 bun data-main.ts` with the same Redis instance used in the quick start. Explicit injection tokens make this example usable with direct Bun execution.
+
+This module registers only the providers it uses; it does not register the adaptive service or the automatic decorator scanner. For multiple replicas, create the same deterministic state machine on each node with independent local application state. A local read is not a linearizable cluster read.
+
+## AdaptiveConsensusService
+
+`RaftModule` exports this injectable service. It is disabled by default. Call `getConfiguration()` to obtain the complete settings, then `await updateConfiguration({ ...changes })`. `AdaptiveConsensusServiceConfig` extends the core configuration with `performanceDegradationThreshold`.
+
+| Setting                                                       | Default             | Unit / meaning                                                       |
+| ------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------- |
+| `enabled`                                                     | `false`             | Enables algorithm creation and monitoring.                           |
+| `adaptationInterval`                                          | `30000`             | ms                                                                   |
+| `latencyThreshold`, `throughputThreshold`                     | `100`, `100`        | ms; operations/second                                                |
+| `learningRate`                                                | `0.1`               | Adaptation factor                                                    |
+| `minElectionTimeout`, `maxElectionTimeout`                    | `150`, `2000`       | ms                                                                   |
+| `minHeartbeatInterval`, `maxHeartbeatInterval`                | `50`, `500`         | ms                                                                   |
+| `networkQualityWeight`, `throughputWeight`, `stabilityWeight` | `0.4`, `0.3`, `0.3` | Scoring weights                                                      |
+| `performanceDegradationThreshold`                             | `0.7`               | Service degradation threshold; change through `updateConfiguration`. |
+
+| Method                                                        | Result / behavior                                                                                                                                 |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `isEnabled()` / `getConfiguration()`                          | Enabled flag / current service settings.                                                                                                          |
+| `updateConfiguration(partial)`                                | `Promise<void>`; shallow merge. Toggling `enabled` initializes/stops algorithms. Other settings do not automatically rebuild existing algorithms. |
+| `getAdaptiveAlgorithm(nodeId)`                                | Algorithm or `undefined`.                                                                                                                         |
+| `getCurrentParameters(nodeId)`                                | `{ electionTimeout, heartbeatInterval, batchSize, replicationTimeout }` or `undefined`.                                                           |
+| `getAdaptationStats(nodeId)` / `getAllAdaptationStats()`      | One node's stats or a node-keyed record. Stats include total adaptations, average score, parameter history.                                       |
+| `forceAdaptation(nodeId)` / `forceAdaptationAll()`            | `Promise<void>`; missing algorithm throws for the single-node call.                                                                               |
+| `resetLearningState(nodeId)` / `resetAllLearningStates()`     | Clear learning/history; missing single-node algorithm throws.                                                                                     |
+| `getPerformanceSummary()`                                     | Node count, average score, total adaptations, degraded-node count, adaptation frequency.                                                          |
+| `getClusterHealthReport()`                                    | `overallHealth`, node reports, and recommendations derived from adaptive scores.                                                                  |
+| `getPerformanceTrends(timeWindow?)`                           | Trend report, not measured end-to-end application throughput.                                                                                     |
+| `emergencyAdaptation()`                                       | Promise of attempted emergency adaptation results.                                                                                                |
+| `exportConfiguration()`                                       | `{ serviceConfig, nodeConfigurations, exportTimestamp: Date }`.                                                                                   |
+| `importConfiguration({ serviceConfig, nodeConfigurations? })` | `Promise<void>`; updates service config, but node-specific parameter import is currently not implemented.                                         |
+| `getSystemMetrics()`                                          | Uptime in ms, total adaptations, configured adaptation interval, efficiency, heap bytes, placeholder configuration-change count.                  |
+
+Events use Nest's `EventEmitter2`, independently from `RAFT_EVENT_BUS`. The exported `AdaptiveConsensusEvents` type describes `adaptive.parameters.changed`, `adaptive.cycle.completed`, `adaptive.performance.degraded`, and `adaptive.learning.reset`. Payloads include a node ID and timestamp; parameter-change events include old/new parameters, cycle events include score/network/cluster metrics, and degradation events include previous/current score and threshold. You can observe these with `@OnEvent("adaptive.parameters.changed")` from `@nestjs/event-emitter`.
+
+**Interpretation:** returned parameters are suggestions; they do not reconfigure the running node. Bounds enforcement has known failures, several measurements are synthetic, and importing node parameters currently only logs. Do not treat these reports as measured cluster health or an operational tuning guarantee.
+
+## Troubleshooting
+
+| Symptom                                            | What to check                                                                                  |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Nest cannot resolve `RAFT_NODE_worker`             | Explicitly register the named token; the node decorator does not create it.                    |
+| Decorated method never fires                       | Use the direct `raftEvent` subscription; automatic enum-channel wiring is currently broken.    |
+| Proposal resolves but application state is empty   | Default state machine is a no-op; wire a real state machine.                                   |
+| Partial Redis/network configuration breaks startup | Merge nested defaults rather than replacing them with incomplete objects.                      |
+| Unexpected dependency injection failure under Bun  | Use compiled Nest output or explicit injection decorators; preserve legacy decorator settings. |
+| Report shows only one cluster node                 | The facade enumerates local engine instances, not all remote members.                          |
+| Process stays alive after closing Nest             | Stop additional nodes and any application-owned timers/listeners.                              |
+
+Development commands from this package: `bun run build`, `bun run test:unit`, `bun run test:types`, `bun run lint`. `bun run test run` and the [Nest playground](./playground/README.md) integration tests require Docker. The [audit](../../docs/raft-spec-audit.md) distinguishes facade/DI tests from failing application-data regressions.
 
 ## License
 
