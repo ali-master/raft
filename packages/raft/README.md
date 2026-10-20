@@ -17,6 +17,10 @@ Use this package when your application needs several nodes to agree on an ordere
 - [Engine API](#engine-api)
 - [Node API](#node-api)
 - [Configuration reference](#configuration-reference)
+- [Events](#events)
+- [Metrics and logging](#metrics-and-logging)
+- [Weighted voting and adaptive consensus](#weighted-voting-and-adaptive-consensus)
+- [Errors and troubleshooting](#errors-and-troubleshooting)
 
 ## Install
 
@@ -294,6 +298,153 @@ Additional logging options: `enableConsole`, `enableFile`, `filePath`, `enableCo
 ### Existing Redis data
 
 A prefix change does not rename existing keys. The core's legacy layout is `<nodeId>:state` and `<nodeId>:log:<index>`. An explicit empty `redis.keyPrefix` retains it. To migrate, stop every member, back up Redis and each data directory, then move only that cluster's keys without overwriting destination keys. Keep identities and encryption/application formats unchanged. The KV server has a different default prefix; its README documents that separately.
+
+## Events
+
+Subscribe to the node's **`raftEvent`** channel and inspect `event.type`:
+
+```typescript
+import { RaftEventType, type RaftEvent, type RaftNode } from "@usex/raft";
+
+export function observe(node: RaftNode): () => void {
+  const listener = (event: RaftEvent) => {
+    if (event.type === RaftEventType.LOG_APPLIED) {
+      console.log(event.nodeId, event.timestamp, event.data);
+    }
+  };
+  node.on("raftEvent", listener);
+  return () => node.off("raftEvent", listener);
+}
+```
+
+An event contains `{ type, nodeId, timestamp: Date, data }`. `RaftEvent` is a **type-only root export**; do not import it as a runtime constructor.
+
+| Event                                                                   | Meaning                                                        |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `STATE_CHANGE`, `LEADER_ELECTED`                                        | Role transition / election notification.                       |
+| `LOG_REPLICATED`                                                        | A log entry was appended; this event occurs before commitment. |
+| `LOG_APPLIED`                                                           | Application of a committed entry completed locally.            |
+| `NODE_STARTED`, `NODE_STOPPED`                                          | Node lifecycle.                                                |
+| `VOTE_GRANTED`, `VOTE_DENIED`, `ELECTION_TIMEOUT`, `HEARTBEAT_RECEIVED` | Election and heartbeat observations.                           |
+| `CONFIGURATION_CHANGED`, `PEER_DISCOVERED`, `PEER_LOST`                 | Membership/discovery observations.                             |
+| `SNAPSHOT_CREATED`, `ERROR_OCCURRED`, `METRICS_UPDATED`                 | Snapshot, error, and metrics observations.                     |
+
+The enum also names protocol/diagnostic categories. An enum member's existence does not guarantee that every code path emits it. `data` varies by event; it is not a universal command payload. Existing convenience channels `stateChange` and `leaderElected` remain available. Listening directly on `node.on("leader_elected", ...)` does not replace `node.on("raftEvent", ...)`.
+
+## Metrics and logging
+
+`RaftMetrics` has numeric fields `currentTerm`, `commitIndex`, `lastApplied`, `logLength`, `leaderHeartbeats`, `electionCount`, `voteCount`, `appendEntriesCount`, `peerCount`, plus `state`, `votedFor: string | null`, and `systemMetrics`. Metrics are sampled; use `getCommitIndex()`/`getLastApplied()` for immediate local positions.
+
+`systemMetrics` includes `cpuUsage`, `memoryUsage`, `diskUsage`, `networkLatency`, `loadAverage`, and `uptime`. CPU is a process sample clamped to 0–100; memory is host memory usage percentage; uptime is process seconds. Disk usage is currently a memory-based approximation, and network statistics include placeholder calculations. These are not per-node resource measurements when several nodes share a process.
+
+Serve Prometheus data yourself, for example with Bun:
+
+```typescript
+import type { RaftNode } from "@usex/raft";
+
+export function serveMetrics(node: RaftNode) {
+  return Bun.serve({
+    hostname: "127.0.0.1",
+    port: 9464,
+    async fetch(request) {
+      if (new URL(request.url).pathname !== "/metrics")
+        return new Response("Not found", { status: 404 });
+      return new Response(await node.getPrometheusMetrics(), {
+        headers: { "Content-Type": "text/plain; version=0.0.4; charset=utf-8" },
+      });
+    },
+  });
+}
+```
+
+Stop the returned server during application shutdown. `RaftMetricsCollector` also exposes `updateMetrics(nodeId, clusterId, partialMetrics)`, `getMetrics(nodeId)`, `getAllMetrics()`, `getPrometheusMetrics()`, `getPrometheusRegister()`, `incrementCounter(name, labels)`, and `observeHistogram(name, labels, value)` for instrumentation. The latter two operate on registered metrics; they do not declare arbitrary new metrics.
+
+`node.getLogger()` provides `debug`, `info`, `warn`, `error`, `fatal`, and `success` with `(message, context?, error?)`, plus presentation helpers `section(title)`, `step(number, description)`, `result(success, message)`, `metric(name, value, unit?)`, and `progress(current, total, description?)`. You can also construct `new RaftLogger(config.logging)`.
+
+`SystemMetrics` exports static `getCpuUsage()`, `getMemoryUsage()`, `getDiskUsage(path?)`, `getLoadAverage()`, `getUptime()`, `getNetworkInterfaces()`, `getNetworkStats()`, `getAllMetrics()`, and `measureNetworkLatency(host, port?)`. The latency helper defaults to port 80, uses a five-second timeout, and returns `1000` on error/timeout. Treat disk/network approximations as diagnostic hints, not billing or SLA data.
+
+## Weighted voting and adaptive consensus
+
+For fixed weighted voting, set the same map on **every** member before startup:
+
+```typescript
+const voting = {
+  enableWeighting: true,
+  defaultWeight: 1,
+  weightMetrics: [],
+  weights: { "node-1": 2, "node-2": 1, "node-3": 1 },
+};
+```
+
+Quorum requires more than half of the total voting weight. Use positive weights and a consistent membership/map. This does not establish Byzantine fault tolerance. Runtime changes to weights are not a supported membership procedure.
+
+Adaptive consensus is an experimental suggestion/measurement component. It does not automatically apply returned timing parameters to `RaftNode`. Some input measurements are synthetic, and timeout bounds have known failures.
+
+```typescript
+import {
+  createAdaptiveConsensusAlgorithm,
+  type AdaptiveConsensusConfig,
+  type RaftNode,
+} from "@usex/raft";
+
+export async function inspectAdaptation(node: RaftNode) {
+  const config: AdaptiveConsensusConfig = {
+    enabled: true,
+    adaptationInterval: 30_000,
+    latencyThreshold: 100,
+    throughputThreshold: 100,
+    learningRate: 0.1,
+    minElectionTimeout: 150,
+    maxElectionTimeout: 2000,
+    minHeartbeatInterval: 50,
+    maxHeartbeatInterval: 500,
+    networkQualityWeight: 0.4,
+    throughputWeight: 0.3,
+    stabilityWeight: 0.3,
+  };
+  const algorithm = createAdaptiveConsensusAlgorithm(
+    config,
+    node.getLogger(),
+    node.getMetricsCollector(),
+    node.getConfiguration().electionTimeout,
+    node.getConfiguration().heartbeatInterval,
+  );
+  try {
+    await algorithm.forceAdaptation();
+    return algorithm.getCurrentParameters();
+  } finally {
+    algorithm.stop();
+  }
+}
+```
+
+`AdaptiveParameters` is `{ electionTimeout: [number, number], heartbeatInterval, batchSize, replicationTimeout }`. The factory starts with batch size `10` and replication timeout `1000`. `new AdaptiveConsensusAlgorithm(config, logger, collector, initialParameters)` accepts all four initial values directly.
+
+| Method                   | Result                                                                 |
+| ------------------------ | ---------------------------------------------------------------------- |
+| `start()` / `stop()`     | Schedule/cancel adaptation cycles; `start` is a no-op when disabled.   |
+| `forceAdaptation()`      | `Promise<void>`; one cycle when enabled.                               |
+| `getCurrentParameters()` | Current `AdaptiveParameters`.                                          |
+| `getAdaptationStats()`   | `totalAdaptations`, `averagePerformanceScore`, and `parameterHistory`. |
+| `resetLearningState()`   | Clears learned/history state.                                          |
+
+`NetworkQualityMetrics` contains `averageLatency`, `packetLoss`, `throughput`, `jitter`; `ClusterPerformanceMetrics` contains `leaderElections`, `logReplicationLatency`, `consensusTime`, `failureRate`.
+
+## Errors and troubleshooting
+
+All exported Raft error classes derive from `RaftException`: `RaftConfigurationException`, `RaftElectionException`, `RaftNetworkException`, `RaftPeerDiscoveryException`, `RaftReplicationException`, `RaftStorageException`, `RaftTimeoutException`, and `RaftValidationException`.
+
+| Symptom                                       | Action                                                                                                                          |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `Only a running leader can append logs`       | Wait for election; route the write to the current running leader. There is no automatic client redirect.                        |
+| Replication timeout / uncertain write outcome | Check quorum and connectivity, then inspect application state using your command ID before retrying.                            |
+| No state change after a successful proposal   | Pass a real state machine to `createNode`; the default is a no-op.                                                              |
+| Missing metrics                               | Wait for collection; verify metrics settings and that the node is running.                                                      |
+| State disappears or an old cluster appears    | Check Redis TTL, prefix, node IDs and data directory. Changing a cluster ID alone does not isolate unprefixed persistence keys. |
+| Permission error under `/var/lib/raft`        | Set `persistence.dataDir` to your application's writable per-node directory.                                                    |
+| A stopped node still says `leader`            | Combine role with `isRunning()`; role alone is not liveness.                                                                    |
+
+From this package, run `bun run test:unit`, `bun run test:types`, and `bun run lint`. `bun run test run` includes Redis integration tests and requires Docker; known adversarial failures remain in that suite. The [Observatory guide](./playground/README.md) explains interactive experiments and their HTTP/SSE API.
 
 ## License
 
