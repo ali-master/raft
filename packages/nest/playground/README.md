@@ -21,6 +21,9 @@ For a complete working custom state-machine integration, use the [NestJS package
 - [Task queue API](#task-queue-api)
 - [Lock API](#lock-api)
 - [Game API](#game-api)
+- [Monitoring API](#monitoring-api)
+- [Socket.IO clients](#socketio-clients)
+- [Optional adaptive-consensus module](#optional-adaptive-consensus-module)
 - [CLI and package commands](#cli-and-package-commands)
 - [Troubleshooting and tests](#troubleshooting-and-tests)
 
@@ -250,6 +253,126 @@ Game states are `WAITING`, `STARTING`, `IN_PROGRESS`, `PAUSED`, and `FINISHED`. 
 Detailed games include `players` as a JSON array, `settings`, `worldState`, and optional start/finish/winner fields. A player has `id`, `name`, `score`, `position`, `health`, `joinedAt`, `lastSeen`, and `isActive`. Initial score is 0 and health is 100.
 
 Intended flow: create a game → join two players → start → update players/world → finish. Verify the game after creation before continuing: the current service can return a created object without an applied game record. Missing games in join/start produce 404; invalid state, capacity, or insufficient players produce 400. Create/join/update DTOs also have the validation limitation described above.
+
+## Monitoring API
+
+All routes below use GET and return JSON with HTTP 200 unless marked otherwise.
+
+| Path                                     | Result                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `/monitoring/health`                     | `nodeId`, `status`, `isLeader`, `state`, `lastHeartbeat`, uptime in ms, process memory, CPU |
+| `/monitoring/cluster/health`             | Leader/node counts, health buckets and election count                                       |
+| `/monitoring/raft/metrics`               | `logIndex`, `commitIndex`, `term`, applied/pending counts and replication lag               |
+| `/monitoring/app/metrics`                | `cache`, `tasks`, `locks`, and `games` metric groups                                        |
+| `/monitoring/metrics`                    | Prometheus text, not JSON                                                                   |
+| `/monitoring/history/metrics?minutes=60` | In-memory metric samples; default 60 minutes                                                |
+| `/monitoring/history/events?limit=100`   | Event history; default limit 100                                                            |
+| `/monitoring/history/alerts?limit=50`    | Alert history; default limit 50                                                             |
+| `/monitoring/dashboard`                  | Combined health, Raft/app metrics, and recent history                                       |
+
+Use positive integers for history query values. HTTP success does not imply `healthy: true`.
+
+**Metric interpretation:** Raft counters here are currently hardcoded to zero. Several application counters/rates are randomly generated, and the reported heartbeat is a sampling timestamp. Process memory is real process data, but this response is not a verified per-node health signal. `/cluster/health` and `/monitoring/cluster/health` use different heuristics and can disagree. Do not use these demo values for alerts or capacity planning; the separate Observatory measures RPC traffic and identifies shared-process resource samples explicitly.
+
+```bash
+curl -sS "$API/monitoring/health"
+curl -sS "$API/monitoring/history/events?limit=20"
+curl -sS "$API/monitoring/metrics"
+```
+
+## Socket.IO clients
+
+These endpoints use **Socket.IO**, not plain WebSocket frames or SSE. The server shares the HTTP port. In a separate client project:
+
+```bash
+bun init -y
+bun add socket.io-client
+```
+
+Save as `monitor.ts`, then run `bun monitor.ts`:
+
+```typescript
+import { io } from "socket.io-client";
+
+const socket = io(
+  `${process.env.API_URL ?? "http://127.0.0.1:3001"}/monitoring`,
+);
+socket.on("connect", () => socket.emit("request_dashboard"));
+socket.on("initial_data", (data) => console.log("Initial:", data));
+socket.on("dashboard_data", (data) => console.log("Dashboard:", data));
+socket.on("realtime_update", (data) => console.log("Update:", data));
+socket.on("connect_error", (error) => console.error(error.message));
+setTimeout(() => socket.disconnect(), 12_000);
+```
+
+### `/monitoring` messages
+
+| Direction       | Event                          | Payload / behavior                                                            |
+| --------------- | ------------------------------ | ----------------------------------------------------------------------------- |
+| Client → server | `request_dashboard`            | No payload; returns `dashboard_data`                                          |
+| Client → server | `request_metrics`              | No payload; returns `metrics_update` with `nodeHealth` and `appMetrics`       |
+| Server → client | `initial_data`                 | Initial dashboard data on connection                                          |
+| Server → client | `realtime_update`              | About every 5 seconds: timestamp, node health, cluster health and app metrics |
+| Server → client | `event`, `alert`, `raft_event` | Observed application/monitoring events when available                         |
+
+### `/game` messages
+
+Connect to the `/game` namespace with the same `io` API. A connection receives `games_list`.
+
+| Client event      | Payload                                    | Reply / broadcast                                                                                |
+| ----------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `join_game`       | `{ gameId, playerId, playerName }`         | `joined_game: { player, gameId }`, then `game_state`; other room members receive `player_joined` |
+| `leave_game`      | `{ gameId, playerId }`                     | `left_game: { gameId }`                                                                          |
+| `update_position` | `{ gameId, playerId, position: { x, y } }` | Other room members receive `player_moved`                                                        |
+| `player_action`   | `{ gameId, playerId, action, params? }`    | Room broadcast for `attack`, `defend`, or `use_item`                                             |
+
+Errors are emitted as `error: { message }`. The gateway also forwards `game_created`, `game_started`, `player_joined`, `player_left`, `player_updated`, `world_updated`, and `game_finished` application events when delivered. Disconnecting a client attempts to leave its tracked game.
+
+`player_action` broadcasts are not committed game-state updates. Game mutations still depend on a running leader and correctly applied records; using Socket.IO does not repair the HTTP/state-machine limitations.
+
+## Optional adaptive-consensus module
+
+The default `AppModule` does **not** import `AdaptiveConsensusModule`, so these routes initially return 404. To explore it, add this import to the application module and add `AdaptiveConsensusModule` to its existing `imports` array, then rebuild/restart:
+
+```typescript
+import { AdaptiveConsensusModule } from "./scenarios/adaptive-consensus/adaptive-consensus.module";
+// Add AdaptiveConsensusModule to the existing @Module({ imports: [...] }).
+```
+
+The core `RaftModule` and existing shared/event providers must remain registered. The adaptive service starts disabled unless configured. Its HTTP prefix is `/adaptive-consensus`.
+
+| Method and suffix          | Request                                             | Result                                                                            |
+| -------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `GET /status`              | —                                                   | `{ enabled, configuration, summary }`                                             |
+| `PUT /configuration`       | Partial configuration object                        | `{ success, message, newConfiguration }`                                          |
+| `GET /parameters`          | —                                                   | Node-ID-to-parameters map                                                         |
+| `GET /parameters/:nodeId`  | —                                                   | `{ nodeId, parameters, lastUpdated, adaptationCount }`; unavailable node → 404    |
+| `GET /statistics`          | Optional `detailed` query                           | Summary or full statistics keyed by node ID                                       |
+| `GET /statistics/:nodeId`  | —                                                   | Adaptation count, score, recent history and effectiveness; unavailable node → 404 |
+| `GET /performance`         | —                                                   | `{ cluster, nodes, timestamp }`                                                   |
+| `POST /adapt/:nodeId`      | Optional `{ reason?: string, immediate?: boolean }` | 201, trigger result; missing/disabled node → 404                                  |
+| `POST /adapt`              | Same optional body                                  | 201, result with `affectedNodes`                                                  |
+| `DELETE /learning/:nodeId` | —                                                   | 200, reset result                                                                 |
+| `DELETE /learning`         | —                                                   | 200, reset result with `affectedNodes`                                            |
+
+Configuration fields are `enabled`, `adaptationInterval`, `latencyThreshold`, `throughputThreshold`, `learningRate`, `minElectionTimeout`, `maxElectionTimeout`, `minHeartbeatInterval`, `maxHeartbeatInterval`, `networkQualityWeight`, `throughputWeight`, `stabilityWeight`, and `performanceDegradationThreshold`. Timeouts/intervals/latency use milliseconds; throughput uses operations per second. The [Nest package reference](../README.md#adaptiveconsensusservice) lists every default and service method.
+
+Use learning rate in `[0,1]`, minimums below maximums, and scoring weights summing to 1. The configuration and force DTOs also lack whitelist metadata. Furthermore, computed timing parameters are not applied to the live Raft node, some measurements are synthetic, and configured bounds are not fully enforced. This module is an adaptation experiment, not a live performance controller. The force request's `reason` and `immediate` fields are logged; `immediate` does not select a different execution mode.
+
+Its Socket.IO namespace is `/adaptive-consensus`:
+
+| Client event             | Payload                                         | Server reply                                          |
+| ------------------------ | ----------------------------------------------- | ----------------------------------------------------- |
+| `subscribe-node`         | Node ID string                                  | `node-state` containing node ID, parameters and stats |
+| `unsubscribe-node`       | Node ID string                                  | Leaves that node's subscription room                  |
+| `get-performance-report` | None                                            | `performance-report`                                  |
+| `start-simulation`       | `{ scenarioId: string, customConfig?: object }` | `simulation-started` or `simulation-error`            |
+| `stop-simulation`        | None                                            | `simulation-stopped` with results                     |
+| `force-adaptation`       | Optional node ID string                         | `adaptation-forced` or `adaptation-error`             |
+
+Built-in `scenarioId` values are `network-degradation` (300 seconds), `load-spike` (240 seconds), and `learning-effectiveness` (600 seconds). For example, send `socket.emit("start-simulation", { scenarioId: "network-degradation" })` to this namespace. Only one simulation can run at a time; omit `customConfig` to use its built-in phases.
+
+Connections receive `initial-state`; broadcasts include `parameters-changed`, `cluster-update`, `cycle-completed`, `performance-update`, `performance-alert`, `simulation-phase-update`, `simulation-completed`, `network-conditions-update`, `load-pattern-update`, and `cluster-status`. Simulation measurements remain experimental and must not be interpreted as actual network fault injection without independent verification.
 
 ## CLI and package commands
 
