@@ -1,136 +1,198 @@
 <div align="center">
   <img src="../../assets/logo.svg" alt="Raft Quorum mark" width="88" height="88" />
   <h1>@usex/raft-nestjs</h1>
-  <p>Raft, integrated into the NestJS application lifecycle.</p>
-  <p><a href="../../README.md">Workspace</a> · <a href="./playground/README.md">NestJS playground</a> · <a href="../raft/playground/README.md">Observatory</a></p>
+  <p>Configure Raft, inject nodes, and observe consensus from NestJS.</p>
+  <p><a href="../../README.md">Workspace</a> · <a href="./playground/README.md">NestJS playground</a> · <a href="../raft/README.md">Core engine</a></p>
 </div>
 
-NestJS modules, providers, injection tokens, decorators, and a service facade around [`@usex/raft`](../raft/README.md). Configuration supports synchronous options and asynchronous factories. The module starts the default node during application bootstrap and stops that node on shutdown. Applications that create additional nodes must manage their cleanup.
+This package provides `RaftModule`, `RaftService`, injection decorators, event-decorator metadata, and an experimental `AdaptiveConsensusService`. `RaftModule` creates one default node, starts it during application bootstrap, and stops it during application shutdown.
 
-**Status:** the [workspace audit](../../docs/raft-spec-audit.md#nest-and-application-data) records unresolved event-delivery, state-machine, and adaptive-timing defects. A successful proposal does not establish that a playground cache, task, lock, or game was correctly updated. These integrations are under development.
+**Current limits:** the default node uses a no-op state machine, and automatic event-decorator delivery has an unresolved mismatch with the core event channel. This guide shows working direct subscriptions and explicit state-machine wiring as well as the decorator reference. A committed proposal alone does not prove your application data changed. Core persistence/membership and adaptive-timing limitations also apply.
 
-## Install
+## Contents
 
-In an existing NestJS application:
+- [Install and run](#install-and-run)
+- [Module configuration](#module-configuration)
+
+## Install and run
+
+In a NestJS application using Bun >= 1.4.3:
 
 ```bash
-bun add @usex/raft-nestjs @usex/raft
+bun add @usex/raft-nestjs @usex/raft \
+  @nestjs/common@^12.1.3 @nestjs/core@^12.1.3 \
+  @nestjs/config@^12.0.1 @nestjs/event-emitter@^12.0.1 \
+  reflect-metadata@^0.2.2 rxjs@^7.8.2
 ```
 
-Use the NestJS 12 peer dependencies listed in [`package.json`](./package.json), including `@nestjs/config`, `@nestjs/event-emitter`, `reflect-metadata`, and `rxjs`. The workspace uses Bun >= 1.4.3. A reachable Redis instance is required.
+The package also declares Node.js >= 22.22.3 compatibility. Use legacy TypeScript decorators in your application configuration:
 
-## Quick start
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true
+  }
+}
+```
 
-Use defaults as a base when overriding nested configuration. The module merges top-level options; it does not deep-merge nested objects.
+Bun's direct TypeScript execution does not replace Nest's metadata-emitting compilation workflow. The examples use explicit injection decorators where needed; for ordinary type-inferred constructor injection, compile with the application's Nest/TypeScript build and run the JavaScript with Bun.
+
+For workspace development, run these from the repository root:
+
+```bash
+bun install --frozen-lockfile
+bun run --cwd packages/raft build
+bun run --cwd packages/nest build
+```
+
+Start disposable Redis in a separate terminal:
+
+```bash
+docker run --rm --name raft-redis -p 127.0.0.1:6389:6379 redis:7-alpine
+```
+
+Save this complete example as `main.ts`. It starts one node, waits for election, submits a diagnostic command, prints local consensus positions, and closes the Nest context:
 
 ```typescript
+import "reflect-metadata";
 import { Module } from "@nestjs/common";
-import { RaftEngine } from "@usex/raft";
-import { RaftModule } from "@usex/raft-nestjs";
+import { NestFactory } from "@nestjs/core";
+import { RaftEngine, type RaftEvent } from "@usex/raft";
+import { RaftModule, RaftService } from "@usex/raft-nestjs";
 
-const defaults = RaftEngine.createDefaultConfiguration(
-  "node-1",
-  "nest-example",
-);
+const defaults = RaftEngine.createDefaultConfiguration("node-1", "nest-readme");
 
 @Module({
   imports: [
     RaftModule.forRoot({
       ...defaults,
       isGlobal: true,
-      redis: { ...defaults.redis, host: "127.0.0.1", port: 6379 },
+      redis: {
+        ...defaults.redis,
+        host: process.env.REDIS_HOST ?? "127.0.0.1",
+        port: Number(process.env.REDIS_PORT ?? 6389),
+        keyPrefix: "raft:nest-readme:",
+      },
       voting: { ...defaults.voting, enableWeighting: false },
-      persistence: { ...defaults.persistence, dataDir: "./data/node-1" },
+      persistence: {
+        ...defaults.persistence,
+        dataDir: "./data/nest-readme/node-1",
+      },
     }),
   ],
 })
-export class AppModule {}
-```
+class AppModule {}
 
-Enable Nest shutdown hooks in the application bootstrap so termination signals reach module cleanup:
-
-```typescript
+const app = await NestFactory.createApplicationContext(AppModule);
 app.enableShutdownHooks();
-```
+try {
+  const raft = app.get(RaftService);
+  const node = raft.getNode()!;
+  const onEvent = (event: RaftEvent) => console.log(event.type, event.data);
+  node.on("raftEvent", onEvent);
 
-Inspect the node from an injected service:
-
-```typescript
-import { Injectable } from "@nestjs/common";
-import { RaftService } from "@usex/raft-nestjs";
-
-@Injectable()
-export class ClusterStatusService {
-  constructor(private readonly raft: RaftService) {}
-
-  status() {
-    return {
-      state: this.raft.getState(),
-      leaderId: this.raft.getLeaderId(),
-      term: this.raft.getCurrentTerm(),
-      isLeader: this.raft.isLeader(),
-    };
+  const deadline = Date.now() + 10_000;
+  while (!raft.isLeader()) {
+    if (Date.now() >= deadline) throw new Error("Leader election timed out");
+    await Bun.sleep(50);
   }
+  await raft.propose({ type: "diagnostic", message: "Hello from Nest" });
+  console.log({
+    leader: raft.getLeaderId(),
+    commitIndex: node.getCommitIndex(),
+  });
+  node.off("raftEvent", onEvent);
+} finally {
+  await app.close();
 }
 ```
 
-The default node provider creates the core's no-op state machine. Application state needs an explicit committed-log apply and snapshot/replay implementation. Event decorators alone do not supply that storage layer; see the [audit](../../docs/raft-spec-audit.md#nest-and-application-data) before using them to mutate application data.
-
-## Configuration and services
-
-| API                                                     | Purpose                                                                             |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `RaftModule.forRoot(options)`                           | Configure the module directly                                                       |
-| `RaftModule.forRootAsync(options)`                      | Configure with `useFactory`, `useClass`, or `useExisting` and injected dependencies |
-| `RaftService.getNode(nodeId?)`                          | Access the default node or a managed node                                           |
-| `getState`, `getLeaderId`, `getCurrentTerm`, `isLeader` | Inspect local consensus state                                                       |
-| `propose(value, nodeId?)`                               | Delegate a proposal to the node's `appendLog`                                       |
-| `getMetrics(nodeId?)`                                   | Access the node's metrics                                                           |
-| `getAllNodes()` / `getClusterNodes()`                   | Inspect nodes managed by this process                                               |
-| `addPeer` / `removePeer`                                | Propose configuration changes through the service facade                            |
-
-Managed nodes are not a complete remote-cluster inventory. A process normally manages its own node; use peer and protocol state when interpreting remote membership.
-
-Available injection tokens include `RAFT_ENGINE`, `RAFT_NODE`, `RAFT_EVENT_BUS`, and `RAFT_MODULE_OPTIONS`. See the [module](./src/modules/raft.module.ts), [options](./src/interfaces/index.ts), [service](./src/services/raft.service.ts), and [decorators](./src/decorators/) for current signatures.
-
-The package also exposes `AdaptiveConsensusService`. Bounds enforcement, parameter application, configuration import, and synthetic measurements have open findings in the audit; returned suggestions are not proof that a running node changed its timing.
-
-## Playgrounds
-
-- [NestJS playground](./playground/README.md): cache, tasks, locks, games, monitoring, and adaptive-consensus demonstrations with data-integrity regressions.
-- [Raft Observatory](../raft/playground/README.md): Bun/React dashboard with real RPC traffic, SSE, leader-dispatched probes, and per-node metrics. This is the live web dashboard for the workspace.
-
-From the repository root:
-
 ```bash
-bun install --frozen-lockfile
-bun run build
-bun run --cwd packages/raft/playground dashboard
+REDIS_PORT=6389 bun main.ts
 ```
 
-## Testing
+This example demonstrates consensus only. To store application data, use the state-machine example below. For an HTTP Nest app, call `app.enableShutdownHooks()` after `NestFactory.create(...)`; the module hooks perform cleanup when that app closes.
 
-From this directory:
+## Module configuration
 
-```bash
-bun run test run
-bun run test:unit
-bun run test:coverage
-bun run test:types
-bun run lint
+### `RaftModule.forRoot(options)`
 
-# Exercise actual application data and event integration:
-bun run --cwd playground test
+Returns a Nest `DynamicModule`. `RaftModuleOptions` requires `nodeId` and `clusterId`, accepts `isGlobal?: boolean`, and otherwise extends `Partial<RaftConfiguration>`.
+
+The module applies core defaults and then **shallow-merges** options. Supplying `redis`, `network`, `voting`, or `persistence` replaces that entire nested object. Start with `RaftEngine.createDefaultConfiguration(nodeId, clusterId)` and spread each nested object when overriding a field.
+
+| Option                                 | Default / purpose                                                                                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `nodeId`, `clusterId`                  | Required stable identities.                                                                                                                                  |
+| `isGlobal`                             | Unset/false; otherwise exported providers are visible across the application.                                                                                |
+| `httpHost`, `httpPort`                 | `localhost`, `3000`; advertised endpoint, not an HTTP server.                                                                                                |
+| `peers`                                | Optional complete initial voting membership, including the local node itself.                                                                                |
+| `electionTimeout`, `heartbeatInterval` | `[300, 500]`, `150`, in milliseconds.                                                                                                                        |
+| `redis`                                | Host/port/password/db from `REDIS_*`; defaults `localhost:6379`, DB `0`. Optional `keyPrefix`, `ttl` (seconds). Use an explicit prefix for new applications. |
+| `voting`                               | `enableWeighting: true`, `defaultWeight: 1`, `weightMetrics`; optional fixed `weights` map. Set `enableWeighting: false` for ordinary majority voting.       |
+| `persistence`                          | Snapshots and WAL enabled, data directory `/var/lib/raft`, snapshot interval `300000` ms, WAL limit `104857600` bytes. Override the directory per node.      |
+| `network`                              | `requestTimeout: 5000`, `maxRetries: 3`, `retryDelay: 100`, breaker threshold `5`, breaker timeout `30000` ms.                                               |
+| `metrics`                              | Internal/Prometheus enabled; collection every `5000` ms.                                                                                                     |
+| `logging`                              | `level: LogLevel.INFO`, structured logging, password/token/secret redaction.                                                                                 |
+| `maxLogEntries`, `snapshotThreshold`   | `10000`, `1000`.                                                                                                                                             |
+| `peerDiscovery`                        | `registrationInterval: 5000`, `healthCheckInterval: 10000`, `peerTimeout: 30000`, in milliseconds.                                                           |
+| `retry`                                | `maxAttempts: 3`, `backoffFactor: 2`, `initialDelay: 100` ms.                                                                                                |
+| `circuitBreaker`                       | `timeout: 3000` ms, `errorThresholdPercentage: 50`, `resetTimeout: 30000` ms.                                                                                |
+| `adaptiveConsensus`                    | Optional complete adaptive configuration; disabled by default. See its reference below.                                                                      |
+
+Membership, Redis state/log expiry, and WAL/snapshot limitations are inherited from the core. Redis namespace changes do not migrate existing data. Preserve an explicitly empty prefix when recovering a legacy unprefixed installation.
+
+### `RaftModule.forRootAsync(options)`
+
+Use exactly one of `useFactory`, `useClass`, or `useExisting`. `imports` makes dependencies available to the options provider; `inject` supplies arguments to `useFactory`. Set `isGlobal` on the outer async options.
+
+```typescript
+import { Module } from "@nestjs/common";
+import { ConfigModule, ConfigService } from "@nestjs/config";
+import { RaftEngine } from "@usex/raft";
+import { RaftModule } from "@usex/raft-nestjs";
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    RaftModule.forRootAsync({
+      isGlobal: true,
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (env: ConfigService) => {
+        const nodeId = env.get<string>("NODE_ID", "node-1");
+        const config = RaftEngine.createDefaultConfiguration(
+          nodeId,
+          "async-example",
+        );
+        return {
+          ...config,
+          redis: {
+            ...config.redis,
+            port: Number(env.get("REDIS_PORT", 6389)),
+            keyPrefix: "raft:async-example:",
+          },
+          voting: { ...config.voting, enableWeighting: false },
+          persistence: {
+            ...config.persistence,
+            dataDir: `./data/async-example/${nodeId}`,
+          },
+        };
+      },
+    }),
+  ],
+})
+export class AsyncAppModule {}
 ```
 
-Docker is required for Redis integration fixtures. The facade/DI tests and playground integrity tests cover different layers; consult the [audit](../../docs/raft-spec-audit.md) for their separate results and known failures.
-
-## Documentation
-
-- [Core engine and state machines](../raft/README.md)
-- [Workspace architecture](../../docs/architecture.md)
-- [Bun migration](../../docs/bun-migration.md)
-- [Brand assets](../../assets/BRAND_ASSETS.md)
+For a class-based factory, implement `RaftOptionsFactory.createRaftOptions(): RaftModuleOptions | Promise<RaftModuleOptions>`. `useClass: YourFactory` creates a provider instance; `useExisting: YourFactory` reuses one exported by an imported module. Returned values must still include `nodeId` and `clusterId`. Async configuration errors reject application startup.
 
 ## License
 
